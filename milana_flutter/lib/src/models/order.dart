@@ -1,0 +1,485 @@
+import 'dart:math';
+
+import 'cart_item.dart';
+import 'product.dart';
+
+String paymentReferenceFromOrderNumber(String number) =>
+    number.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
+
+String orderReceiptShareText(OrderReceipt receipt) {
+  final lines = [
+    'Milana Premium buyurtma',
+    'Raqam: ${receipt.number}',
+    'Jami: \$${receipt.total.toStringAsFixed(2)}',
+    'To‘lov: ${receipt.paymentLabel}',
+    if (receipt.paymentReference.isNotEmpty)
+      'Reference: ${receipt.paymentReference}',
+    if (receipt.paymentExpiresAt != null)
+      'Reference muddati: ${receipt.paymentExpiresAt!.toUtc().toIso8601String()}',
+    'Holat: ${receipt.paymentStatus}',
+    'Menejer: ${receipt.supportPhone}',
+  ];
+  return lines.join('\n');
+}
+
+String createClientOrderId() {
+  final timestamp = DateTime.now().toUtc().microsecondsSinceEpoch.toRadixString(
+    36,
+  );
+  final suffix = Random().nextInt(0x7fffffff).toRadixString(36);
+  return 'co_${timestamp}_$suffix';
+}
+
+class CheckoutRequest {
+  const CheckoutRequest({
+    required this.name,
+    required this.phone,
+    required this.city,
+    required this.address,
+    required this.comment,
+    required this.paymentMethod,
+    required this.items,
+    this.customerEmail = '',
+    this.customerId,
+    this.clientOrderId = '',
+  });
+
+  final String name;
+  final String phone;
+  final String city;
+  final String address;
+  final String comment;
+  final String paymentMethod;
+  final String customerEmail;
+  final String? customerId;
+  final String clientOrderId;
+  final List<CartItem> items;
+
+  double get total => items.fold(0, (sum, item) => sum + item.lineTotal);
+
+  Map<String, dynamic> toBackendJson() => {
+    'customer': {
+      'name': name,
+      'phone': phone,
+      'email': customerEmail,
+      'city': city,
+      'address': address,
+      'comment': comment,
+      'payment_method': paymentMethod,
+    },
+    'payment': {'method': paymentMethod},
+    'client_order_id': clientOrderId,
+    'items': items
+        .map(
+          (item) => {
+            'id': int.tryParse(item.product.id) ?? item.product.id,
+            'qty': item.quantity,
+          },
+        )
+        .toList(),
+    'lang': 'uz',
+  };
+
+  Map<String, dynamic> toFunctionJson() => {
+    'customer': {
+      'name': name,
+      'phone': phone,
+      'email': customerEmail,
+      'city': city,
+      'address': address,
+      'comment': comment,
+    },
+    'payment_method': paymentMethod,
+    'client_order_id': clientOrderId,
+    'items': items
+        .map(
+          (item) => {
+            'product_id': item.product.id,
+            'slug': item.product.slug,
+            'qty': item.quantity,
+          },
+        )
+        .toList(),
+    'lang': 'uz',
+  };
+
+  Map<String, dynamic> toFirestore(String number) => {
+    'number': number,
+    'customer_id': customerId,
+    'client_order_id': clientOrderId,
+    'customer': {
+      'name': name,
+      'phone': phone,
+      'email': customerEmail,
+      'city': city,
+      'address': address,
+      'comment': comment,
+    },
+    'items': items.map((item) => item.toOrderJson()).toList(),
+    'total': double.parse(total.toStringAsFixed(2)),
+    'status': 'new',
+    'lang': 'uz',
+    'payment': {
+      'method': paymentMethod,
+      'provider':
+          paymentMethod == 'click' ||
+              paymentMethod == 'payme' ||
+              paymentMethod == 'card'
+          ? paymentMethod
+          : 'manual',
+      'status': 'pending',
+      'amount': double.parse(total.toStringAsFixed(2)),
+      'currency': 'USD',
+      'reference': paymentReferenceFromOrderNumber(number),
+    },
+    'created_at': DateTime.now().toUtc().toIso8601String(),
+    'updated_at': DateTime.now().toUtc().toIso8601String(),
+  };
+}
+
+class OrderReceipt {
+  const OrderReceipt({
+    this.orderId = '',
+    required this.number,
+    required this.total,
+    required this.paymentStatus,
+    this.paymentMethod = 'manager',
+    this.paymentLabel = 'Menejer orqali',
+    this.paymentInstructions =
+        'Menejerimiz +998501551010 orqali narx, mavjudlik va to‘lovni tasdiqlaydi.',
+    this.paymentReference = '',
+    this.paymentExpiresAt,
+    this.clientOrderId = '',
+    this.supportPhone = '+998501551010',
+  });
+
+  final String orderId;
+  final String number;
+  final double total;
+  final String paymentStatus;
+  final String paymentMethod;
+  final String paymentLabel;
+  final String paymentInstructions;
+  final String paymentReference;
+  final DateTime? paymentExpiresAt;
+  final String clientOrderId;
+  final String supportPhone;
+}
+
+class PaymentSubmission {
+  const PaymentSubmission({
+    required this.orderId,
+    required this.method,
+    required this.amount,
+    required this.reference,
+    required this.note,
+  });
+
+  final String orderId;
+  final String method;
+  final double? amount;
+  final String reference;
+  final String note;
+
+  Map<String, dynamic> toFunctionJson() => {
+    'order_id': orderId,
+    'method': method,
+    if (amount != null) 'amount': amount,
+    'reference': reference,
+    'note': note,
+  };
+}
+
+class PaymentSubmissionReceipt {
+  const PaymentSubmissionReceipt({
+    required this.orderId,
+    required this.paymentStatus,
+    required this.submittedAt,
+  });
+
+  final String orderId;
+  final String paymentStatus;
+  final DateTime? submittedAt;
+}
+
+class CancelOrderRequest {
+  const CancelOrderRequest({required this.orderId, this.reason = ''});
+
+  final String orderId;
+  final String reason;
+
+  Map<String, dynamic> toFunctionJson() => {
+    'order_id': orderId,
+    'reason': reason.trim(),
+  };
+}
+
+class CancelOrderReceipt {
+  const CancelOrderReceipt({
+    required this.orderId,
+    required this.status,
+    required this.paymentStatus,
+    required this.cancelledAt,
+    required this.stockReleasedQop,
+  });
+
+  final String orderId;
+  final String status;
+  final String paymentStatus;
+  final DateTime? cancelledAt;
+  final int stockReleasedQop;
+}
+
+class OrderLineItem {
+  const OrderLineItem({
+    required this.id,
+    required this.slug,
+    required this.name,
+    required this.qty,
+    required this.unitPrice,
+    required this.bagSize,
+    required this.bagPrice,
+    required this.lineTotal,
+    this.modelNo = '',
+    this.variant = '',
+    this.gender = 'women',
+    this.category = 'homewear',
+    this.fabric = '',
+    this.description = '',
+    this.image = '',
+    this.images = const [],
+    this.sizes = const [],
+    this.sizeMix = const [],
+  });
+
+  final String id;
+  final String slug;
+  final String name;
+  final String modelNo;
+  final String variant;
+  final String gender;
+  final String category;
+  final String fabric;
+  final String description;
+  final int qty;
+  final double unitPrice;
+  final int bagSize;
+  final double bagPrice;
+  final double lineTotal;
+  final String image;
+  final List<String> images;
+  final List<String> sizes;
+  final List<OrderSizeMix> sizeMix;
+
+  factory OrderLineItem.fromMap(Map<String, dynamic> data) {
+    List<String> stringList(dynamic value) {
+      if (value is List) {
+        return value
+            .map((row) => '$row'.trim())
+            .where((row) => row.isNotEmpty)
+            .toList();
+      }
+      return const [];
+    }
+
+    final qty = (data['qty'] as num?)?.toInt() ?? 0;
+    final unitPrice = (data['unit_price'] as num?)?.toDouble() ?? 0;
+    final bagSize = (data['bag_size'] as num?)?.toInt() ?? 60;
+    final fallbackBagPrice = unitPrice * bagSize;
+    final bagPrice = (data['price'] as num?)?.toDouble() ?? fallbackBagPrice;
+    final lineTotal =
+        (data['line_total'] as num?)?.toDouble() ?? bagPrice * qty;
+    final sizeMix = data['size_mix'] is List
+        ? (data['size_mix'] as List)
+              .whereType<Map>()
+              .map(
+                (row) => OrderSizeMix.fromMap(Map<String, dynamic>.from(row)),
+              )
+              .where((row) => row.size.isNotEmpty && row.qty > 0)
+              .toList()
+        : const <OrderSizeMix>[];
+    final image = '${data['image'] ?? ''}';
+    final images = stringList(data['images']);
+    final sizes = stringList(data['sizes']);
+    return OrderLineItem(
+      id: '${data['id'] ?? ''}',
+      slug: '${data['slug'] ?? ''}',
+      name: '${data['name'] ?? 'Milana'}',
+      modelNo: '${data['model_no'] ?? ''}',
+      variant: '${data['variant'] ?? ''}',
+      gender: '${data['gender'] ?? 'women'}',
+      category: '${data['category'] ?? 'homewear'}',
+      fabric:
+          '${data['fabric'] ?? data['fabric_uz'] ?? data['fabric_en'] ?? ''}',
+      description:
+          '${data['description'] ?? data['desc_uz'] ?? data['desc_en'] ?? data['desc'] ?? ''}',
+      qty: qty,
+      unitPrice: unitPrice,
+      bagSize: bagSize,
+      bagPrice: bagPrice,
+      lineTotal: lineTotal,
+      image: image,
+      images: images.isEmpty && image.isNotEmpty ? [image] : images,
+      sizes: sizes.isEmpty
+          ? sizeMix.map((row) => row.size).take(sizeCount).toList()
+          : sizes,
+      sizeMix: sizeMix,
+    );
+  }
+
+  CartItem toCartItem() {
+    return CartItem(
+      product: Product(
+        id: id.isNotEmpty ? id : slug,
+        slug: slug.isNotEmpty ? slug : id,
+        name: name,
+        gender: gender.isNotEmpty ? gender : 'women',
+        category: category.isNotEmpty ? category : 'homewear',
+        price: unitPrice,
+        sizes: sizes,
+        images: images,
+        modelNo: modelNo,
+        variant: variant,
+        fabric: fabric,
+        description: description,
+      ),
+      quantity: qty.clamp(1, 20),
+    );
+  }
+}
+
+class OrderSizeMix {
+  const OrderSizeMix({required this.size, required this.qty});
+
+  final String size;
+  final int qty;
+
+  factory OrderSizeMix.fromMap(Map<String, dynamic> data) {
+    return OrderSizeMix(
+      size: '${data['size'] ?? ''}',
+      qty: (data['qty'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+class OrderSummary {
+  const OrderSummary({
+    required this.id,
+    required this.number,
+    required this.total,
+    required this.status,
+    required this.paymentStatus,
+    required this.paymentMethod,
+    required this.paymentLabel,
+    required this.paymentInstructions,
+    required this.createdAt,
+    required this.itemCount,
+    this.paymentReference = '',
+    this.paymentExpiresAt,
+    this.deliveryCarrier = '',
+    this.trackingNumber = '',
+    this.trackingUrl = '',
+    this.deliveryNote = '',
+    this.paymentSubmissionReference = '',
+    this.paymentSubmissionNote = '',
+    this.paymentSubmittedAt,
+    this.activity = const [],
+    this.items = const [],
+  });
+
+  final String id;
+  final String number;
+  final double total;
+  final String status;
+  final String paymentStatus;
+  final String paymentMethod;
+  final String paymentLabel;
+  final String paymentInstructions;
+  final DateTime? createdAt;
+  final int itemCount;
+  final String paymentReference;
+  final DateTime? paymentExpiresAt;
+  final String deliveryCarrier;
+  final String trackingNumber;
+  final String trackingUrl;
+  final String deliveryNote;
+  final String paymentSubmissionReference;
+  final String paymentSubmissionNote;
+  final DateTime? paymentSubmittedAt;
+  final List<OrderActivity> activity;
+  final List<OrderLineItem> items;
+
+  factory OrderSummary.fromMap(Map<String, dynamic> data) {
+    final itemRows = data['items'] is List ? data['items'] as List : const [];
+    final items = itemRows
+        .whereType<Map>()
+        .map((row) => OrderLineItem.fromMap(Map<String, dynamic>.from(row)))
+        .toList();
+    final payment = data['payment'] is Map ? data['payment'] as Map : const {};
+    final delivery = data['delivery'] is Map
+        ? data['delivery'] as Map
+        : const {};
+    final submission = payment['submission'] is Map
+        ? payment['submission'] as Map
+        : const {};
+    final activity = data['activity'] is List
+        ? (data['activity'] as List)
+              .whereType<Map>()
+              .map(
+                (row) => OrderActivity.fromMap(Map<String, dynamic>.from(row)),
+              )
+              .toList()
+        : const <OrderActivity>[];
+    return OrderSummary(
+      id: '${data['id'] ?? data['order_id'] ?? ''}',
+      number: '${data['number'] ?? ''}',
+      total: (data['total'] as num?)?.toDouble() ?? 0,
+      status: '${data['status'] ?? 'new'}',
+      paymentStatus: '${payment['status'] ?? 'pending'}',
+      paymentMethod: '${payment['method'] ?? 'manager'}',
+      paymentLabel: '${payment['label'] ?? 'Menejer orqali'}',
+      paymentInstructions: '${payment['instructions'] ?? ''}',
+      createdAt: DateTime.tryParse('${data['created_at'] ?? ''}'),
+      paymentReference: '${payment['reference'] ?? ''}',
+      paymentExpiresAt: DateTime.tryParse('${payment['expires_at'] ?? ''}'),
+      deliveryCarrier: '${delivery['carrier'] ?? ''}',
+      trackingNumber: '${delivery['tracking_number'] ?? ''}',
+      trackingUrl: '${delivery['tracking_url'] ?? ''}',
+      deliveryNote: '${delivery['note'] ?? ''}',
+      paymentSubmissionReference: '${submission['reference'] ?? ''}',
+      paymentSubmissionNote: '${submission['note'] ?? ''}',
+      paymentSubmittedAt: DateTime.tryParse(
+        '${submission['submitted_at'] ?? ''}',
+      ),
+      activity: activity,
+      items: items,
+      itemCount: items.fold<int>(0, (sum, item) => sum + item.qty),
+    );
+  }
+}
+
+class OrderActivity {
+  const OrderActivity({
+    required this.type,
+    required this.title,
+    required this.message,
+    required this.actor,
+    required this.createdAt,
+  });
+
+  final String type;
+  final String title;
+  final String message;
+  final String actor;
+  final DateTime? createdAt;
+
+  factory OrderActivity.fromMap(Map<String, dynamic> data) {
+    return OrderActivity(
+      type: '${data['type'] ?? ''}',
+      title: '${data['title'] ?? ''}',
+      message: '${data['message'] ?? ''}',
+      actor: '${data['actor'] ?? 'system'}',
+      createdAt: DateTime.tryParse('${data['created_at'] ?? ''}'),
+    );
+  }
+}

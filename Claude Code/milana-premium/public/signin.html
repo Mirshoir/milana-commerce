@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in — MILANA PREMIUM</title>
+  <meta name="description" content="Sign in or create a MILANA PREMIUM wholesale customer account.">
+  <meta name="theme-color" content="#5c1f2d">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%235c1f2d'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='34' fill='%23f4efe6' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/shop.css">
+  <script>document.documentElement.classList.replace('no-js','js');</script>
+</head>
+<body data-keep-title="1">
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15M13 5.5 19.5 12 13 18.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M4 7h16l-1.3 11.2a2 2 0 0 1-2 1.8H7.3a2 2 0 0 1-2-1.8Z M8.5 9.5V6a3.5 3.5 0 0 1 7 0v3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="i-wa" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0-7.8 13.5L3 21l4.7-1.2A9 9 0 1 0 12 3Zm4.4 12.6c-.2.6-1.2 1.1-1.7 1.1-.4.1-1 .1-1.6-.1a13 13 0 0 1-1.5-.5c-2.6-1.1-4.3-3.7-4.4-3.9-.1-.2-1.1-1.4-1.1-2.7 0-1.3.7-1.9.9-2.2.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.4l.9 2.1c.1.2.1.4 0 .6l-.4.6-.5.5c-.2.2-.3.4-.1.7.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.5 1.5.3.2.5.1.7-.1l1-1.2c.2-.3.4-.2.7-.1l2 1c.3.1.5.2.6.4 0 .1 0 .7-.2 1.2Z" fill="currentColor" fill-rule="evenodd"/></symbol>
+    <symbol id="i-tg" viewBox="0 0 24 24"><path d="m21 4.4-3 14.7c-.2.9-.8 1.1-1.6.7l-4.4-3.3-2.2 2.1c-.2.3-.4.5-.9.5l.3-4.6L17.7 7c.4-.3-.1-.5-.6-.2L7 13.3l-4.4-1.4c-1-.3-1-1 .2-1.4l17-6.6c.8-.3 1.5.2 1.2 1.5Z" fill="currentColor"/></symbol>
+  </svg>
+
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="header is-solid">
+    <div class="header__inner">
+      <a class="brand" href="/" aria-label="Milana Premium — home">
+        <span class="brand__name">Milana</span>
+        <span class="brand__sup">Premium · Uzbekistan</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="/shop" data-i18n="nav.shop">Shop</a>
+        <a href="/#collection" data-i18n="nav.collection">Collection</a>
+        <a href="/#categories" data-i18n="nav.categories">Categories</a>
+        <a href="/#maison" data-i18n="nav.maison">Brand</a>
+        <a href="/#wholesale" data-i18n="nav.wholesale">Wholesale</a>
+        <a href="/support" data-i18n="nav.support">Support</a>
+      </nav>
+      <div class="header__end">
+        <div class="lang" data-lang-mount></div>
+        <a class="header__tel" data-dyn="tel" href="tel:+998501551010">+998 50 155 10 10</a>
+        <a class="auth-link is-active" href="/signin" data-auth-link data-i18n="auth.signIn">Sign in</a>
+        <button class="cartbtn" data-cart-open aria-label="Cart">
+          <svg class="ic"><use href="#i-cart"/></svg>
+          <i class="cartbtn__n is-zero" data-cart-count>0</i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="page auth-page">
+    <div class="container auth-shell">
+      <section class="auth-panel">
+        <p class="overline"><span class="overline__num">ERP</span><span class="overline__rule"></span><span data-i18n="auth.overline">Wholesale account</span></p>
+        <h1 data-i18n="auth.title">Customer access</h1>
+        <p class="auth-panel__lead" data-i18n="auth.lead">Create one account for catalog orders now and future Milana mobile apps.</p>
+        <div class="auth-benefits">
+          <p data-i18n="auth.b1">Wholesale bag rules are saved with each order.</p>
+          <p data-i18n="auth.b2">Your profile can connect to the ERP customer record later.</p>
+          <p data-i18n="auth.b3">Firebase-ready identity for Flutter apps.</p>
+        </div>
+      </section>
+
+      <section class="auth-card" data-auth-page>
+        <div class="auth-tabs" role="tablist">
+          <button type="button" class="is-on" data-auth-tab="signin" data-i18n="auth.signIn">Sign in</button>
+          <button type="button" data-auth-tab="signup" data-i18n="auth.signUp">Sign up</button>
+        </div>
+
+        <form class="auth-form is-on" data-auth-form="signin" novalidate>
+          <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
+          <label><span data-i18n="auth.password">Password</span><input name="password" type="password" autocomplete="current-password" required minlength="8"></label>
+          <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.signIn">Sign in</span><svg class="ic"><use href="#i-arrow"/></svg></button>
+          <p class="auth-message" data-auth-message="signin" hidden></p>
+        </form>
+
+        <form class="auth-form" data-auth-form="signup" novalidate>
+          <label><span data-i18n="auth.name">Full name</span><input name="name" autocomplete="name" required maxlength="80"></label>
+          <label><span data-i18n="auth.phone">Phone</span><input name="phone" autocomplete="tel" maxlength="25" placeholder="+998 90 123 45 67"></label>
+          <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
+          <label><span data-i18n="auth.password">Password</span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+          <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.createAccount">Create account</span><svg class="ic"><use href="#i-arrow"/></svg></button>
+          <p class="auth-message" data-auth-message="signup" hidden></p>
+        </form>
+
+        <div class="auth-firebase" data-firebase-auth hidden>
+          <span></span>
+          <button type="button" class="btn btn--ghost" data-google-signin><span data-i18n="auth.google">Continue with Google</span></button>
+        </div>
+
+        <div class="auth-account" data-auth-account hidden>
+          <p class="auth-account__label" data-i18n="auth.signedInAs">Signed in as</p>
+          <strong data-auth-name></strong>
+          <span data-auth-email></span>
+          <div class="auth-account__actions">
+            <a class="btn btn--primary" href="/shop"><span data-i18n="auth.continueShopping">Continue shopping</span><svg class="ic"><use href="#i-arrow"/></svg></a>
+            <button type="button" class="auth-logout" data-auth-logout data-i18n="auth.logout">Log out</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="footer footer--slim">
+    <div class="container">
+      <div class="footer__bottom">
+        <p>© <span id="year">2026</span> Milana Premium — Uzbekistan, Andijan</p>
+        <div class="footer__legal">
+          <a data-dyn="wa" href="#" target="_blank" rel="noopener">WhatsApp</a>
+          <a data-dyn="tg" href="#" target="_blank" rel="noopener">Telegram</a>
+          <a data-dyn="tel" href="#">+998 50 155 10 10</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script src="/js/i18n.js" defer></script>
+  <script src="/js/auth.js" defer></script>
+  <script src="/js/cart.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Milana Premium — Corporate Hub</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+/* ── DARK THEME (default) ── */
+:root{
+  --bg:#0C0C0F; --bg2:#111115; --bg3:#18181D; --bg4:#1F1F27; --bg5:#27272F;
+  --w:#FFFFFF;
+  --w90:rgba(255,255,255,.92); --w60:rgba(255,255,255,.6); --w30:rgba(255,255,255,.3);
+  --w12:rgba(255,255,255,.12); --w07:rgba(255,255,255,.07); --w04:rgba(255,255,255,.04);
+  --pill-active-bg:#FFFFFF; --pill-active-c:#0C0C0F;
+  --logo-c:#FFFFFF;
+  --ok:#22C55E; --warn:#F59E0B; --err:#EF4444; --blue:#3B82F6;
+  --sw:230px; --hh:52px; --r:10px; --rs:7px; --ease:180ms ease;
+  --shadow:0 2px 20px rgba(0,0,0,.4);
+}
+
+/* ── LIGHT THEME ── */
+body.light{
+  --bg:#F2F2F5; --bg2:#FAFAFB; --bg3:#FFFFFF; --bg4:#EBEBEF; --bg5:#E2E2E8;
+  --w:#0A0A12;
+  --w90:rgba(10,10,18,.9); --w60:rgba(10,10,18,.6); --w30:rgba(10,10,18,.3);
+  --w12:rgba(10,10,18,.1); --w07:rgba(10,10,18,.06); --w04:rgba(10,10,18,.03);
+  --pill-active-bg:#0A0A12; --pill-active-c:#FFFFFF;
+  --logo-c:#0A0A12;
+  --shadow:0 2px 20px rgba(0,0,0,.08);
+}
+
+html,body{height:100%;overflow:hidden}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--w90);font-size:14px;line-height:1.6;transition:background .25s,color .25s}
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--w12);border-radius:2px}
+::-webkit-scrollbar-thumb:hover{background:var(--w30)}
+
+/* ══════════════════════════════════════
+   HEADER  ——  Artlist-style
+══════════════════════════════════════ */
+.hdr{
+  height:var(--hh);min-height:var(--hh);
+  background:var(--bg2);
+  border-bottom:1px solid var(--w07);
+  display:flex;align-items:center;
+  padding:0 20px;
+  position:relative;
+  flex-shrink:0;
+  transition:background .25s,border-color .25s;
+}
+
+/* LEFT — logo */
+.hdr-logo{display:flex;align-items:center;gap:9px;text-decoration:none;flex-shrink:0;z-index:1}
+.hdr-logo-icon{width:30px;height:30px;background:var(--w);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .25s}
+.hdr-logo-name{font-size:13px;font-weight:800;color:var(--logo-c);letter-spacing:-.2px;transition:color .25s;white-space:nowrap}
+
+/* CENTER — pill navigation */
+.hdr-nav{
+  position:absolute;left:50%;transform:translateX(-50%);
+  display:flex;align-items:center;gap:1px;
+}
+.np{
+  padding:5px 13px;border-radius:20px;
+  font-size:13px;font-weight:600;cursor:pointer;
+  color:var(--w60);
+  transition:all var(--ease);
+  white-space:nowrap;user-select:none;
+}
+.np:hover{color:var(--w90)}
+.np.on{background:var(--pill-active-bg);color:var(--pill-active-c)}
+
+/* RIGHT — actions */
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:6px;flex-shrink:0;z-index:1}
+.hdr-sbox{display:flex;align-items:center;gap:6px;background:var(--bg4);border:1px solid var(--w07);border-radius:20px;padding:5px 12px;width:160px;transition:all var(--ease)}
+.hdr-sbox:focus-within{border-color:var(--w30);width:190px}
+.hdr-sbox input{background:none;border:none;outline:none;color:var(--w90);font-family:'Plus Jakarta Sans',sans-serif;font-size:12.5px;width:100%}
+.hdr-sbox input::placeholder{color:var(--w30)}
+.lsw{display:flex;background:var(--bg4);border:1px solid var(--w07);border-radius:20px;overflow:hidden}
+.lb{padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;color:var(--w30);transition:all var(--ease);letter-spacing:.3px}
+.lb.on{background:var(--pill-active-bg);color:var(--pill-active-c)}
+.lb:hover:not(.on){color:var(--w90)}
+.ibtn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:50%;cursor:pointer;color:var(--w30);transition:all var(--ease);position:relative}
+.ibtn:hover{background:var(--w07);color:var(--w90)}
+.ndot{position:absolute;top:4px;right:4px;width:6px;height:6px;background:var(--w);border-radius:50%;border:2px solid var(--bg2)}
+body.light .ndot{background:var(--w)}
+
+/* Theme toggle */
+.theme-btn{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:50%;cursor:pointer;color:var(--w60);transition:all var(--ease);border:1px solid var(--w07);background:var(--bg4)}
+.theme-btn:hover{color:var(--w90);border-color:var(--w30)}
+
+/* User avatar pill (Artlist-style) */
+.uav-pill{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;background:var(--pill-active-bg);color:var(--pill-active-c);cursor:pointer;transition:all var(--ease);border:1px solid var(--w12)}
+.uav-pill:hover{transform:scale(1.05)}
+
+/* ══════════════════════════════════════
+   LAYOUT
+══════════════════════════════════════ */
+.app{display:flex;height:100vh;overflow:hidden;flex-direction:column}
+.app-body{display:flex;flex:1;overflow:hidden}
+
+/* ══════════════════════════════════════
+   SIDEBAR  (slim, channels only)
+══════════════════════════════════════ */
+.sidebar{width:var(--sw);min-width:var(--sw);background:var(--bg2);border-right:1px solid var(--w07);display:flex;flex-direction:column;overflow:hidden;transition:background .25s,border-color .25s}
+.sb-nav{flex:1;overflow-y:auto;padding:8px 0}
+.nl{font-size:10px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--w30);padding:10px 14px 3px}
+.ni{display:flex;align-items:center;gap:8px;padding:6px 10px;margin:1px 8px;cursor:pointer;color:var(--w60);font-size:12.5px;font-weight:500;transition:all var(--ease);border-radius:var(--rs);position:relative}
+.ni:hover{background:var(--w07);color:var(--w90)}
+.ni.on{background:var(--w12);color:var(--w90);font-weight:600}
+.ni svg{width:14px;height:14px;flex-shrink:0;opacity:.6}
+.ni.on svg,.ni:hover svg{opacity:1}
+.dt{display:flex;align-items:center;gap:6px;padding:9px 14px 2px;cursor:pointer;color:var(--w30);font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;transition:color var(--ease)}
+.dt:hover{color:var(--w60)}
+.dt svg{width:10px;height:10px;transition:transform var(--ease)}
+.dt.open svg{transform:rotate(90deg)}
+.dl{overflow:hidden}
+.di{display:flex;align-items:center;gap:7px;padding:5px 10px 5px 26px;margin:1px 8px;cursor:pointer;color:var(--w30);font-size:12px;font-weight:500;transition:all var(--ease);border-radius:var(--rs)}
+.di:hover{background:var(--w07);color:var(--w60)}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.sb-user{padding:10px 12px;border-top:1px solid var(--w07);display:flex;align-items:center;gap:8px;cursor:pointer;transition:background var(--ease)}
+.sb-user:hover{background:var(--w04)}
+.av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.un{font-size:12px;font-weight:700;color:var(--w90)}
+.ur{font-size:10.5px;color:var(--w30)}
+.ustat{width:7px;height:7px;background:var(--ok);border-radius:50%;flex-shrink:0;margin-left:auto}
+
+/* ══════════════════════════════════════
+   PAGES
+══════════════════════════════════════ */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.page{display:none;flex:1;overflow:hidden}
+.page.on{display:flex;flex-direction:column;animation:fi 160ms ease}
+@keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── DASHBOARD ── */
+.dg{flex:1;overflow-y:auto;padding:20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:13px;align-content:start}
+.sc{background:var(--bg3);border:1px solid var(--w07);border-radius:var(--r);padding:18px;display:flex;align-items:center;gap:13px;cursor:pointer;transition:all var(--ease)}
+.sc:hover{border-color:var(--w12);transform:translateY(-1px);box-shadow:var(--shadow)}
+.si{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:var(--w07)}
+.sv{font-size:24px;font-weight:800;line-height:1;color:var(--w90)}
+.sl{font-size:12px;color:var(--w60);margin-top:3px}
+.sch{font-size:11px;color:var(--ok);margin-top:2px;font-weight:600}
+.wdg{background:var(--bg3);border:1px solid var(--w07);border-radius:var(--r);padding:18px;overflow:hidden;transition:background .25s,border-color .25s}
+.wh{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
+.wt{font-size:13px;font-weight:700;color:var(--w90);display:flex;align-items:center;gap:7px}
+.wl{font-size:12px;color:var(--w60);cursor:pointer;transition:color var(--ease);font-weight:600}
+.wl:hover{color:var(--w90)}
+.ni2{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--w04)}
+.ni2:last-child{border-bottom:none}
+.nit{flex:1;font-size:12.5px;color:var(--w60);line-height:1.45}
+.nit strong{color:var(--w90);font-weight:600}
+.ntt{font-size:11px;color:var(--w30);white-space:nowrap}
+.qa{grid-column:1/4;display:grid;grid-template-columns:repeat(6,1fr);gap:11px}
+.qac{background:var(--bg3);border:1px solid var(--w07);border-radius:var(--r);padding:14px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;transition:all var(--ease);text-align:center}
+.qac:hover{border-color:var(--w12);transform:translateY(-1px);box-shadow:var(--shadow)}
+.qai{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;background:var(--w07)}
+.qal{font-size:11px;color:var(--w60);font-weight:600}
+
+/* ── NEWS ── */
+.np2{flex:1;overflow-y:auto;padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-content:start}
+.ncard{background:var(--bg3);border:1px solid var(--w07);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:all var(--ease)}
+.ncard:hover{border-color:var(--w12);transform:translateY(-1px);box-shadow:var(--shadow)}
+.nimg{height:148px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.nbody{padding:15px}
+.nbadge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px}
+.ntitle{font-size:14px;font-weight:700;color:var(--w90);margin-bottom:5px;line-height:1.4}
+.nprev{font-size:12.5px;color:var(--w60);line-height:1.5}
+.nmeta{display:flex;align-items:center;gap:7px;margin-top:11px;font-size:11px;color:var(--w30)}
+.mdot{width:3px;height:3px;border-radius:50%;background:var(--w30)}
+
+/* ── NEWS FILTER BAR ── */
+.fbar{padding:10px 20px;border-bottom:1px solid var(--w07);display:flex;gap:4px;background:var(--bg2);flex-shrink:0;transition:background .25s}
+.ftab{padding:5px 13px;border-radius:20px;font-size:12.5px;cursor:pointer;color:var(--w60);transition:all var(--ease);font-weight:600}
+.ftab.on{background:var(--pill-active-bg);color:var(--pill-active-c)}
+.ftab:hover:not(.on){color:var(--w90)}
+
+/* ── CHAT ── */
+.cl{flex:1;display:flex;overflow:hidden}
+.cm{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:2px}
+.cdiv{display:flex;align-items:center;gap:10px;margin:10px 0 6px}
+.cdiv-l{flex:1;height:1px;background:var(--w07)}
+.cdiv-t{font-size:10px;color:var(--w30);white-space:nowrap;font-weight:700;letter-spacing:.3px}
+.msg{display:flex;gap:9px;padding:2px 0;align-items:flex-start}
+.mav{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px}
+.mb{flex:1}
+.mh{display:flex;align-items:baseline;gap:7px;margin-bottom:2px}
+.mn{font-size:13px;font-weight:700;color:var(--w90)}
+.mt{font-size:10px;color:var(--w30)}
+.mtag{font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;letter-spacing:.4px;text-transform:uppercase}
+.tai{background:rgba(59,130,246,.15);color:#93C5FD}
+.tmgr{background:var(--w12);color:var(--w90)}
+.mbub{background:var(--bg3);border:1px solid var(--w07);border-radius:3px 10px 10px 10px;padding:9px 13px;font-size:13px;line-height:1.55;color:var(--w90);max-width:620px;display:inline-block;transition:background .25s,border-color .25s}
+.mbub.ai{background:rgba(59,130,246,.06);border-color:rgba(59,130,246,.15)}
+.msg.own{flex-direction:row-reverse}
+.msg.own .mh{flex-direction:row-reverse}
+.msg.own .mbub{background:var(--pill-active-bg);color:var(--pill-active-c);border-color:transparent;border-radius:10px 3px 10px 10px;font-weight:500}
+.mp{width:196px;min-width:196px;border-left:1px solid var(--w07);padding:14px;overflow-y:auto;background:var(--bg2);transition:background .25s}
+.pt{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--w30);margin-bottom:10px}
+.mi{display:flex;align-items:center;gap:7px;padding:5px 7px;border-radius:var(--rs);cursor:pointer;transition:background var(--ease)}
+.mi:hover{background:var(--w07)}
+.mav2{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;position:relative}
+.oi{position:absolute;bottom:0;right:0;width:6px;height:6px;border-radius:50%;border:2px solid var(--bg2)}
+.mn2{font-size:12px;color:var(--w60)}
+.cia{padding:12px 20px 16px;border-top:1px solid var(--w07);flex-shrink:0}
+.cib{display:flex;align-items:flex-end;gap:9px;background:var(--bg3);border:1px solid var(--w07);border-radius:var(--r);padding:9px 12px;transition:all var(--ease)}
+.cib:focus-within{border-color:var(--w30)}
+.cib textarea{flex:1;background:none;border:none;outline:none;color:var(--w90);font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;resize:none;max-height:110px;line-height:1.5}
+.cib textarea::placeholder{color:var(--w30)}
+.sbtn{width:30px;height:30px;background:var(--pill-active-bg);border:none;border-radius:var(--rs);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all var(--ease);flex-shrink:0}
+.sbtn:hover{opacity:.85;transform:scale(1.05)}
+.sbtn svg{stroke:var(--pill-active-c)}
+
+/* ── CHANNEL BAR ── */
+.chbar{padding:9px 18px;background:var(--bg2);border-bottom:1px solid var(--w07);display:flex;align-items:center;gap:9px;flex-shrink:0;transition:background .25s}
+.chname{font-size:13.5px;font-weight:700;color:var(--w90)}
+.chdesc{font-size:12px;color:var(--w30)}
+
+/* ── DM ── */
+.dms{width:236px;min-width:236px;border-right:1px solid var(--w07);overflow-y:auto;padding:10px 0;background:var(--bg2);transition:background .25s}
+.dmi{display:flex;align-items:center;gap:9px;padding:7px 13px;cursor:pointer;transition:background var(--ease)}
+.dmi:hover,.dmi.on{background:var(--w07)}
+.dmav{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;position:relative}
+.dmn{font-size:12.5px;font-weight:600;color:var(--w90)}
+.dmp{font-size:11.5px;color:var(--w30);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dmu{width:16px;height:16px;background:var(--pill-active-bg);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--pill-active-c);flex-shrink:0}
+
+/* ── DEPT GRID ── */
+.depg{flex:1;overflow-y:auto;padding:20px;display:grid;grid-template-columns:repeat(3,1fr);gap:13px;align-content:start}
+.dc{background:var(--bg3);border:1px solid var(--w07);border-radius:var(--r);padding:18px;cursor:pointer;transition:all var(--ease);position:relative;overflow:hidden}
+.dc::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--w07);transition:background var(--ease)}
+.dc:hover{border-color:var(--w12);transform:translateY(-2px);box-shadow:var(--shadow)}
+.dc:hover::after{background:var(--w30)}
+.dci{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;margin-bottom:11px;background:var(--w07)}
+.dcn{font-size:14px;font-weight:700;color:var(--w90);margin-bottom:3px}
+.dcd{font-size:12px;color:var(--w60);line-height:1.5;margin-bottom:13px}
+.dcf{display:flex;align-items:center;justify-content:space-between}
+.dcc{font-size:11.5px;color:var(--w30);font-weight:600}
+.dcl{font-size:12px;color:var(--w60);font-weight:600;transition:color var(--ease)}
+.dc:hover .dcl{color:var(--w90)}
+
+/* ── IDEAS ── */
+.ip{flex:1;overflow-y:auto;padding:20px}
+.ih{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.itabs{display:flex;gap:2px;background:var(--bg3);border:1px solid var(--w07);border-radius:20px;padding:3px}
+.itab{padding:5px 13px;border-radius:20px;font-size:12.5px;cursor:pointer;color:var(--w60);transition:all var(--ease);font-weight:600}
+.itab.on{background:var(--pill-active-bg);color:var(--pill-active-c)}
+.itab:hover:not(.on){color:var(--w90)}
+.igrid{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}
+.ic{background:var(--bg3);border:1px solid var(--w07);border-radius:var(--r);padding:16px;cursor:pointer;transition:all var(--ease)}
+.ic:hover{border-color:var(--w12);transform:translateY(-1px);box-shadow:var(--shadow)}
+.icat{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px;background:var(--w07);color:var(--w60);margin-bottom:8px}
+.itn{font-size:13.5px;font-weight:700;color:var(--w90);margin-bottom:5px;line-height:1.4}
+.ibd{font-size:12.5px;color:var(--w60);line-height:1.55;margin-bottom:13px}
+.ift{display:flex;align-items:center;justify-content:space-between}
+.iauth{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--w30);font-weight:500}
+.iav{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;background:var(--w07);color:var(--w60)}
+.vbtn{display:flex;align-items:center;gap:4px;background:var(--bg4);border:1px solid var(--w07);border-radius:20px;padding:4px 10px;cursor:pointer;color:var(--w60);font-size:12px;font-weight:600;transition:all var(--ease);font-family:'Plus Jakarta Sans',sans-serif}
+.vbtn:hover,.vbtn.voted{background:var(--pill-active-bg);color:var(--pill-active-c);border-color:transparent}
+.nibtn{display:flex;align-items:center;gap:6px;background:var(--pill-active-bg);color:var(--pill-active-c);border:none;border-radius:20px;padding:7px 16px;font-size:13px;font-weight:700;cursor:pointer;transition:all var(--ease);font-family:'Plus Jakarta Sans',sans-serif}
+.nibtn:hover{opacity:.85;transform:translateY(-1px)}
+
+/* ── AI ── */
+.aii{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:13px;text-align:center}
+.ailogo{width:54px;height:54px;background:var(--pill-active-bg);border-radius:16px;display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow)}
+.aichips{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;margin-top:7px}
+.chip{background:var(--bg3);border:1px solid var(--w07);border-radius:20px;padding:6px 13px;font-size:12.5px;color:var(--w60);cursor:pointer;transition:all var(--ease);font-weight:500}
+.chip:hover{border-color:var(--w30);color:var(--w90)}
+.tdots{display:flex;gap:3px;align-items:center;padding:10px 13px}
+.tdot{width:6px;height:6px;background:var(--w30);border-radius:50%;animation:tb 1.4s infinite}
+.tdot:nth-child(2){animation-delay:.2s}
+.tdot:nth-child(3){animation-delay:.4s}
+@keyframes tb{0%,60%,100%{transform:translateY(0);opacity:.3}30%{transform:translateY(-5px);opacity:.9}}
+
+/* ── MODAL ── */
+.ov{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:200;backdrop-filter:blur(8px)}
+.ov.open{display:flex;animation:fi 140ms ease}
+.modal{background:var(--bg2);border:1px solid var(--w12);border-radius:14px;padding:24px;width:480px;max-width:90vw;box-shadow:var(--shadow)}
+.mttl{font-size:16px;font-weight:800;color:var(--w90);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.minp{width:100%;background:var(--bg3);border:1px solid var(--w07);border-radius:var(--rs);padding:9px 12px;color:var(--w90);font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;outline:none;margin-bottom:10px;transition:border-color var(--ease)}
+.minp:focus{border-color:var(--w30)}
+.minp::placeholder{color:var(--w30)}
+textarea.minp{height:85px;resize:vertical}
+select.minp{cursor:pointer;appearance:none}
+.mac{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+.bcx{padding:8px 16px;background:var(--bg3);border:1px solid var(--w07);border-radius:20px;color:var(--w60);cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:600;transition:all var(--ease)}
+.bcx:hover{color:var(--w90)}
+.bsb{padding:8px 20px;background:var(--pill-active-bg);border:none;border-radius:20px;color:var(--pill-active-c);cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:700;transition:all var(--ease)}
+.bsb:hover{opacity:.85}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ══════════ HEADER (Artlist-style) ══════════ -->
+<header class="hdr">
+  <!-- LEFT: Logo -->
+  <div class="hdr-logo">
+    <div class="hdr-logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="var(--bg2)" stroke-width="2.5" width="17" height="17"><path d="M6 2v4M18 2v4"/><circle cx="6" cy="10" r="3"/><circle cx="18" cy="10" r="3"/><path d="M9 13c1.5 2.5 4.5 2.5 6 0M6 13v5M18 13v5M9 18h6"/></svg>
+    </div>
+    <span class="hdr-logo-name">MILANA PREMIUM</span>
+  </div>
+
+  <!-- CENTER: Pill navigation -->
+  <nav class="hdr-nav">
+    <div class="np on" onclick="nav('dashboard',this)">Dashboard</div>
+    <div class="np" onclick="nav('news',this)">News</div>
+    <div class="np" onclick="nav('corp',this)">Corp Chat</div>
+    <div class="np" onclick="nav('ai',this)">AI Assistant</div>
+    <div class="np" onclick="nav('msgs',this)">Messages</div>
+    <div class="np" onclick="nav('ideas',this)">Ideas</div>
+    <div class="np" onclick="nav('depts',this)">Departments</div>
+  </nav>
+
+  <!-- RIGHT: Actions -->
+  <div class="hdr-right">
+    <div class="hdr-sbox">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search...">
+    </div>
+    <div class="lsw">
+      <div class="lb" onclick="setLang(this)">UZ</div>
+      <div class="lb" onclick="setLang(this)">RU</div>
+      <div class="lb on" onclick="setLang(this)">EN</div>
+    </div>
+    <!-- Theme toggle -->
+    <div class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Toggle light/dark">
+      <svg id="theme-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+    </div>
+    <div class="ibtn" title="Notifications">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <div class="ndot"></div>
+    </div>
+    <div class="uav-pill">JU</div>
+  </div>
+</header>
+
+<!-- ══════════ APP BODY ══════════ -->
+<div class="app-body">
+
+<!-- SIDEBAR (channels only) -->
+<aside class="sidebar">
+  <nav class="sb-nav">
+    <div class="nl">Channels</div>
+    <div class="ni on" id="sb-general" onclick="nav('corp',null);setSbActive(this);setChannel('general','#general','All 47 members · Milana AI')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg># general
+    </div>
+
+    <div class="dt open" id="dtbtn" onclick="this.classList.toggle('open');var d=document.getElementById('dl');d.style.maxHeight=this.classList.contains('open')?'400px':'0'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>Departments
+    </div>
+    <div class="dl" id="dl" style="max-height:400px;transition:max-height .22s ease;overflow:hidden">
+      <div class="di" onclick="nav('corp',null);setChannel('production','#production','Production & Sewing team')"><div class="dot" style="background:#F59E0B"></div># production</div>
+      <div class="di" onclick="nav('corp',null);setChannel('design','#design','Design & Patterns team')"><div class="dot" style="background:#A78BFA"></div># design</div>
+      <div class="di" onclick="nav('corp',null);setChannel('qc','#quality-control','QC inspectors & standards')"><div class="dot" style="background:#22C55E"></div># quality-control</div>
+      <div class="di" onclick="nav('corp',null);setChannel('sales','#sales','Sales & client relations')"><div class="dot" style="background:#3B82F6"></div># sales</div>
+      <div class="di" onclick="nav('corp',null);setChannel('marketing','#marketing','Marketing & social media')"><div class="dot" style="background:#EC4899"></div># marketing</div>
+      <div class="di" onclick="nav('corp',null);setChannel('hr','#hr-admin','HR & Administration')"><div class="dot" style="background:#14B8A6"></div># hr-admin</div>
+      <div class="di" onclick="nav('corp',null);setChannel('finance','#finance','Finance & Accounting')"><div class="dot" style="background:#F59E0B"></div># finance</div>
+      <div class="di" onclick="nav('corp',null);setChannel('warehouse','#warehouse','Warehouse & Logistics')"><div class="dot" style="background:#F97316"></div># warehouse</div>
+      <div class="di" onclick="nav('corp',null);setChannel('mgmt','#management','CEO & Directors')"><div class="dot" style="background:#EF4444"></div># management</div>
+    </div>
+
+    <div class="nl" style="margin-top:4px">Direct Messages</div>
+    <div class="ni" onclick="nav('msgs',null)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>Umida Nazarova
+    </div>
+    <div class="ni" onclick="nav('msgs',null)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>Dilnoza Karimova
+    </div>
+    <div class="ni" onclick="nav('msgs',null)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>Milana AI
+    </div>
+  </nav>
+  <div class="sb-user">
+    <div class="av" style="background:var(--pill-active-bg);color:var(--pill-active-c)">JU</div>
+    <div style="flex:1;overflow:hidden"><div class="un">Jasur Umarov</div><div class="ur">Sales Director</div></div>
+    <div class="ustat"></div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- ═══ DASHBOARD ═══ -->
+  <div class="page on" id="page-dashboard">
+    <div class="dg">
+      <div class="sc" onclick="nav('corp',document.querySelectorAll('.np')[2])">
+        <div class="si"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+        <div><div class="sv">47</div><div class="sl">Team Members</div><div class="sch">+3 this month</div></div>
+      </div>
+      <div class="sc" onclick="nav('corp',document.querySelectorAll('.np')[2])">
+        <div class="si"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+        <div><div class="sv">284</div><div class="sl">Messages Today</div><div class="sch">Very active</div></div>
+      </div>
+      <div class="sc">
+        <div class="si"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+        <div><div class="sv">512</div><div class="sl">Orders This Month</div><div class="sch">+18% vs last month</div></div>
+      </div>
+
+      <div class="wdg" style="grid-column:1/3">
+        <div class="wh">
+          <div class="wt"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10l6 6v10a2 2 0 0 1-2 2z"/></svg>Latest News</div>
+          <div class="wl" onclick="nav('news',document.querySelectorAll('.np')[1])">View all →</div>
+        </div>
+        <div class="ni2"><div class="av" style="width:24px;height:24px;font-size:9px;background:rgba(245,158,11,.12);color:#F59E0B;border-radius:6px">PRD</div><div class="nit" style="flex:1"><strong>New cutting machine installed</strong> — Production line B is now 30% faster.</div><div class="ntt">2h ago</div></div>
+        <div class="ni2"><div class="av" style="width:24px;height:24px;font-size:9px;background:rgba(34,197,94,.1);color:#22C55E;border-radius:6px">CEO</div><div class="nit" style="flex:1"><strong>Q2 target: 500 orders achieved!</strong> — Celebration dinner this Friday at 6PM.</div><div class="ntt">Yesterday</div></div>
+        <div class="ni2"><div class="av" style="width:24px;height:24px;font-size:9px;background:rgba(167,139,250,.1);color:#A78BFA;border-radius:6px">DES</div><div class="nit" style="flex:1"><strong>New Turkish fabric collection arrived</strong> — Premium cotton & linen samples in warehouse.</div><div class="ntt">2d ago</div></div>
+      </div>
+
+      <div class="wdg">
+        <div class="wh"><div class="wt">Recent Activity</div></div>
+        <div class="ni2"><div class="av" style="width:24px;height:24px;font-size:9px;background:var(--w07);color:var(--w60);border-radius:6px">UM</div><div class="nit" style="flex:1"><strong>Umida</strong> posted in #marketing</div><div class="ntt">5m</div></div>
+        <div class="ni2"><div class="av" style="width:24px;height:24px;font-size:9px;background:var(--w07);color:var(--w60);border-radius:6px">FA</div><div class="nit" style="flex:1"><strong>Feruza</strong> submitted QC report #47</div><div class="ntt">12m</div></div>
+        <div class="ni2"><div class="av" style="width:24px;height:24px;font-size:9px;background:rgba(59,130,246,.1);color:#93C5FD;border-radius:6px">AI</div><div class="nit" style="flex:1"><strong>Milana AI</strong> responded in #production</div><div class="ntt">20m</div></div>
+        <div class="ni2"><div class="av" style="width:24px;height:24px;font-size:9px;background:var(--w07);color:var(--w60);border-radius:6px">SH</div><div class="nit" style="flex:1"><strong>Sherzod</strong> updated inventory log</div><div class="ntt">1h</div></div>
+      </div>
+
+      <div class="qa">
+        <div class="qac" onclick="nav('corp',document.querySelectorAll('.np')[2])"><div class="qai"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div><div class="qal">Corp Chat</div></div>
+        <div class="qac" onclick="nav('ai',document.querySelectorAll('.np')[3])"><div class="qai"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div><div class="qal">Ask AI</div></div>
+        <div class="qac" onclick="nav('news',document.querySelectorAll('.np')[1])"><div class="qai"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10l6 6v10a2 2 0 0 1-2 2z"/></svg></div><div class="qal">News</div></div>
+        <div class="qac" onclick="nav('msgs',document.querySelectorAll('.np')[4])"><div class="qai"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg></div><div class="qal">Messages</div></div>
+        <div class="qac" onclick="nav('ideas',document.querySelectorAll('.np')[5])"><div class="qai"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26A7 7 0 0 1 5 9a7 7 0 0 1 7-7z"/><line x1="9" y1="21" x2="15" y2="21"/></svg></div><div class="qal">Ideas</div></div>
+        <div class="qac" onclick="nav('depts',document.querySelectorAll('.np')[6])"><div class="qai"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div><div class="qal">Departments</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ NEWS ═══ -->
+  <div class="page" id="page-news">
+    <div class="fbar">
+      <div class="ftab on" onclick="setFtab(this)">All</div>
+      <div class="ftab" onclick="setFtab(this)">Company</div>
+      <div class="ftab" onclick="setFtab(this)">Production</div>
+      <div class="ftab" onclick="setFtab(this)">HR</div>
+    </div>
+    <div class="np2">
+      <div class="ncard"><div class="nimg" style="background:linear-gradient(135deg,#1A1208,#18181D)"><svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="rgba(245,158,11,.35)" stroke-width="1"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></div><div class="nbody"><div class="nbadge" style="background:rgba(245,158,11,.1);color:#F59E0B">Production</div><div class="ntitle">New CNC Cutting Machine Installed in Line B</div><div class="nprev">Our new automated cutting machine increases throughput by 30% and reduces fabric waste. Full operation starts Monday.</div><div class="nmeta"><div class="av" style="width:16px;height:16px;font-size:7px;background:var(--w07);color:var(--w60)">ST</div>Sardor Tashmatov<div class="mdot"></div>2 hours ago</div></div></div>
+      <div class="ncard"><div class="nimg" style="background:linear-gradient(135deg,#0A1A10,#18181D)"><svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="rgba(34,197,94,.3)" stroke-width="1"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div><div class="nbody"><div class="nbadge" style="background:rgba(34,197,94,.1);color:#22C55E">Company</div><div class="ntitle">Q2 Milestone: 500 Orders Achieved!</div><div class="nprev">Milana Premium has officially reached 500 completed orders for Q2. A company record. Celebration dinner this Friday at 6PM.</div><div class="nmeta"><div class="av" style="width:16px;height:16px;font-size:7px;background:var(--pill-active-bg);color:var(--pill-active-c)">MY</div>Malika Yusupova<div class="mdot"></div>Yesterday</div></div></div>
+      <div class="ncard"><div class="nimg" style="background:linear-gradient(135deg,#120E1C,#18181D)"><svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="rgba(167,139,250,.3)" stroke-width="1"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg></div><div class="nbody"><div class="nbadge" style="background:rgba(167,139,250,.1);color:#A78BFA">Design</div><div class="ntitle">New Turkish Fabric Collection Arrived</div><div class="nprev">Premium cotton and linen samples from Istanbul. Designers please review and submit fabric selection by Thursday.</div><div class="nmeta"><div class="av" style="width:16px;height:16px;font-size:7px;background:var(--w07);color:var(--w60)">DK</div>Dilnoza Karimova<div class="mdot"></div>2 days ago</div></div></div>
+      <div class="ncard"><div class="nimg" style="background:linear-gradient(135deg,#0A1718,#18181D)"><svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="rgba(20,184,166,.3)" stroke-width="1"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="nbody"><div class="nbadge" style="background:rgba(20,184,166,.1);color:#14B8A6">HR</div><div class="ntitle">Safety Training — This Friday 10 AM</div><div class="nprev">Mandatory workplace safety refresher for all production staff. Room 3, Factory Building. 2 hours. Attendance recorded.</div><div class="nmeta"><div class="av" style="width:16px;height:16px;font-size:7px;background:var(--w07);color:var(--w60)">NR</div>Nargiza Rahimova<div class="mdot"></div>3 days ago</div></div></div>
+    </div>
+  </div>
+
+  <!-- ═══ CORPORATE CHAT ═══ -->
+  <div class="page" id="page-corp">
+    <div class="cl">
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div class="chbar" id="ch-bar">
+          <div class="dot" style="background:#3B82F6"></div>
+          <span class="chname"># general</span>
+          <span class="chdesc">— All 47 members · Milana AI active</span>
+        </div>
+        <div class="cm" id="corp-msgs">
+          <div class="cdiv"><div class="cdiv-l"></div><div class="cdiv-t">Today, June 4</div><div class="cdiv-l"></div></div>
+          <div class="msg"><div class="mav" style="background:var(--pill-active-bg);color:var(--pill-active-c)">MY</div><div class="mb"><div class="mh"><span class="mn">Malika Yusupova</span><span class="mtag tmgr">CEO</span><span class="mt">9:02 AM</span></div><div class="mbub">Assalomu alaykum, everyone! Big announcement: we hit 500 orders this quarter. I'm extremely proud of each of you. Celebration dinner Friday at 6PM — all departments please attend!</div></div></div>
+          <div class="msg"><div class="mav" style="background:rgba(59,130,246,.15);color:#93C5FD">AI</div><div class="mb"><div class="mh"><span class="mn">Milana AI</span><span class="mtag tai">AI</span><span class="mt">9:03 AM</span></div><div class="mbub ai">Congratulations to the entire Milana Premium team! 500 orders is a significant growth milestone. Based on current trajectory, Q3 is projected to exceed 650 orders if production capacity is maintained. Well done, everyone!</div></div></div>
+          <div class="msg"><div class="mav" style="background:rgba(245,158,11,.15);color:#F59E0B">ST</div><div class="mb"><div class="mh"><span class="mn">Sardor Tashmatov</span><span class="mt">9:15 AM</span></div><div class="mbub">The new cutting machine is installed and tested. Line B starts full production Monday. We should see a 30% speed increase. Thanks to the warehouse team for clearing space so quickly!</div></div></div>
+          <div class="msg"><div class="mav" style="background:rgba(249,115,22,.15);color:#F97316">SE</div><div class="mb"><div class="mh"><span class="mn">Sherzod Ergashev</span><span class="mt">9:18 AM</span></div><div class="mbub">Happy to help, Sardor! Inventory is reorganized. New fabric shipment from Istanbul also arrived — Dilnoza please check your email for the sample list.</div></div></div>
+          <div class="msg"><div class="mav" style="background:rgba(167,139,250,.15);color:#A78BFA">DK</div><div class="mb"><div class="mh"><span class="mn">Dilnoza Karimova</span><span class="mt">9:31 AM</span></div><div class="mbub">Got it! The Turkish linens look exceptional. I'll review with the design team this afternoon. Can we do a quick sync at 3PM?</div></div></div>
+          <div class="msg"><div class="mav" style="background:rgba(236,72,153,.15);color:#EC4899">UM</div><div class="mb"><div class="mh"><span class="mn">Umida Nazarova</span><span class="mt">10:05 AM</span></div><div class="mbub">Marketing update: our Instagram page hit 5,000 followers! Running a campaign this weekend. Sales team, can you share some client testimonials I can use?</div></div></div>
+          <div class="msg own"><div class="mav" style="background:var(--pill-active-bg);color:var(--pill-active-c)">JU</div><div class="mb"><div class="mh"><span class="mn">You</span><span class="mt">10:12 AM</span></div><div class="mbub own">On it Umida! I'll collect 5–6 strong testimonials and send by noon. We have great feedback from the Tashkent clients.</div></div></div>
+        </div>
+        <div class="cia">
+          <div style="font-size:11px;color:var(--w30);margin-bottom:6px;font-weight:600">Mention @AI in your message to get a response from Milana AI</div>
+          <div class="cib">
+            <textarea id="corp-input" placeholder="Message #general..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg('corp')}"></textarea>
+            <button class="sbtn" onclick="sendMsg('corp')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+          </div>
+        </div>
+      </div>
+      <div class="mp"><div class="pt">Online — 12</div><div id="members-list"></div></div>
+    </div>
+  </div>
+
+  <!-- ═══ AI ASSISTANT ═══ -->
+  <div class="page" id="page-ai">
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+      <div class="cm" id="ai-msgs">
+        <div class="aii">
+          <div class="ailogo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--pill-active-c)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg></div>
+          <div style="font-size:22px;font-weight:800;color:var(--w90)">Milana AI</div>
+          <div style="font-size:13.5px;color:var(--w60);max-width:360px;line-height:1.6">Your personal assistant for drafting messages, analyzing data, generating reports, and business insights — tailored for Milana Premium.</div>
+          <div class="aichips">
+            <div class="chip" onclick="askAI('Summarize production targets')">Summarize production targets</div>
+            <div class="chip" onclick="askAI('Draft a client follow-up email')">Draft client email</div>
+            <div class="chip" onclick="askAI('Analyze our Q2 performance')">Analyze Q2 performance</div>
+            <div class="chip" onclick="askAI('Generate a weekly report template')">Weekly report template</div>
+          </div>
+        </div>
+      </div>
+      <div class="cia">
+        <div class="cib">
+          <textarea id="ai-input" placeholder="Ask Milana AI anything..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAI()}"></textarea>
+          <button class="sbtn" onclick="sendAI()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ MESSAGES ═══ -->
+  <div class="page" id="page-msgs">
+    <div class="cl">
+      <div class="dms">
+        <div style="padding:10px 14px 5px;font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--w30)">Direct Messages</div>
+        <div id="dm-list"></div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div class="chbar" id="dm-header">
+          <div class="av" style="width:24px;height:24px;font-size:9px;background:rgba(236,72,153,.15);color:#EC4899">UM</div>
+          <span class="chname">Umida Nazarova</span>
+          <div style="width:7px;height:7px;background:var(--ok);border-radius:50%"></div>
+          <span class="chdesc">Marketing</span>
+        </div>
+        <div class="cm" id="dm-msgs">
+          <div class="cdiv"><div class="cdiv-l"></div><div class="cdiv-t">Today</div><div class="cdiv-l"></div></div>
+          <div class="msg"><div class="mav" style="background:rgba(236,72,153,.15);color:#EC4899">UM</div><div class="mb"><div class="mh"><span class="mn">Umida Nazarova</span><span class="mt">9:45 AM</span></div><div class="mbub">Hey Jasur! Do you have the latest client list from Tashkent? I need it for the campaign targeting.</div></div></div>
+          <div class="msg own"><div class="mav" style="background:var(--pill-active-bg);color:var(--pill-active-c)">JU</div><div class="mb"><div class="mh"><span class="mn">You</span><span class="mt">9:52 AM</span></div><div class="mbub own">Yes! I'll export it from CRM and send by 11. Need any specific filters — city, order volume?</div></div></div>
+          <div class="msg"><div class="mav" style="background:rgba(236,72,153,.15);color:#EC4899">UM</div><div class="mb"><div class="mh"><span class="mn">Umida Nazarova</span><span class="mt">9:54 AM</span></div><div class="mbub">Orders above 10 units and Tashkent / Samarkand regions please. You're the best!</div></div></div>
+          <div class="msg own"><div class="mav" style="background:var(--pill-active-bg);color:var(--pill-active-c)">JU</div><div class="mb"><div class="mh"><span class="mn">You</span><span class="mt">10:00 AM</span></div><div class="mbub own">Done, sending now. Also attached 6 testimonials for the Instagram campaign.</div></div></div>
+        </div>
+        <div class="cia">
+          <div class="cib">
+            <textarea id="dm-input" placeholder="Message Umida Nazarova..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMsg('dm')}"></textarea>
+            <button class="sbtn" onclick="sendMsg('dm')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ DEPARTMENTS ═══ -->
+  <div class="page" id="page-depts">
+    <div class="depg">
+      <div class="dc" onclick="nav('corp',null);setChannel('production','#production','Production & Sewing team')"><div class="dci"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/><line x1="10" y1="14" x2="14" y2="14"/></svg></div><div class="dcn">Production & Sewing</div><div class="dcd">Main factory floor, cutting, stitching, pressing and finishing teams.</div><div class="dcf"><div class="dcc">18 members</div><div class="dcl">Open →</div></div></div>
+      <div class="dc" onclick="nav('corp',null);setChannel('design','#design','Design & Patterns team')"><div class="dci"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div><div class="dcn">Design & Patterns</div><div class="dcd">Fashion designers, pattern makers, sample room and trend research.</div><div class="dcf"><div class="dcc">7 members</div><div class="dcl">Open →</div></div></div>
+      <div class="dc" onclick="nav('corp',null);setChannel('qc','#quality-control','QC inspectors & standards')"><div class="dci"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div><div class="dcn">Quality Control</div><div class="dcd">QC inspectors, standards compliance, defect tracking and approvals.</div><div class="dcf"><div class="dcc">5 members</div><div class="dcl">Open →</div></div></div>
+      <div class="dc" onclick="nav('corp',null);setChannel('sales','#sales','Sales & client relations')"><div class="dci"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div class="dcn">Sales</div><div class="dcd">Client relations, order management, wholesale accounts and B2B partnerships.</div><div class="dcf"><div class="dcc">6 members</div><div class="dcl">Open →</div></div></div>
+      <div class="dc" onclick="nav('corp',null);setChannel('marketing','#marketing','Marketing & social media')"><div class="dci"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div><div class="dcn">Marketing</div><div class="dcd">Social media, campaigns, brand identity, photography and digital marketing.</div><div class="dcf"><div class="dcc">4 members</div><div class="dcl">Open →</div></div></div>
+      <div class="dc" onclick="nav('corp',null);setChannel('hr','#hr-admin','HR & Administration')"><div class="dci"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div><div class="dcn">HR & Admin</div><div class="dcd">Human resources, recruitment, payroll processing and office administration.</div><div class="dcf"><div class="dcc">3 members</div><div class="dcl">Open →</div></div></div>
+      <div class="dc" onclick="nav('corp',null);setChannel('finance','#finance','Finance & Accounting')"><div class="dci"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div><div class="dcn">Finance & Accounting</div><div class="dcd">Budgeting, cost control, invoicing, tax compliance and financial reporting.</div><div class="dcf"><div class="dcc">3 members</div><div class="dcl">Open →</div></div></div>
+      <div class="dc" onclick="nav('corp',null);setChannel('warehouse','#warehouse','Warehouse & Logistics')"><div class="dci"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M5 8h14M5 8a2 2 0 1 0 0-4h14a2 2 0 1 0 0 4M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/></svg></div><div class="dcn">Warehouse & Logistics</div><div class="dcd">Fabric inventory, raw materials, finished goods and shipping coordination.</div><div class="dcf"><div class="dcc">4 members</div><div class="dcl">Open →</div></div></div>
+      <div class="dc" onclick="nav('corp',null);setChannel('mgmt','#management','CEO & Directors')"><div class="dci"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg></div><div class="dcn">Management</div><div class="dcd">CEO, directors, department heads, strategic planning and board communications.</div><div class="dcf"><div class="dcc">3 members</div><div class="dcl">Open →</div></div></div>
+    </div>
+  </div>
+
+  <!-- ═══ IDEAS ═══ -->
+  <div class="page" id="page-ideas">
+    <div class="ip">
+      <div class="ih">
+        <div class="itabs">
+          <div class="itab on" onclick="setItab(this)">All Ideas</div>
+          <div class="itab" onclick="setItab(this)">Suggestions</div>
+          <div class="itab" onclick="setItab(this)">Inspirations</div>
+          <div class="itab" onclick="setItab(this)">In Progress</div>
+        </div>
+        <button class="nibtn" onclick="document.getElementById('idea-modal').classList.add('open')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Idea
+        </button>
+      </div>
+      <div class="igrid">
+        <div class="ic"><div class="icat">Sustainability</div><div class="itn">Switch to Eco-Friendly Packaging</div><div class="ibd">Replace plastic bags with biodegradable kraft paper packaging. Reduces costs 15% and aligns with EU export standards.</div><div class="ift"><div class="iauth"><div class="iav">UM</div>Umida N.</div><button class="vbtn" onclick="vote(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg><span>24</span></button></div></div>
+        <div class="ic"><div class="icat">Operations</div><div class="itn">Digital Production Tracking System</div><div class="ibd">QR-code based tracking for each garment through production stages. Real-time dashboard for all managers.</div><div class="ift"><div class="iauth"><div class="iav">ST</div>Sardor T.</div><button class="vbtn voted" onclick="vote(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg><span>38</span></button></div></div>
+        <div class="ic"><div class="icat">Marketing</div><div class="itn">Launch an Online Product Catalog</div><div class="ibd">Build a Telegram bot or website showcasing collections with pricing. Clients can browse and order directly online.</div><div class="ift"><div class="iauth"><div class="iav">UM</div>Umida N.</div><button class="vbtn" onclick="vote(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg><span>31</span></button></div></div>
+        <div class="ic"><div class="icat">Culture</div><div class="itn">Monthly Employee Recognition Program</div><div class="ibd">Recognize the top performer from each department monthly. Small bonus + feature in company chat and social media.</div><div class="ift"><div class="iauth"><div class="iav">NR</div>Nargiza R.</div><button class="vbtn" onclick="vote(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg><span>19</span></button></div></div>
+        <div class="ic"><div class="icat">Design</div><div class="itn">Create a Seasonal Lookbook</div><div class="ibd">Professional photo lookbook each season. Attracts premium B2B clients and strengthens brand identity internationally.</div><div class="ift"><div class="iauth"><div class="iav">DK</div>Dilnoza K.</div><button class="vbtn" onclick="vote(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg><span>27</span></button></div></div>
+        <div class="ic"><div class="icat">Facilities</div><div class="itn">Staff Rest Area & Canteen</div><div class="ibd">A proper break room with affordable meals boosts morale and productivity. Similar factories saw 12% output improvement.</div><div class="ift"><div class="iauth"><div class="iav">JU</div>Jasur U.</div><button class="vbtn" onclick="vote(this)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg><span>41</span></button></div></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+</div><!-- /app-body -->
+</div><!-- /app -->
+
+<!-- MODAL -->
+<div class="ov" id="idea-modal" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="modal">
+    <div class="mttl"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Submit New Idea</div>
+    <input class="minp" type="text" placeholder="Idea title...">
+    <select class="minp"><option value="">Select category...</option><option>Suggestion</option><option>Inspiration</option><option>Process Improvement</option><option>Culture</option><option>Design</option><option>Operations</option><option>Marketing</option><option>Facilities</option></select>
+    <textarea class="minp" placeholder="Describe your idea in detail..."></textarea>
+    <div class="mac">
+      <button class="bcx" onclick="document.getElementById('idea-modal').classList.remove('open')">Cancel</button>
+      <button class="bsb" onclick="document.getElementById('idea-modal').classList.remove('open')">Submit Idea</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── THEME ── */
+let dark=true;
+function toggleTheme(){
+  dark=!dark;
+  document.body.classList.toggle('light',!dark);
+  const ic=document.getElementById('theme-icon');
+  if(dark){
+    ic.innerHTML='<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+  } else {
+    ic.innerHTML='<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+  }
+  // Update oi (online indicator) border color dynamically
+  document.querySelectorAll('.oi').forEach(o=>o.style.borderColor='var(--bg2)');
+}
+
+/* ── MEMBERS ── */
+const members=[
+  {i:'MY',n:'Malika Yusupova',r:'CEO',bg:'var(--pill-active-bg)',c:'var(--pill-active-c)',s:'online'},
+  {i:'DK',n:'Dilnoza Karimova',r:'Design Lead',bg:'rgba(167,139,250,.15)',c:'#A78BFA',s:'online'},
+  {i:'ST',n:'Sardor Tashmatov',r:'Production',bg:'rgba(245,158,11,.15)',c:'#F59E0B',s:'online'},
+  {i:'JU',n:'Jasur Umarov',r:'Sales Dir.',bg:'var(--pill-active-bg)',c:'var(--pill-active-c)',s:'online'},
+  {i:'NR',n:'Nargiza Rahimova',r:'HR Manager',bg:'rgba(20,184,166,.15)',c:'#14B8A6',s:'online'},
+  {i:'FA',n:'Feruza Alieva',r:'QC Lead',bg:'rgba(34,197,94,.15)',c:'#22C55E',s:'online'},
+  {i:'UM',n:'Umida Nazarova',r:'Marketing',bg:'rgba(236,72,153,.15)',c:'#EC4899',s:'away'},
+  {i:'BM',n:'Bobur Mirzayev',r:'Finance',bg:'rgba(245,158,11,.12)',c:'#F59E0B',s:'online'},
+  {i:'SE',n:'Sherzod Ergashev',r:'Warehouse',bg:'rgba(249,115,22,.15)',c:'#F97316',s:'online'},
+  {i:'KH',n:'Kamola Hasanova',r:'Designer',bg:'rgba(167,139,250,.12)',c:'#A78BFA',s:'offline'},
+  {i:'AI',n:'Milana AI',r:'Assistant',bg:'rgba(59,130,246,.15)',c:'#93C5FD',s:'online'},
+];
+const sc={online:'var(--ok)',away:'var(--warn)',offline:'var(--w30)'};
+
+function buildMembers(){
+  document.getElementById('members-list').innerHTML=members.map(m=>`
+    <div class="mi">
+      <div class="mav2" style="background:${m.bg};color:${m.c}">${m.i}<div class="oi" style="background:${sc[m.s]};border-color:var(--bg2)"></div></div>
+      <div class="mn2">${m.n}</div>
+    </div>`).join('');
+}
+
+function buildDMs(){
+  const dms=[
+    {m:members[6],prev:'Do you have the client list?',u:2,a:true},
+    {m:members[1],prev:'3PM sync confirmed!',u:0,a:false},
+    {m:members[2],prev:'Line B ready Monday',u:1,a:false},
+    {m:members[4],prev:'Safety training reminder',u:0,a:false},
+    {m:members[10],prev:'I can help with the report',u:3,a:false},
+    {m:members[5],prev:'QC report #47 submitted',u:0,a:false},
+  ];
+  document.getElementById('dm-list').innerHTML=dms.map(d=>`
+    <div class="dmi ${d.a?'on':''}" onclick="selectDM(this,'${d.m.n}','${d.m.i}','${d.m.c}','${d.m.bg}','${d.m.r}')">
+      <div class="dmav" style="background:${d.m.bg};color:${d.m.c}">${d.m.i}<div class="oi" style="background:${sc[d.m.s]}"></div></div>
+      <div style="flex:1;overflow:hidden"><div class="dmn">${d.m.n}</div><div class="dmp">${d.prev}</div></div>
+      ${d.u?`<div class="dmu">${d.u}</div>`:''}
+    </div>`).join('');
+}
+
+function selectDM(el,name,initials,color,bg,role){
+  document.querySelectorAll('.dmi').forEach(d=>d.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('dm-header').innerHTML=`
+    <div class="av" style="width:24px;height:24px;font-size:9px;background:${bg};color:${color}">${initials}</div>
+    <span class="chname">${name}</span>
+    <div style="width:7px;height:7px;background:var(--ok);border-radius:50%"></div>
+    <span class="chdesc">${role}</span>`;
+  document.getElementById('dm-input').placeholder=`Message ${name}...`;
+}
+
+function setSbActive(el){document.querySelectorAll('.sidebar .ni').forEach(n=>n.classList.remove('on'));el.classList.add('on');}
+
+function setChannel(id,name,desc){
+  const bar=document.getElementById('ch-bar');
+  const colors={production:'#F59E0B',design:'#A78BFA',qc:'#22C55E',sales:'#3B82F6',marketing:'#EC4899',hr:'#14B8A6',finance:'#F59E0B',warehouse:'#F97316',mgmt:'#EF4444',general:'#3B82F6'};
+  bar.innerHTML=`<div class="dot" style="background:${colors[id]||'#3B82F6'}"></div><span class="chname">${name}</span><span class="chdesc">— ${desc}</span>`;
+}
+
+/* ── NAVIGATION ── */
+function nav(id,pill){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.getElementById('page-'+id).classList.add('on');
+  if(pill){
+    document.querySelectorAll('.np').forEach(p=>p.classList.remove('on'));
+    pill.classList.add('on');
+  }
+  if(id==='corp'||id==='msgs'){
+    setTimeout(()=>{
+      const m=document.getElementById(id==='corp'?'corp-msgs':'dm-msgs');
+      if(m)m.scrollTop=m.scrollHeight;
+    },50);
+  }
+}
+
+function setLang(el){document.querySelectorAll('.lb').forEach(b=>b.classList.remove('on'));el.classList.add('on');}
+function setFtab(el){document.querySelectorAll('.fbar .ftab').forEach(t=>t.classList.remove('on'));el.classList.add('on');}
+function setItab(el){document.querySelectorAll('.itab').forEach(t=>t.classList.remove('on'));el.classList.add('on');}
+
+/* ── CHAT ── */
+function ts(){const n=new Date();return n.getHours()+':'+(n.getMinutes()<10?'0':'')+n.getMinutes();}
+
+function sendMsg(type){
+  const inp=document.getElementById(type+'-input');
+  const text=inp.value.trim();if(!text)return;
+  const c=document.getElementById(type==='corp'?'corp-msgs':'dm-msgs');
+  const m=document.createElement('div');m.className='msg own';
+  m.innerHTML=`<div class="mav" style="background:var(--pill-active-bg);color:var(--pill-active-c)">JU</div>
+    <div class="mb"><div class="mh"><span class="mn">You</span><span class="mt">${ts()}</span></div>
+    <div class="mbub own">${text}</div></div>`;
+  c.appendChild(m);inp.value='';c.scrollTop=c.scrollHeight;
+  if(type==='corp'&&(text.toLowerCase().includes('@ai')||text.toLowerCase().includes('@milana'))){
+    setTimeout(()=>aiReply(c),1400);
+  }
+}
+
+const corpReplies=['Understood! Based on current data, I can help analyze that further. Would you like a detailed breakdown?','Great point. Production data shows consistent improvement this quarter — Q3 looks very promising.','For Milana Premium, the optimal approach would be to cross-reference sales targets with inventory levels.','Noted — flagged for the weekly summary. Let me know if you need any specific data analysis or report.','Based on Q2 performance, Milana Premium is tracking 18% above Q1. Projected Q3: 620–660 orders.'];
+
+function aiReply(c){
+  const t=document.createElement('div');t.className='msg';t.id='t-ind';
+  t.innerHTML=`<div class="mav" style="background:rgba(59,130,246,.15);color:#93C5FD">AI</div><div class="mb"><div class="mh"><span class="mn">Milana AI</span><span class="mtag tai">AI</span></div><div class="mbub ai"><div class="tdots"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div></div></div>`;
+  c.appendChild(t);c.scrollTop=c.scrollHeight;
+  setTimeout(()=>{
+    const ti=document.getElementById('t-ind');if(ti)ti.remove();
+    const r=corpReplies[Math.floor(Math.random()*corpReplies.length)];
+    const m=document.createElement('div');m.className='msg';
+    m.innerHTML=`<div class="mav" style="background:rgba(59,130,246,.15);color:#93C5FD">AI</div><div class="mb"><div class="mh"><span class="mn">Milana AI</span><span class="mtag tai">AI</span><span class="mt">${ts()}</span></div><div class="mbub ai">${r}</div></div>`;
+    c.appendChild(m);c.scrollTop=c.scrollHeight;
+  },2000);
+}
+
+const aiReplies=["I'm here to help with anything Milana Premium needs! I can assist with drafting communications, analyzing data, generating reports, or answering operational questions.","Based on Q2 performance, Milana Premium is on a strong growth trajectory. With 512 orders completed, you're tracking 18% above Q1. Q3 could reach 630–660 orders.","For the Turkish fabric collection: I recommend prioritizing premium cotton (80% of orders use this) and 2–3 linen variants for the summer line. Want a detailed analysis?","I can draft that for you. Here's a template: \"Dear [Client Name], thank you for your continued partnership with Milana Premium. I wanted to follow up on your recent order...\""];
+
+function askAI(q){document.getElementById('ai-input').value=q;sendAI();}
+
+function sendAI(){
+  const inp=document.getElementById('ai-input');
+  const text=inp.value.trim();if(!text)return;
+  const c=document.getElementById('ai-msgs');
+  const intro=c.querySelector('.aii');if(intro)intro.remove();
+  const um=document.createElement('div');um.className='msg own';
+  um.innerHTML=`<div class="mav" style="background:var(--pill-active-bg);color:var(--pill-active-c)">JU</div><div class="mb"><div class="mh"><span class="mn">You</span><span class="mt">${ts()}</span></div><div class="mbub own">${text}</div></div>`;
+  c.appendChild(um);inp.value='';c.scrollTop=c.scrollHeight;
+  const t=document.createElement('div');t.className='msg';t.id='ai-t';
+  t.innerHTML=`<div class="mav" style="background:rgba(59,130,246,.15);color:#93C5FD">AI</div><div class="mb"><div class="mh"><span class="mn">Milana AI</span><span class="mtag tai">AI</span></div><div class="mbub ai"><div class="tdots"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div></div></div>`;
+  c.appendChild(t);c.scrollTop=c.scrollHeight;
+  setTimeout(()=>{
+    const ti=document.getElementById('ai-t');if(ti)ti.remove();
+    const r=aiReplies[Math.floor(Math.random()*aiReplies.length)];
+    const am=document.createElement('div');am.className='msg';
+    am.innerHTML=`<div class="mav" style="background:rgba(59,130,246,.15);color:#93C5FD">AI</div><div class="mb"><div class="mh"><span class="mn">Milana AI</span><span class="mtag tai">AI</span><span class="mt">${ts()}</span></div><div class="mbub ai">${r}</div></div>`;
+    c.appendChild(am);c.scrollTop=c.scrollHeight;
+  },1800);
+}
+
+function vote(btn){
+  btn.classList.toggle('voted');
+  const s=btn.querySelector('span');
+  s.textContent=parseInt(s.textContent)+(btn.classList.contains('voted')?1:-1);
+}
+
+document.querySelectorAll('textarea').forEach(ta=>{
+  ta.addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,110)+'px';});
+});
+
+buildMembers();buildDMs();
+</script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isText(value, max) {
+      return value is string && value.size() <= max;
+    }
+
+    function ownsCustomerDoc(customerId) {
+      return request.auth != null && request.auth.uid == customerId;
+    }
+
+    function validCustomerProfile(customerId) {
+      return ownsCustomerDoc(customerId) &&
+        request.resource.data.keys().hasAll(['email', 'name', 'phone', 'updated_at']) &&
+        isText(request.resource.data.email, 120) &&
+        isText(request.resource.data.name, 80) &&
+        isText(request.resource.data.phone, 25) &&
+        validCustomerDeliveryProfile() &&
+        validSavedProducts() &&
+        validRecentProducts() &&
+        validProfileCart();
+    }
+
+    function validCustomerDeliveryProfile() {
+      return (!request.resource.data.keys().hasAny(['city']) ||
+          isText(request.resource.data.city, 80)) &&
+        (!request.resource.data.keys().hasAny(['address']) ||
+          isText(request.resource.data.address, 200));
+    }
+
+    function validSavedProducts() {
+      return !request.resource.data.keys().hasAny(['saved_product_ids']) ||
+        (request.resource.data.saved_product_ids is list &&
+          request.resource.data.saved_product_ids.size() <= 500);
+    }
+
+    function validRecentProducts() {
+      return !request.resource.data.keys().hasAny(['recent_product_ids']) ||
+        (request.resource.data.recent_product_ids is list &&
+          request.resource.data.recent_product_ids.size() <= 100);
+    }
+
+    function validProfileCart() {
+      return !request.resource.data.keys().hasAny(['cart_items']) ||
+        (request.resource.data.cart_items is list &&
+          request.resource.data.cart_items.size() <= 100);
+    }
+
+    function ownsResource() {
+      return request.auth != null &&
+        resource.data.keys().hasAny(['customer_id']) &&
+        resource.data.customer_id == request.auth.uid;
+    }
+
+    match /products/{productId} {
+      allow read: if resource.data.active == true;
+      allow write: if false;
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /customers/{customerId} {
+      allow read: if ownsCustomerDoc(customerId);
+      allow create, update: if validCustomerProfile(customerId);
+      allow delete: if false;
+    }
+
+    match /orders/{orderId} {
+      allow read: if ownsResource();
+      allow create, update, delete: if false;
+    }
+
+    match /payments/{paymentId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /support_requests/{ticketId} {
+      allow read: if ownsResource();
+      allow create, update, delete: if false;
+    }
+
+    match /erp_events/{eventId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /payment_webhook_events/{eventId} {
+      allow read, create, update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

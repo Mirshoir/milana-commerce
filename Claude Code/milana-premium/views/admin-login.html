@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход — MILANA PREMIUM</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%235c1f2d'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='34' fill='%23f4efe6' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+
+  <div class="login">
+    <form class="login__card" id="login-form" autocomplete="on">
+      <p class="login__brand">Milana <span>Premium · Admin</span></p>
+      <label>Логин
+        <input type="text" name="login" autocomplete="username" required autofocus spellcheck="false" autocapitalize="off">
+      </label>
+      <label>Пароль
+        <input type="password" name="password" autocomplete="current-password" required>
+      </label>
+      <p class="login__err" id="login-err" hidden></p>
+      <button class="abtn abtn--primary" type="submit" id="login-btn">Войти</button>
+      <p class="login__hint">Доступ только для администратора.<br>Забыли пароль? На компьютере с сайтом выполните<br><code>node tools/reset-password.js НовыйПароль</code></p>
+    </form>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+      const form = document.getElementById("login-form");
+      const err = document.getElementById("login-err");
+      const btn = document.getElementById("login-btn");
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        err.hidden = true;
+        btn.disabled = true;
+        btn.textContent = "Проверяем…";
+        try {
+          const fd = new FormData(form);
+          const r = await fetch("/api/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ login: fd.get("login").trim(), password: fd.get("password") }),
+          });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            err.textContent = data.error === "rate_limited"
+              ? "Слишком много попыток — подождите 15 минут."
+              : "Неверный логин или пароль.";
+            err.hidden = false;
+            return;
+          }
+          location.replace("/admin");
+        } catch {
+          err.textContent = "Сервер недоступен. Проверьте, что node server.js запущен.";
+          err.hidden = false;
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Войти";
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

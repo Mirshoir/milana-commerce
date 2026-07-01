@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: milana-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: milana
+      POSTGRES_USER: milana
+      POSTGRES_PASSWORD: milana_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - milana_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U milana -d milana"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  milana_postgres_data:

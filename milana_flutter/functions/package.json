@@ -1,0 +1,16 @@
+{
+  "name": "milana-firebase-functions",
+  "private": true,
+  "engines": {
+    "node": "22"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.6.0",
+    "firebase-functions": "^7.0.1"
+  },
+  "devDependencies": {}
+}

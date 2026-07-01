@@ -1,0 +1,95 @@
+{
+    "name": "Milana Premium",
+    "short_name": "Milana",
+    "id": "/",
+    "start_url": ".",
+    "scope": ".",
+    "lang": "uz",
+    "dir": "ltr",
+    "display": "standalone",
+    "display_override": ["standalone", "minimal-ui"],
+    "background_color": "#fffbf3",
+    "theme_color": "#6b1f34",
+    "description": "Milana Premium wholesale clothing catalog and ordering app.",
+    "orientation": "portrait-primary",
+    "categories": ["shopping", "business", "lifestyle"],
+    "prefer_related_applications": false,
+    "shortcuts": [
+        {
+            "name": "Katalog",
+            "short_name": "Katalog",
+            "description": "Milana Premium katalogini ochish",
+            "url": "/",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                }
+            ]
+        },
+        {
+            "name": "Savat",
+            "short_name": "Savat",
+            "description": "Qop buyurtma savatini ochish",
+            "url": "/?tab=cart",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                }
+            ]
+        },
+        {
+            "name": "Yordam",
+            "short_name": "Yordam",
+            "description": "Menejer bilan bog‘lanish",
+            "url": "/?tab=support",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                }
+            ]
+        },
+        {
+            "name": "Akkaunt",
+            "short_name": "Akkaunt",
+            "description": "Buyurtmalar va murojaatlarni ko‘rish",
+            "url": "/?tab=account",
+            "icons": [
+                {
+                    "src": "icons/Icon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png"
+                }
+            ]
+        }
+    ],
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

@@ -1,0 +1,43 @@
+# OS/editor
+.DS_Store
+*.swp
+*.log
+.idea/
+
+# Local assistant/tooling state
+**/.claude/
+
+# Node/Flutter generated files
+node_modules/
+**/node_modules/
+.dart_tool/
+**/.dart_tool/
+build/
+**/build/
+.flutter-plugins-dependencies
+
+# Runtime data and secrets
+**/data/*.db
+**/data/*.db-shm
+**/data/*.db-wal
+**/data/*.env
+**/data/*.pid
+**/data/ADMIN-PASSWORD.txt
+**/data/uploads/
+**/tmp/
+**/.env
+**/.env.*
+
+# Keep safe examples tracked
+!**/.env.example
+!**/.env.*.example
+
+# Firebase/native generated secrets
+**/android/app/google-services.json
+**/android/key.properties
+**/android/app/upload-keystore.jks
+**/ios/Runner/GoogleService-Info.plist
+**/firebase/web-app-config.json
+**/firebase/flutter-dart-defines.env
+**/firebase/mobile-dart-defines.env
+**/firebase/image-cache/

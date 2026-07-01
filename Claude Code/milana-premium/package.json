@@ -1,0 +1,21 @@
+{
+  "name": "milana-premium",
+  "version": "1.0.0",
+  "description": "MILANA PREMIUM — trilingual loungewear e-commerce site with admin panel and PostgreSQL migration path.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "postgres:schema": "node tools/apply-postgres-schema.js",
+    "postgres:migrate": "node tools/migrate-sqlite-to-postgres.js",
+    "postgres:migrate:dry": "node tools/migrate-sqlite-to-postgres.js --dry-run"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "pg": "^8.22.0"
+  }
+}

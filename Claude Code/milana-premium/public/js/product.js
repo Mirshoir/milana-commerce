@@ -1,0 +1,158 @@
+/* ============================================================
+   MILANA — product detail page (/p/:slug)
+   ============================================================ */
+(() => {
+  "use strict";
+
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const isVideo = (u) => /\.(mp4|webm)(\?|$)/i.test(u || "");
+
+  const slug = location.pathname.startsWith("/p/")
+    ? location.pathname.split("/")[2]
+    : new URLSearchParams(location.search).get("slug");
+
+  let p = null;
+  let qty = 1;
+  let imgIdx = 0;
+
+  function tagChip(prod) {
+    if (prod.tag === "bestseller") return `<span class="product__tag pd__tagchip">${I18N.t("best.tagBest")}</span>`;
+    if (prod.tag === "new") return `<span class="product__tag product__tag--new pd__tagchip">${I18N.t("best.tagNew")}</span>`;
+    if (prod.tag === "sale" && prod.old_price) return `<span class="product__tag product__tag--sale pd__tagchip">−${Math.round((1 - prod.price / prod.old_price) * 100)}%</span>`;
+    return "";
+  }
+
+  function renderGallery() {
+    const cur = p.images[imgIdx] || "";
+    const poster = p.images.find((u) => !isVideo(u)) || "";
+    const main = isVideo(cur)
+      ? `<video src="${esc(cur)}" controls autoplay muted loop playsinline preload="metadata"${poster ? ` poster="${esc(poster)}"` : ""}></video>`
+      : `<img src="${esc(cur)}" alt="${esc(p.name)}">`;
+    $("#pd-main").innerHTML = tagChip(p) + main;
+    $("#pd-thumbs").innerHTML = p.images.map((u, i) => {
+      const vid = isVideo(u);
+      const thumb = vid ? (poster ? `<img src="${esc(poster)}" alt="">` : "") : `<img src="${esc(u)}" alt="">`;
+      return `<button data-img="${i}" class="${i === imgIdx ? "is-on" : ""}${vid ? " is-video" : ""}" aria-label="Media ${i + 1}">${thumb}</button>`;
+    }).join("");
+  }
+
+  function render() {
+    const lang = I18N.lang;
+    document.title = p.name + " — MILANA PREMIUM";
+    $("#crumb-name").textContent = p.name;
+    $("#pd-cat").textContent = I18N.catName(p.category);
+    $("#pd-name").textContent = p.name;
+    $("#pd-rating").innerHTML = `<svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} ${I18N.t("best.reviews")})</span>`;
+    $("#pd-price").innerHTML = `<strong>${I18N.fmtPrice(p.price)}</strong>${p.old_price ? `<s>${I18N.fmtPrice(p.old_price)}</s>` : ""}<small>${I18N.t("cart.unitPrice")}</small>`;
+    $("#pd-fabric").textContent = (p.fabric[lang] || p.fabric.en || "");
+    $("#pd-desc").textContent = (p.desc[lang] || p.desc.en || "");
+    $("#pd-care").textContent = (p.fabric[lang] || p.fabric.en || "") + "\n" + careLine();
+    renderQty();
+    renderGallery();
+
+    /* sizes */
+    const wrap = $("#pd-sizes");
+    if (p.sizes.length) {
+      wrap.innerHTML = p.sizes.map((s) =>
+        `<button type="button" disabled>${esc(s)}</button>`).join("");
+      wrap.parentElement?.classList?.remove("hidden");
+    } else {
+      wrap.previousElementSibling.style.display = "none";
+      wrap.style.display = "none";
+    }
+
+    /* related */
+    if (p.related && p.related.length) {
+      $("#related").hidden = false;
+      $("#related-grid").innerHTML = p.related.map((r) => `
+        <article class="product">
+          <div class="product__media">
+            <a class="product__go" href="/p/${r.slug}"><figure>${isVideo(r.images[0]) ? `<video src="${esc(r.images[0])}" muted loop playsinline autoplay preload="metadata"></video>` : `<img src="${esc(r.images[0] || "")}" alt="${esc(r.name)}" loading="lazy">`}</figure></a>
+          </div>
+          <div class="product__info">
+            <div class="product__row"><h3><a href="/p/${r.slug}">${esc(r.name)}</a></h3>
+              <p class="product__price">${I18N.fmtPrice(r.price)}</p></div>
+            <p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${r.rating} <span>(${r.reviews})</span></p>
+          </div>
+        </article>`).join("");
+    }
+  }
+
+  function careLine() {
+    const lines = {
+      en: "Care: gentle wash at 30°, no tumble dry, low-heat iron from the reverse side.",
+      ru: "Уход: деликатная стирка при 30°, без машинной сушки, утюг на низкой температуре с изнанки.",
+      uz: "Parvarish: 30° da nozik yuvish, quritgichsiz, teskari tomondan past haroratda dazmollash.",
+    };
+    return lines[I18N.lang] || lines.en;
+  }
+
+  /* ---------------- events ---------------- */
+  document.addEventListener("click", (e) => {
+    const th = e.target.closest("[data-img]");
+    if (th) { imgIdx = +th.dataset.img; renderGallery(); return; }
+
+    const head = e.target.closest(".pd__acc-head");
+    if (head) {
+      const open = head.getAttribute("aria-expanded") === "true";
+      const body = head.nextElementSibling;
+      head.setAttribute("aria-expanded", String(!open));
+      body.style.height = !open ? body.scrollHeight + "px" : "0px";
+      return;
+    }
+  });
+
+  function renderQty() { $("#qty-n").textContent = qty + " " + I18N.t("cart.bagShort"); }
+  $("#qty-minus").addEventListener("click", () => { qty = Math.max(1, qty - 1); renderQty(); });
+  $("#qty-plus").addEventListener("click", () => { qty = Math.min(20, qty + 1); renderQty(); });
+
+  $("#pd-add").addEventListener("click", () => {
+    if (!p) return;
+    Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, sizes: p.sizes, qty });
+    Cart.open();
+  });
+
+  /* burger */
+  const burger = $(".burger"), menu = $("#menu");
+  burger.addEventListener("click", () => {
+    const open = menu.classList.toggle("is-open");
+    burger.classList.toggle("is-open", open);
+    menu.setAttribute("aria-hidden", String(!open));
+    document.body.style.overflow = open ? "hidden" : "";
+  });
+  $("#year") && ($("#year").textContent = new Date().getFullYear());
+
+  /* first accordion open */
+  function openFirstAcc() {
+    const body = document.querySelector('.pd__acc-head[aria-expanded="true"]')?.nextElementSibling;
+    if (body) body.style.height = "auto";
+  }
+
+  /* ---------------- boot ---------------- */
+  async function boot() {
+    await I18N.ready;
+    if (!slug) { location.replace("/shop"); return; }
+    try {
+      const r = await fetch("/api/products/" + encodeURIComponent(slug));
+      if (!r.ok) throw new Error();
+      p = await r.json();
+    } catch { location.replace("/shop"); return; }
+    render();
+    openFirstAcc();
+
+    /* Product JSON-LD */
+    const ld = document.createElement("script");
+    ld.type = "application/ld+json";
+    ld.textContent = JSON.stringify({
+      "@context": "https://schema.org", "@type": "Product",
+      name: p.name, image: p.images, description: p.desc.en,
+      offers: { "@type": "Offer", price: p.price, priceCurrency: p.currency || "USD", availability: "https://schema.org/InStock" },
+      aggregateRating: p.reviews ? { "@type": "AggregateRating", ratingValue: p.rating, reviewCount: p.reviews } : undefined,
+    });
+    document.head.appendChild(ld);
+  }
+  boot();
+
+  window.addEventListener("i18n:change", () => { if (p) { render(); openFirstAcc(); } });
+})();

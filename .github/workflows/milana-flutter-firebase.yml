@@ -1,0 +1,191 @@
+name: Milana Flutter Firebase
+
+on:
+  pull_request:
+    paths:
+      - "milana_flutter/**"
+      - ".github/workflows/milana-flutter-firebase.yml"
+  push:
+    branches: ["main"]
+    paths:
+      - "milana_flutter/**"
+      - ".github/workflows/milana-flutter-firebase.yml"
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy to Firebase Hosting and Firestore"
+        required: true
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+jobs:
+  validate:
+    name: Validate Flutter app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: milana_flutter
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.44.1"
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Install Firebase functions dependencies
+        run: npm --prefix functions ci --omit=dev
+
+      - name: Check Node tools
+        run: |
+          node --check tool/export_catalog_from_api.mjs
+          node --check tool/mirror_catalog_images.mjs
+          node --check tool/sync_hosting_uploads.mjs
+          node --check tool/import_firestore_catalog.mjs
+          node --check tool/prepare_firebase_web.mjs
+          node --check tool/prepare_firebase_mobile.mjs
+          node --check tool/build_firebase_web.mjs
+          node --check tool/build_firebase_mobile.mjs
+          node --check tool/verify_firestore_emulator.mjs
+          node --check tool/verify_firestore_indexes.mjs
+          node --check tool/verify_firebase_project.mjs
+          node --check tool/verify_github_workflow.mjs
+          node --check tool/verify_hosting_emulator.mjs
+          node --check tool/verify_pwa_manifest.mjs
+          node --check tool/verify_checkout_function_emulator.mjs
+          node --check tool/google_access_token.mjs
+          node --check tool/run_erp_bridge_worker.mjs
+          node --check tool/set_firebase_user_claims.mjs
+          node --check functions/checkout.js
+          node --check functions/erp.js
+          node --check functions/payment.js
+          node --check functions/product.js
+          node --check functions/support.js
+          node --check functions/index.js
+          node --check functions/test/checkout.test.js
+
+      - name: Verify GitHub workflow guardrails
+        run: npm run verify:workflow
+
+      - name: Verify PWA install metadata
+        run: npm run verify:pwa
+
+      - name: Verify Firebase project verifier
+        run: npm run verify:firebase:self-test
+
+      - name: Verify Firestore indexes
+        run: npm run verify:indexes
+
+      - name: Test Firebase functions
+        run: npm run functions:test
+
+      - name: Analyze
+        run: flutter analyze lib test
+
+      - name: Test
+        run: flutter test
+
+      - name: Build Android debug
+        run: flutter build apk --debug --dart-define=API_BASE_URL=http://10.0.2.2:4173
+
+      - name: Catalog import dry-run
+        run: npm run import:catalog:dry
+
+      - name: Firebase emulator verification
+        run: npm run test:emulator:full
+
+  deploy:
+    name: Deploy Firebase
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: milana_flutter
+    env:
+      FIREBASE_PROJECT_ID: ${{ secrets.MILANA_FIREBASE_PROJECT_ID }}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.MILANA_FIREBASE_SERVICE_ACCOUNT_JSON }}
+      PAYMENT_WEBHOOK_SECRET: ${{ secrets.MILANA_PAYMENT_WEBHOOK_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.44.1"
+          cache: true
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Install Firebase functions dependencies
+        run: npm --prefix functions ci --omit=dev
+
+      - name: Guard required secrets
+        run: |
+          test -n "$FIREBASE_PROJECT_ID"
+          test -n "$FIREBASE_SERVICE_ACCOUNT_JSON"
+          test -n "$PAYMENT_WEBHOOK_SECRET"
+
+      - name: Write service account
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/milana-firebase-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/milana-firebase-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Prepare Firebase web config
+        run: npm run prepare:firebase -- --project "$FIREBASE_PROJECT_ID"
+
+      - name: Prepare Firebase mobile config
+        run: npm run prepare:firebase:mobile -- --project "$FIREBASE_PROJECT_ID"
+
+      - name: Import catalog to Firestore
+        run: npm run import:catalog -- --project "$FIREBASE_PROJECT_ID"
+
+      - name: Prepare Firebase functions environment
+        run: |
+          printf 'PAYMENT_WEBHOOK_SECRET=%s\n' "$PAYMENT_WEBHOOK_SECRET" > "functions/.env.$FIREBASE_PROJECT_ID"
+
+      - name: Deploy Firebase functions
+        run: firebase deploy --project "$FIREBASE_PROJECT_ID" --only functions
+
+      - name: Deploy Firestore rules and indexes
+        run: firebase deploy --project "$FIREBASE_PROJECT_ID" --only firestore:rules,firestore:indexes
+
+      - name: Build and deploy Firebase Hosting
+        run: npm run deploy:firebase:web
+
+      - name: Verify Firebase deployment
+        run: npm run verify:firebase -- --project "$FIREBASE_PROJECT_ID"

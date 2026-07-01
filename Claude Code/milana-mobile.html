@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Milana Premium — Mobile</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0D1121; --bg2:#121628; --bg3:#1A1F35; --bg4:#222840;
+  --w:#FFF; --w90:rgba(255,255,255,.9); --w60:rgba(255,255,255,.6); --w30:rgba(255,255,255,.3); --w12:rgba(255,255,255,.1); --w07:rgba(255,255,255,.06);
+  --ok:#22C55E; --warn:#F59E0B; --err:#EF4444; --blue:#60A5FA;
+  --grad1:linear-gradient(135deg,#1E1B4B,#1e2d5a,#0D1121);
+  --ease:200ms cubic-bezier(.4,0,.2,1);
+}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:#070711;color:var(--w90);font-size:14px;line-height:1.5}
+::-webkit-scrollbar{display:none}
+
+/* ═══ DESKTOP PHONE WRAPPER ═══ */
+.pw{min-height:100vh;background:radial-gradient(ellipse at 30% 40%,#111126 0%,#070711 70%);display:flex;align-items:center;justify-content:center;padding:30px 20px;gap:40px}
+
+/* ═══ PHONE FRAME ═══ */
+.phone{
+  width:390px;height:844px;
+  background:var(--bg);
+  border-radius:52px;
+  position:relative;overflow:hidden;flex-shrink:0;
+  box-shadow:
+    0 0 0 1.5px rgba(255,255,255,.1),
+    0 0 0 12px #101020,
+    0 0 0 14px rgba(255,255,255,.04),
+    0 80px 200px rgba(0,0,0,.95),
+    0 20px 60px rgba(96,165,250,.05);
+}
+/* side buttons */
+.phone::before{content:'';position:absolute;right:-3.5px;top:170px;width:4px;height:68px;background:#0D0E1E;border-radius:0 3px 3px 0;box-shadow:0 90px 0 #0D0E1E}
+.phone::after{content:'';position:absolute;left:-3.5px;top:140px;width:4px;height:42px;background:#0D0E1E;border-radius:3px 0 0 3px;box-shadow:0 60px 0 #0D0E1E,0 120px 0 #0D0E1E}
+
+/* ═══ DYNAMIC ISLAND ═══ */
+.di{position:absolute;top:14px;left:50%;transform:translateX(-50%);width:124px;height:36px;background:#000;border-radius:20px;z-index:300;transition:width .3s,border-radius .3s}
+
+/* ═══ SCREEN ═══ */
+.screen{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden}
+
+/* ═══ STATUS BAR ═══ */
+.sbar{height:56px;padding:16px 26px 0;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:relative;z-index:50}
+.sbar-time{font-size:15px;font-weight:700;color:var(--w);letter-spacing:-.3px}
+.sbar-icons{display:flex;align-items:center;gap:5px}
+.signal{display:flex;align-items:flex-end;gap:1.5px;height:12px}
+.signal span{width:3px;border-radius:1px;background:var(--w)}
+.signal span:nth-child(1){height:4px}
+.signal span:nth-child(2){height:7px}
+.signal span:nth-child(3){height:10px}
+.signal span:nth-child(4){height:12px;opacity:.4}
+.batt{display:flex;align-items:center;gap:2px}
+.batt-body{width:22px;height:12px;border:1.5px solid rgba(255,255,255,.5);border-radius:3px;position:relative;display:flex;align-items:center;padding:1.5px}
+.batt-fill{height:100%;width:70%;background:var(--w);border-radius:1.5px}
+.batt-tip{width:2px;height:5px;background:rgba(255,255,255,.5);border-radius:0 1px 1px 0}
+
+/* ═══ DYNAMIC HEADER ═══ */
+.app-hdr{padding:6px 20px 10px;flex-shrink:0;position:relative;z-index:40}
+.hdr-row{display:flex;align-items:center;justify-content:space-between}
+.hdr-title{font-size:22px;font-weight:800;color:var(--w);letter-spacing:-.5px}
+.hdr-sub{font-size:12px;color:var(--w30);font-weight:500;margin-top:1px}
+.hdr-av{width:36px;height:36px;border-radius:50%;background:var(--w);color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;flex-shrink:0;box-shadow:0 0 0 2px var(--bg),0 0 0 4px rgba(255,255,255,.15)}
+
+/* ═══ PAGES ═══ */
+.pages{flex:1;overflow:hidden;position:relative}
+.pg{position:absolute;inset:0;overflow-y:auto;display:none;-webkit-overflow-scrolling:touch;padding-bottom:10px}
+.pg.on{display:block;animation:pgIn 220ms var(--ease)}
+@keyframes pgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ═══ HOME PAGE ═══ */
+.welcome-card{margin:12px 16px 0;border-radius:24px;overflow:hidden;position:relative;padding:22px 20px;min-height:130px;background:var(--grad1)}
+.wc-decor{position:absolute;right:-20px;top:-20px;width:140px;height:140px;border-radius:50%;background:radial-gradient(circle,rgba(99,102,241,.25),transparent 70%)}
+.wc-decor2{position:absolute;left:30px;bottom:-30px;width:100px;height:100px;border-radius:50%;background:radial-gradient(circle,rgba(96,165,250,.15),transparent 70%)}
+.wc-label{font-size:11.5px;font-weight:600;color:rgba(255,255,255,.45);letter-spacing:.5px;text-transform:uppercase;margin-bottom:5px}
+.wc-name{font-size:20px;font-weight:800;color:var(--w);letter-spacing:-.3px}
+.wc-role{font-size:12px;color:rgba(255,255,255,.5);margin-top:2px;font-weight:500}
+.wc-date{font-size:11px;color:rgba(255,255,255,.35);margin-top:12px;font-weight:600;letter-spacing:.3px}
+.wc-badge{position:absolute;top:20px;right:20px;width:42px;height:42px;border-radius:14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(10px)}
+
+/* stats row */
+.stats-row{display:flex;gap:10px;padding:14px 16px 0;overflow-x:auto}
+.stat-pill{background:var(--bg3);border:1px solid var(--w07);border-radius:16px;padding:12px 16px;flex-shrink:0;min-width:100px}
+.sp-val{font-size:20px;font-weight:800;color:var(--w);letter-spacing:-.5px}
+.sp-lbl{font-size:11px;color:var(--w30);font-weight:600;margin-top:1px}
+.sp-chg{font-size:10.5px;color:var(--ok);font-weight:600;margin-top:2px}
+
+/* section header */
+.sec{padding:18px 16px 10px;display:flex;align-items:center;justify-content:space-between}
+.sec-t{font-size:16px;font-weight:800;color:var(--w);letter-spacing:-.3px}
+.sec-a{font-size:12.5px;color:var(--w60);font-weight:600}
+
+/* news mini cards */
+.mnews{padding:0 16px;display:flex;flex-direction:column;gap:10px}
+.mc{background:var(--bg3);border:1px solid var(--w07);border-radius:18px;overflow:hidden;display:flex;align-items:stretch;cursor:pointer;transition:all var(--ease)}
+.mc:active{transform:scale(.98)}
+.mc-color{width:4px;flex-shrink:0}
+.mc-body{padding:13px 13px 13px 10px;flex:1}
+.mc-tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.mc-title{font-size:13px;font-weight:700;color:var(--w90);line-height:1.35}
+.mc-time{font-size:11px;color:var(--w30);margin-top:4px;font-weight:500}
+.mc-icon{width:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+/* activity */
+.act-list{padding:0 16px;display:flex;flex-direction:column;gap:2px}
+.act-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:14px;transition:background var(--ease);cursor:pointer}
+.act-item:active{background:var(--w07)}
+.act-av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0;position:relative}
+.act-info{flex:1}
+.act-name{font-size:13px;font-weight:600;color:var(--w90)}
+.act-desc{font-size:11.5px;color:var(--w30)}
+.act-time{font-size:11px;color:var(--w30);font-weight:500}
+
+/* ═══ CHAT PAGE ═══ */
+.ch-tabs{padding:8px 16px;display:flex;gap:7px;overflow-x:auto;flex-shrink:0}
+.ch-tab{padding:7px 14px;border-radius:20px;border:1px solid var(--w07);font-size:12.5px;font-weight:600;color:var(--w60);white-space:nowrap;cursor:pointer;transition:all var(--ease);display:flex;align-items:center;gap:6px;flex-shrink:0;background:var(--bg3)}
+.ch-tab.on{background:var(--w);color:var(--bg);border-color:transparent}
+.ch-tab:active{transform:scale(.95)}
+.ch-tab-dot{width:6px;height:6px;border-radius:50%}
+.chat-msgs{flex:1;padding:12px 16px;display:flex;flex-direction:column;gap:3px;overflow-y:auto}
+.chat-wrap{display:flex;flex-direction:column;height:calc(100% - 56px)}
+
+.cmsg{display:flex;gap:8px;align-items:flex-end;padding:2px 0}
+.cmsg.own{flex-direction:row-reverse}
+.cmsg-av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+.cmsg-body{max-width:72%}
+.cmsg-name{font-size:10.5px;font-weight:600;color:var(--w30);margin-bottom:3px;padding-left:2px}
+.cmsg.own .cmsg-name{text-align:right;padding-right:2px}
+.cmsg-bub{padding:10px 13px;border-radius:18px;font-size:13.5px;line-height:1.5;color:var(--w90);word-break:break-word}
+.cmsg-bub.them{background:var(--bg3);border-bottom-left-radius:5px}
+.cmsg-bub.own{background:var(--w);color:var(--bg);border-bottom-right-radius:5px;font-weight:500}
+.cmsg-bub.ai-bub{background:rgba(96,165,250,.1);border:1px solid rgba(96,165,250,.15);border-bottom-left-radius:5px}
+.cmsg-time{font-size:10px;color:var(--w30);margin-top:4px;padding:0 2px}
+.cmsg.own .cmsg-time{text-align:right}
+.chat-inp-area{padding:8px 16px 6px;flex-shrink:0}
+.chat-inp{display:flex;align-items:flex-end;gap:8px;background:var(--bg3);border:1px solid var(--w07);border-radius:20px;padding:8px 8px 8px 16px;transition:border-color var(--ease)}
+.chat-inp:focus-within{border-color:var(--w30)}
+.chat-inp textarea{flex:1;background:none;border:none;outline:none;color:var(--w90);font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;resize:none;max-height:100px;line-height:1.4}
+.chat-inp textarea::placeholder{color:var(--w30)}
+.send-b{width:34px;height:34px;background:var(--w);border:none;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all var(--ease);flex-shrink:0}
+.send-b:active{transform:scale(.9)}
+
+/* ═══ AI PAGE ═══ */
+.ai-wrap{display:flex;flex-direction:column;height:100%}
+.ai-top{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 24px 16px;text-align:center;flex-shrink:0}
+.ai-orb{width:72px;height:72px;border-radius:24px;background:var(--w);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 8px rgba(255,255,255,.05),0 0 40px rgba(255,255,255,.08),0 16px 40px rgba(0,0,0,.3);margin-bottom:12px;position:relative}
+.ai-orb::before{content:'';position:absolute;inset:-12px;border-radius:32px;background:radial-gradient(circle,rgba(96,165,250,.12),transparent 70%);animation:pulse 3s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.5;transform:scale(.95)}50%{opacity:1;transform:scale(1.05)}}
+.ai-title{font-size:20px;font-weight:800;color:var(--w);letter-spacing:-.3px}
+.ai-sub{font-size:12.5px;color:var(--w30);margin-top:4px;font-weight:500;max-width:260px;line-height:1.5}
+.ai-chips{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;padding:0 16px 14px}
+.ai-chip{background:var(--bg3);border:1px solid var(--w07);border-radius:20px;padding:7px 13px;font-size:12px;color:var(--w60);cursor:pointer;transition:all var(--ease);font-weight:600}
+.ai-chip:active{background:var(--w);color:var(--bg);border-color:transparent}
+.ai-msgs{flex:1;overflow-y:auto;padding:0 16px}
+.tdots{display:flex;gap:3px;align-items:center;padding:4px 0}
+.tdot{width:6px;height:6px;background:var(--w30);border-radius:50%;animation:tb 1.4s infinite}
+.tdot:nth-child(2){animation-delay:.2s}.tdot:nth-child(3){animation-delay:.4s}
+@keyframes tb{0%,60%,100%{transform:translateY(0);opacity:.3}30%{transform:translateY(-5px);opacity:.9}}
+.ai-inp-area{padding:10px 16px 8px;flex-shrink:0}
+
+/* ═══ MESSAGES PAGE ═══ */
+.dm-list{padding:8px 0}
+.dm-item{display:flex;align-items:center;gap:12px;padding:10px 16px;cursor:pointer;transition:background var(--ease)}
+.dm-item:active{background:var(--w07)}
+.dm-av-wrap{position:relative;flex-shrink:0}
+.dm-av{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700}
+.dm-ring{position:absolute;inset:-2px;border-radius:50%;border:2px solid transparent}
+.dm-ring.online{border-color:var(--ok)}
+.dm-ring.away{border-color:var(--warn)}
+.dm-status-dot{position:absolute;bottom:1px;right:1px;width:11px;height:11px;border-radius:50%;border:2px solid var(--bg)}
+.dm-info{flex:1;overflow:hidden}
+.dm-name{font-size:14px;font-weight:700;color:var(--w90)}
+.dm-prev{font-size:12.5px;color:var(--w30);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.dm-meta{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.dm-time{font-size:11px;color:var(--w30);font-weight:500}
+.dm-badge{width:18px;height:18px;background:var(--w);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:var(--bg)}
+
+/* dm search */
+.dm-search{margin:4px 16px 8px;display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--w07);border-radius:14px;padding:9px 14px}
+.dm-search input{background:none;border:none;outline:none;color:var(--w90);font-family:'Plus Jakarta Sans',sans-serif;font-size:13.5px;flex:1}
+.dm-search input::placeholder{color:var(--w30)}
+
+/* ═══ MORE PAGE ═══ */
+.more-grid{padding:12px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.more-card{background:var(--bg3);border:1px solid var(--w07);border-radius:20px;padding:18px 16px;cursor:pointer;transition:all var(--ease);position:relative;overflow:hidden}
+.more-card:active{transform:scale(.96)}
+.more-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.mc-ico{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;background:var(--w07)}
+.mc-label{font-size:14px;font-weight:700;color:var(--w90)}
+.mc-sub{font-size:11.5px;color:var(--w30);margin-top:2px;font-weight:500}
+.mc-arrow{position:absolute;top:16px;right:14px;color:var(--w30)}
+
+/* ═══ BOTTOM NAV ═══ */
+.bnav{flex-shrink:0;padding:10px 6px 18px;background:rgba(13,17,33,.95);border-top:1px solid var(--w07);display:flex;align-items:center;justify-content:space-around;backdrop-filter:blur(24px)}
+.btab{display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 14px;border-radius:16px;cursor:pointer;transition:all var(--ease);min-width:58px}
+.btab:active{transform:scale(.9)}
+.btab svg{opacity:.35;transition:opacity var(--ease)}
+.btab span{font-size:10px;font-weight:700;color:var(--w30);transition:color var(--ease);letter-spacing:.2px}
+.btab.on svg{opacity:1}
+.btab.on span{color:var(--w90)}
+.btab-dot{width:4px;height:4px;border-radius:50%;background:var(--w);opacity:0;transition:opacity var(--ease);margin-top:-2px}
+.btab.on .btab-dot{opacity:1}
+
+/* ═══ SHARED ═══ */
+.divider{display:flex;align-items:center;gap:10px;padding:10px 20px;margin:4px 0}
+.div-l{flex:1;height:1px;background:var(--w07)}
+.div-t{font-size:10.5px;color:var(--w30);font-weight:700;letter-spacing:.3px;white-space:nowrap}
+
+/* ═══ SIDE INFO PANEL (desktop) ═══ */
+.side-info{max-width:280px;display:flex;flex-direction:column;gap:20px}
+.info-card{background:#0F1020;border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:20px;display:flex;flex-direction:column;gap:12px}
+.info-title{font-size:13px;font-weight:700;color:var(--w);display:flex;align-items:center;gap:7px}
+.info-item{display:flex;align-items:center;gap:10px;font-size:12.5px;color:rgba(255,255,255,.5)}
+.info-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.info-badge{background:rgba(255,255,255,.07);border-radius:8px;padding:2px 7px;font-size:11px;color:rgba(255,255,255,.4);margin-left:auto;font-weight:600}
+.feature-tag{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.06);border-radius:20px;padding:4px 10px;font-size:11px;color:rgba(255,255,255,.4);font-weight:600}
+
+@media(max-width:500px){
+  .pw{padding:0;background:var(--bg);align-items:stretch;justify-content:stretch}
+  .phone{width:100%;height:100vh;border-radius:0;box-shadow:none}
+  .phone::before,.phone::after{display:none}
+  .side-info{display:none}
+}
+</style>
+</head>
+<body>
+<div class="pw">
+
+  <!-- ═══ PHONE FRAME ═══ -->
+  <div class="phone">
+    <div class="di"></div>
+    <div class="screen">
+
+      <!-- STATUS BAR -->
+      <div class="sbar">
+        <div class="sbar-time">9:41</div>
+        <div class="sbar-icons">
+          <div class="signal">
+            <span></span><span></span><span></span><span></span>
+          </div>
+          <svg width="14" height="11" viewBox="0 0 14 11" fill="none">
+            <path d="M7 2.5A7.9 7.9 0 0 0 .6 5.3L7 11l6.4-5.7A7.9 7.9 0 0 0 7 2.5z" fill="white"/>
+            <path d="M7 0a10.5 10.5 0 0 0-7.4 3L7 11l7.4-8A10.5 10.5 0 0 0 7 0z" fill="white" opacity=".4"/>
+          </svg>
+          <div class="batt">
+            <div class="batt-body"><div class="batt-fill"></div></div>
+            <div class="batt-tip"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DYNAMIC HEADER -->
+      <div class="app-hdr" id="app-hdr">
+        <div class="hdr-row">
+          <div>
+            <div class="hdr-title" id="hdr-title">Good morning!</div>
+            <div class="hdr-sub" id="hdr-sub">Milana Premium · Andijan, Uzbekistan</div>
+          </div>
+          <div class="hdr-av">JU</div>
+        </div>
+      </div>
+
+      <!-- PAGES -->
+      <div class="pages">
+
+        <!-- ═══ HOME ═══ -->
+        <div class="pg on" id="pg-home">
+
+          <!-- Welcome card -->
+          <div class="welcome-card">
+            <div class="wc-decor"></div>
+            <div class="wc-decor2"></div>
+            <div class="wc-label">Welcome back</div>
+            <div class="wc-name">Jasur Umarov</div>
+            <div class="wc-role">Sales Director · Milana Premium</div>
+            <div class="wc-date">WED, JUNE 4, 2026</div>
+            <div class="wc-badge">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.6)" stroke-width="2"><path d="M6 2v4M18 2v4"/><circle cx="6" cy="10" r="3"/><circle cx="18" cy="10" r="3"/><path d="M9 13c1.5 2.5 4.5 2.5 6 0M6 13v5M18 13v5M9 18h6"/></svg>
+            </div>
+          </div>
+
+          <!-- Stats -->
+          <div class="stats-row">
+            <div class="stat-pill">
+              <div class="sp-val">47</div>
+              <div class="sp-lbl">Members</div>
+              <div class="sp-chg">+3 month</div>
+            </div>
+            <div class="stat-pill">
+              <div class="sp-val">284</div>
+              <div class="sp-lbl">Messages</div>
+              <div class="sp-chg">Today</div>
+            </div>
+            <div class="stat-pill">
+              <div class="sp-val">512</div>
+              <div class="sp-lbl">Orders</div>
+              <div class="sp-chg">+18%</div>
+            </div>
+            <div class="stat-pill">
+              <div class="sp-val">9</div>
+              <div class="sp-lbl">Departments</div>
+              <div class="sp-chg">Active</div>
+            </div>
+          </div>
+
+          <!-- News -->
+          <div class="sec">
+            <div class="sec-t">Latest News</div>
+            <div class="sec-a" onclick="showPg('more',4,document.querySelectorAll('.btab')[4])">See all</div>
+          </div>
+          <div class="mnews">
+            <div class="mc" onclick="showPg('more',4,document.querySelectorAll('.btab')[4])">
+              <div class="mc-color" style="background:#F59E0B"></div>
+              <div class="mc-body">
+                <div class="mc-tag" style="color:#F59E0B">Production</div>
+                <div class="mc-title">New CNC Cutting Machine Installed in Line B</div>
+                <div class="mc-time">2 hours ago · Sardor Tashmatov</div>
+              </div>
+              <div class="mc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(245,158,11,.4)" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><line x1="12" y1="12" x2="12" y2="16"/></svg></div>
+            </div>
+            <div class="mc">
+              <div class="mc-color" style="background:#22C55E"></div>
+              <div class="mc-body">
+                <div class="mc-tag" style="color:#22C55E">Company</div>
+                <div class="mc-title">Q2 Milestone: 500 Orders Achieved!</div>
+                <div class="mc-time">Yesterday · Malika Yusupova (CEO)</div>
+              </div>
+              <div class="mc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(34,197,94,.4)" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></div>
+            </div>
+            <div class="mc">
+              <div class="mc-color" style="background:#A78BFA"></div>
+              <div class="mc-body">
+                <div class="mc-tag" style="color:#A78BFA">Design</div>
+                <div class="mc-title">New Turkish Fabric Collection Arrived</div>
+                <div class="mc-time">2 days ago · Dilnoza Karimova</div>
+              </div>
+              <div class="mc-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="rgba(167,139,250,.4)" stroke-width="1.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/></svg></div>
+            </div>
+          </div>
+
+          <!-- Activity -->
+          <div class="sec"><div class="sec-t">Recent Activity</div></div>
+          <div class="act-list">
+            <div class="act-item" onclick="showPg('msgs',3,document.querySelectorAll('.btab')[3])">
+              <div class="act-av" style="background:rgba(236,72,153,.15);color:#EC4899">UM</div>
+              <div class="act-info">
+                <div class="act-name">Umida Nazarova</div>
+                <div class="act-desc">Posted in #marketing</div>
+              </div>
+              <div class="act-time">5m</div>
+            </div>
+            <div class="act-item">
+              <div class="act-av" style="background:rgba(34,197,94,.12);color:#22C55E">FA</div>
+              <div class="act-info">
+                <div class="act-name">Feruza Alieva</div>
+                <div class="act-desc">Submitted QC report #47</div>
+              </div>
+              <div class="act-time">12m</div>
+            </div>
+            <div class="act-item" onclick="showPg('ai',2,document.querySelectorAll('.btab')[2])">
+              <div class="act-av" style="background:rgba(96,165,250,.12);color:#93C5FD">AI</div>
+              <div class="act-info">
+                <div class="act-name">Milana AI</div>
+                <div class="act-desc">Responded in #production</div>
+              </div>
+              <div class="act-time">20m</div>
+            </div>
+            <div class="act-item">
+              <div class="act-av" style="background:rgba(249,115,22,.12);color:#F97316">SE</div>
+              <div class="act-info">
+                <div class="act-name">Sherzod Ergashev</div>
+                <div class="act-desc">Updated warehouse inventory</div>
+              </div>
+              <div class="act-time">1h</div>
+            </div>
+          </div>
+          <div style="height:20px"></div>
+        </div>
+
+        <!-- ═══ CHAT ═══ -->
+        <div class="pg" id="pg-chat">
+          <div class="chat-wrap" style="height:100%;display:flex;flex-direction:column">
+            <!-- Channel tabs -->
+            <div class="ch-tabs" style="padding-bottom:4px">
+              <div class="ch-tab on"><div class="ch-tab-dot" style="background:#3B82F6"></div># general</div>
+              <div class="ch-tab"><div class="ch-tab-dot" style="background:#F59E0B"></div># production</div>
+              <div class="ch-tab"><div class="ch-tab-dot" style="background:#A78BFA"></div># design</div>
+              <div class="ch-tab"><div class="ch-tab-dot" style="background:#22C55E"></div># quality</div>
+              <div class="ch-tab"><div class="ch-tab-dot" style="background:#EC4899"></div># marketing</div>
+              <div class="ch-tab"><div class="ch-tab-dot" style="background:#14B8A6"></div># hr</div>
+            </div>
+            <!-- Messages -->
+            <div class="chat-msgs" id="chat-msgs" style="flex:1;overflow-y:auto;padding:8px 16px">
+              <div class="divider"><div class="div-l"></div><div class="div-t">Today, June 4</div><div class="div-l"></div></div>
+
+              <div class="cmsg" style="margin-bottom:8px">
+                <div class="cmsg-av" style="background:rgba(255,255,255,.1);color:#FFF">MY</div>
+                <div class="cmsg-body">
+                  <div class="cmsg-name">Malika Yusupova · CEO</div>
+                  <div class="cmsg-bub them">Assalomu alaykum! We hit 500 orders this quarter 🎉 Celebration dinner this Friday 6PM — all departments!</div>
+                  <div class="cmsg-time">9:02 AM</div>
+                </div>
+              </div>
+              <div class="cmsg" style="margin-bottom:8px">
+                <div class="cmsg-av" style="background:rgba(96,165,250,.15);color:#93C5FD">AI</div>
+                <div class="cmsg-body">
+                  <div class="cmsg-name">Milana AI · Assistant</div>
+                  <div class="cmsg-bub ai-bub">Congratulations to the entire Milana Premium team! Based on current trajectory, Q3 is projected to exceed 650 orders. Well done everyone!</div>
+                  <div class="cmsg-time">9:03 AM</div>
+                </div>
+              </div>
+              <div class="cmsg" style="margin-bottom:8px">
+                <div class="cmsg-av" style="background:rgba(245,158,11,.15);color:#F59E0B">ST</div>
+                <div class="cmsg-body">
+                  <div class="cmsg-name">Sardor Tashmatov</div>
+                  <div class="cmsg-bub them">New cutting machine is installed. Line B starts Monday — 30% speed increase!</div>
+                  <div class="cmsg-time">9:15 AM</div>
+                </div>
+              </div>
+              <div class="cmsg" style="margin-bottom:8px">
+                <div class="cmsg-av" style="background:rgba(236,72,153,.15);color:#EC4899">UM</div>
+                <div class="cmsg-body">
+                  <div class="cmsg-name">Umida Nazarova</div>
+                  <div class="cmsg-bub them">Instagram hit 5,000 followers! Can sales team share testimonials for the weekend campaign?</div>
+                  <div class="cmsg-time">10:05 AM</div>
+                </div>
+              </div>
+              <div class="cmsg own" style="margin-bottom:8px">
+                <div class="cmsg-av" style="background:var(--w);color:var(--bg)">JU</div>
+                <div class="cmsg-body">
+                  <div class="cmsg-name">You</div>
+                  <div class="cmsg-bub own">On it Umida! Sending 6 testimonials by noon from Tashkent clients.</div>
+                  <div class="cmsg-time">10:12 AM</div>
+                </div>
+              </div>
+            </div>
+            <!-- Input -->
+            <div class="chat-inp-area">
+              <div style="font-size:10.5px;color:var(--w30);margin-bottom:6px;font-weight:600;padding:0 4px">Mention @AI for Milana AI assistance</div>
+              <div class="chat-inp">
+                <textarea id="chat-input" placeholder="Message #general..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"></textarea>
+                <button class="send-b" onclick="sendChat()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--bg)" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ AI ═══ -->
+        <div class="pg" id="pg-ai">
+          <div class="ai-wrap">
+            <div class="ai-top">
+              <div class="ai-orb">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--bg)" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+              </div>
+              <div class="ai-title">Milana AI</div>
+              <div class="ai-sub">Your personal corporate assistant for tasks, analysis and insights.</div>
+            </div>
+            <div class="ai-chips">
+              <div class="ai-chip" onclick="askAI('Summarize production targets')">Production targets</div>
+              <div class="ai-chip" onclick="askAI('Draft a client email')">Draft client email</div>
+              <div class="ai-chip" onclick="askAI('Analyze Q2 performance')">Q2 performance</div>
+              <div class="ai-chip" onclick="askAI('Weekly report template')">Weekly report</div>
+            </div>
+            <div class="ai-msgs" id="ai-msgs"></div>
+            <div class="ai-inp-area">
+              <div class="chat-inp">
+                <textarea id="ai-input" placeholder="Ask Milana AI anything..." rows="1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAI()}"></textarea>
+                <button class="send-b" onclick="sendAI()">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--bg)" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ MESSAGES ═══ -->
+        <div class="pg" id="pg-msgs">
+          <div class="dm-search">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.3)" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" placeholder="Search messages...">
+          </div>
+          <div class="dm-list">
+            <div class="dm-item">
+              <div class="dm-av-wrap">
+                <div class="dm-av" style="background:rgba(236,72,153,.15);color:#EC4899">UM</div>
+                <div class="dm-ring online"></div>
+                <div class="dm-status-dot" style="background:var(--ok)"></div>
+              </div>
+              <div class="dm-info">
+                <div class="dm-name">Umida Nazarova</div>
+                <div class="dm-prev">Do you have the client list from Tashkent?</div>
+              </div>
+              <div class="dm-meta">
+                <div class="dm-time">10:05</div>
+                <div class="dm-badge">2</div>
+              </div>
+            </div>
+            <div class="dm-item">
+              <div class="dm-av-wrap">
+                <div class="dm-av" style="background:rgba(96,165,250,.12);color:#93C5FD">AI</div>
+                <div class="dm-ring online"></div>
+                <div class="dm-status-dot" style="background:var(--ok)"></div>
+              </div>
+              <div class="dm-info">
+                <div class="dm-name">Milana AI</div>
+                <div class="dm-prev">I can help you with that report...</div>
+              </div>
+              <div class="dm-meta">
+                <div class="dm-time">9:58</div>
+                <div class="dm-badge">3</div>
+              </div>
+            </div>
+            <div class="dm-item">
+              <div class="dm-av-wrap">
+                <div class="dm-av" style="background:rgba(167,139,250,.12);color:#A78BFA">DK</div>
+                <div class="dm-ring online"></div>
+                <div class="dm-status-dot" style="background:var(--ok)"></div>
+              </div>
+              <div class="dm-info">
+                <div class="dm-name">Dilnoza Karimova</div>
+                <div class="dm-prev">3PM sync confirmed!</div>
+              </div>
+              <div class="dm-meta"><div class="dm-time">9:31</div></div>
+            </div>
+            <div class="dm-item">
+              <div class="dm-av-wrap">
+                <div class="dm-av" style="background:rgba(245,158,11,.12);color:#F59E0B">ST</div>
+                <div class="dm-ring online"></div>
+                <div class="dm-status-dot" style="background:var(--ok)"></div>
+              </div>
+              <div class="dm-info">
+                <div class="dm-name">Sardor Tashmatov</div>
+                <div class="dm-prev">Line B is ready Monday morning</div>
+              </div>
+              <div class="dm-meta">
+                <div class="dm-time">9:15</div>
+                <div class="dm-badge">1</div>
+              </div>
+            </div>
+            <div class="dm-item">
+              <div class="dm-av-wrap">
+                <div class="dm-av" style="background:rgba(20,184,166,.12);color:#14B8A6">NR</div>
+                <div class="dm-ring away"></div>
+                <div class="dm-status-dot" style="background:var(--warn)"></div>
+              </div>
+              <div class="dm-info">
+                <div class="dm-name">Nargiza Rahimova</div>
+                <div class="dm-prev">Safety training reminder — Friday 10AM</div>
+              </div>
+              <div class="dm-meta"><div class="dm-time">Yesterday</div></div>
+            </div>
+            <div class="dm-item">
+              <div class="dm-av-wrap">
+                <div class="dm-av" style="background:rgba(34,197,94,.12);color:#22C55E">FA</div>
+                <div class="dm-ring online"></div>
+                <div class="dm-status-dot" style="background:var(--ok)"></div>
+              </div>
+              <div class="dm-info">
+                <div class="dm-name">Feruza Alieva</div>
+                <div class="dm-prev">QC report #47 submitted for review</div>
+              </div>
+              <div class="dm-meta"><div class="dm-time">Yesterday</div></div>
+            </div>
+            <div class="dm-item">
+              <div class="dm-av-wrap">
+                <div class="dm-av" style="background:rgba(249,115,22,.12);color:#F97316">SE</div>
+                <div class="dm-ring" style="border-color:var(--w30)"></div>
+                <div class="dm-status-dot" style="background:var(--w30)"></div>
+              </div>
+              <div class="dm-info">
+                <div class="dm-name">Sherzod Ergashev</div>
+                <div class="dm-prev">Inventory logs updated</div>
+              </div>
+              <div class="dm-meta"><div class="dm-time">2d ago</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ═══ MORE ═══ -->
+        <div class="pg" id="pg-more">
+          <div style="padding:4px 16px 12px">
+            <div style="font-size:12px;color:var(--w30);font-weight:600;letter-spacing:.3px;text-transform:uppercase;padding:8px 0 4px">Company</div>
+          </div>
+          <div class="more-grid">
+            <div class="more-card" style="--mc:#A78BFA" onclick="">
+              <div class="more-card" style="position:absolute;inset:0;border-radius:20px;border-top:2px solid #A78BFA;border-right:none;border-bottom:none;border-left:none;pointer-events:none"></div>
+              <div class="mc-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg></div>
+              <div class="mc-label">Design</div>
+              <div class="mc-sub">7 members</div>
+              <div class="mc-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </div>
+            <div class="more-card">
+              <div style="position:absolute;inset:0;border-radius:20px;border-top:2px solid #F59E0B;border-right:none;border-bottom:none;border-left:none;pointer-events:none"></div>
+              <div class="mc-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></div>
+              <div class="mc-label">Production</div>
+              <div class="mc-sub">18 members</div>
+              <div class="mc-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </div>
+            <div class="more-card">
+              <div style="position:absolute;inset:0;border-radius:20px;border-top:2px solid #EC4899;border-right:none;border-bottom:none;border-left:none;pointer-events:none"></div>
+              <div class="mc-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+              <div class="mc-label">Marketing</div>
+              <div class="mc-sub">4 members</div>
+              <div class="mc-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </div>
+            <div class="more-card">
+              <div style="position:absolute;inset:0;border-radius:20px;border-top:2px solid #22C55E;border-right:none;border-bottom:none;border-left:none;pointer-events:none"></div>
+              <div class="mc-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+              <div class="mc-label">Quality Control</div>
+              <div class="mc-sub">5 members</div>
+              <div class="mc-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </div>
+            <div class="more-card">
+              <div style="position:absolute;inset:0;border-radius:20px;border-top:2px solid #F59E0B;border-right:none;border-bottom:none;border-left:none;pointer-events:none"></div>
+              <div class="mc-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div>
+              <div class="mc-label">Finance</div>
+              <div class="mc-sub">3 members</div>
+              <div class="mc-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </div>
+            <div class="more-card">
+              <div style="position:absolute;inset:0;border-radius:20px;border-top:2px solid #14B8A6;border-right:none;border-bottom:none;border-left:none;pointer-events:none"></div>
+              <div class="mc-ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></div>
+              <div class="mc-label">HR & Admin</div>
+              <div class="mc-sub">3 members</div>
+              <div class="mc-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </div>
+          </div>
+
+          <div style="padding:4px 16px 8px 16px;margin-top:6px">
+            <div style="font-size:12px;color:var(--w30);font-weight:600;letter-spacing:.3px;text-transform:uppercase;padding:8px 0 4px">Features</div>
+          </div>
+          <div class="more-grid">
+            <div class="more-card" style="grid-column:1/3;display:flex;flex-direction:row;align-items:center;gap:14px">
+              <div class="mc-ico" style="margin-bottom:0;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M12 2a7 7 0 0 1 7 7c0 2.38-1.19 4.47-3 5.74V17a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-2.26A7 7 0 0 1 5 9a7 7 0 0 1 7-7z"/><line x1="9" y1="21" x2="15" y2="21"/></svg></div>
+              <div style="flex:1">
+                <div class="mc-label">Ideas Board</div>
+                <div class="mc-sub">6 ideas · Vote & suggest</div>
+              </div>
+              <div class="mc-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>
+            </div>
+            <div class="more-card" style="grid-column:1/3;display:flex;flex-direction:row;align-items:center;gap:14px">
+              <div class="mc-ico" style="margin-bottom:0;flex-shrink:0"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--w60)" stroke-width="2"><path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10l6 6v10a2 2 0 0 1-2 2z"/></svg></div>
+              <div style="flex:1">
+                <div class="mc-label">News & Announcements</div>
+                <div class="mc-sub">3 new posts this week</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <div style="background:var(--w);color:var(--bg);font-size:10px;font-weight:800;padding:2px 7px;border-radius:20px">3</div>
+                <div class="mc-arrow"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div>
+              </div>
+            </div>
+          </div>
+          <div style="height:20px"></div>
+        </div>
+
+      </div><!-- /pages -->
+
+      <!-- ═══ BOTTOM NAV ═══ -->
+      <nav class="bnav">
+        <div class="btab on" onclick="showPg('home',0,this)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+          <span>Home</span>
+          <div class="btab-dot"></div>
+        </div>
+        <div class="btab" onclick="showPg('chat',1,this)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>Chat</span>
+          <div class="btab-dot"></div>
+        </div>
+        <div class="btab" onclick="showPg('ai',2,this)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+          <span>AI</span>
+          <div class="btab-dot"></div>
+        </div>
+        <div class="btab" onclick="showPg('msgs',3,this)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+          <span>DMs</span>
+          <div class="btab-dot"></div>
+        </div>
+        <div class="btab" onclick="showPg('more',4,this)">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+          <span>More</span>
+          <div class="btab-dot"></div>
+        </div>
+      </nav>
+
+    </div><!-- /screen -->
+  </div><!-- /phone -->
+
+  <!-- Side info panel (desktop only) -->
+  <div class="side-info">
+    <div style="font-size:24px;font-weight:800;color:rgba(255,255,255,.8);letter-spacing:-.5px;line-height:1.2">Milana Premium<br><span style="color:rgba(255,255,255,.3);font-weight:400;font-size:16px">Mobile App</span></div>
+    <div class="info-card">
+      <div class="info-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        5 Main Sections
+      </div>
+      <div class="info-item"><div class="info-dot" style="background:#60A5FA"></div>Home — dashboard & activity<div class="info-badge">New</div></div>
+      <div class="info-item"><div class="info-dot" style="background:#22C55E"></div>Chat — all channels</div>
+      <div class="info-item"><div class="info-dot" style="background:#A78BFA"></div>AI — Milana assistant</div>
+      <div class="info-item"><div class="info-dot" style="background:#EC4899"></div>DMs — direct messages</div>
+      <div class="info-item"><div class="info-dot" style="background:#F59E0B"></div>More — departments & ideas</div>
+    </div>
+    <div class="info-card">
+      <div class="info-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        Design Features
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <div class="feature-tag">iPhone 15 mockup</div>
+        <div class="feature-tag">Dynamic Island</div>
+        <div class="feature-tag">Bottom nav</div>
+        <div class="feature-tag">Swipe cards</div>
+        <div class="feature-tag">Dark navy theme</div>
+        <div class="feature-tag">Glassmorphism</div>
+        <div class="feature-tag">Live AI chat</div>
+        <div class="feature-tag">Status rings</div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:rgba(255,255,255,.2);font-weight:500;line-height:1.6">Resize browser below 500px to see the full-screen mobile view.</div>
+  </div>
+
+</div><!-- /pw -->
+
+<script>
+const hdrs={
+  home:{title:'Good morning!',sub:'Milana Premium · Andijan, Uzbekistan'},
+  chat:{title:'Corporate Chat',sub:'#general — 47 members · AI active'},
+  ai:{title:'Milana AI',sub:'Personal assistant · Always available'},
+  msgs:{title:'Messages',sub:'Direct messages · 6 unread'},
+  more:{title:'More',sub:'Departments, News & Ideas'},
+};
+
+function showPg(id,idx,el){
+  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.btab').forEach(b=>b.classList.remove('on'));
+  document.getElementById('pg-'+id).classList.add('on');
+  el.classList.add('on');
+  const h=hdrs[id];
+  document.getElementById('hdr-title').textContent=h.title;
+  document.getElementById('hdr-sub').textContent=h.sub;
+  if(id==='chat'){setTimeout(()=>{const m=document.getElementById('chat-msgs');if(m)m.scrollTop=m.scrollHeight;},60);}
+}
+
+const chatReplies=['Great point! Production data shows consistent improvement this quarter.','Understood. I\'ve noted this for the weekly summary. Anything else?','For Milana Premium, I recommend cross-referencing sales targets with inventory levels.','Q3 looks very promising — currently tracking 18% above Q1 pace.'];
+
+function sendChat(){
+  const inp=document.getElementById('chat-input');
+  const text=inp.value.trim();if(!text)return;
+  const c=document.getElementById('chat-msgs');
+  const now=new Date();
+  const t=now.getHours()+':'+(now.getMinutes()<10?'0':'')+now.getMinutes();
+  const m=document.createElement('div');m.className='cmsg own';m.style.marginBottom='8px';
+  m.innerHTML=`<div class="cmsg-av" style="background:var(--w);color:var(--bg)">JU</div>
+    <div class="cmsg-body">
+      <div class="cmsg-name">You</div>
+      <div class="cmsg-bub own">${text}</div>
+      <div class="cmsg-time">${t}</div>
+    </div>`;
+  c.appendChild(m);inp.value='';c.scrollTop=c.scrollHeight;inp.style.height='auto';
+  if(text.toLowerCase().includes('@ai')||text.toLowerCase().includes('@milana')){
+    setTimeout(()=>{
+      const ai=document.createElement('div');ai.className='cmsg';ai.style.marginBottom='8px';ai.id='typing';
+      ai.innerHTML=`<div class="cmsg-av" style="background:rgba(96,165,250,.15);color:#93C5FD">AI</div>
+        <div class="cmsg-body"><div class="cmsg-bub ai-bub"><div class="tdots"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div></div></div>`;
+      c.appendChild(ai);c.scrollTop=c.scrollHeight;
+      setTimeout(()=>{
+        const ti=document.getElementById('typing');if(ti)ti.remove();
+        const r=chatReplies[Math.floor(Math.random()*chatReplies.length)];
+        const reply=document.createElement('div');reply.className='cmsg';reply.style.marginBottom='8px';
+        reply.innerHTML=`<div class="cmsg-av" style="background:rgba(96,165,250,.15);color:#93C5FD">AI</div>
+          <div class="cmsg-body"><div class="cmsg-name">Milana AI</div><div class="cmsg-bub ai-bub">${r}</div><div class="cmsg-time">${new Date().getHours()}:${String(new Date().getMinutes()).padStart(2,'0')}</div></div>`;
+        c.appendChild(reply);c.scrollTop=c.scrollHeight;
+      },1800);
+    },500);
+  }
+}
+
+const aiReplies=["I'm here to help! I can assist with drafting communications, analyzing data, generating reports, or answering operational questions for Milana Premium.","Based on Q2 performance, Milana Premium is on a strong trajectory. 512 orders completed — you're 18% above Q1. Q3 could reach 630–660 orders.","For the Turkish fabric collection: I recommend prioritizing premium cotton (80% of orders use this) and 2–3 linen variants for the summer line.","Draft: \"Dear [Client Name], thank you for your continued partnership with Milana Premium. I wanted to follow up on your recent order and ensure everything meets your expectations...\""];
+
+function askAI(q){document.getElementById('ai-input').value=q;sendAI();}
+
+function sendAI(){
+  const inp=document.getElementById('ai-input');
+  const text=inp.value.trim();if(!text)return;
+  const c=document.getElementById('ai-msgs');
+  const t=new Date().getHours()+':'+String(new Date().getMinutes()).padStart(2,'0');
+  const um=document.createElement('div');um.className='cmsg own';um.style.marginBottom='8px';
+  um.innerHTML=`<div class="cmsg-av" style="background:var(--w);color:var(--bg)">JU</div>
+    <div class="cmsg-body"><div class="cmsg-name">You</div><div class="cmsg-bub own">${text}</div><div class="cmsg-time">${t}</div></div>`;
+  c.appendChild(um);inp.value='';c.scrollTop=c.scrollHeight;inp.style.height='auto';
+  const typing=document.createElement('div');typing.className='cmsg';typing.style.marginBottom='8px';typing.id='ai-typing';
+  typing.innerHTML=`<div class="cmsg-av" style="background:rgba(96,165,250,.15);color:#93C5FD">AI</div>
+    <div class="cmsg-body"><div class="cmsg-bub ai-bub"><div class="tdots"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div></div></div>`;
+  c.appendChild(typing);c.scrollTop=c.scrollHeight;
+  setTimeout(()=>{
+    const ti=document.getElementById('ai-typing');if(ti)ti.remove();
+    const r=aiReplies[Math.floor(Math.random()*aiReplies.length)];
+    const am=document.createElement('div');am.className='cmsg';am.style.marginBottom='8px';
+    am.innerHTML=`<div class="cmsg-av" style="background:rgba(96,165,250,.15);color:#93C5FD">AI</div>
+      <div class="cmsg-body"><div class="cmsg-name">Milana AI</div><div class="cmsg-bub ai-bub">${r}</div><div class="cmsg-time">${new Date().getHours()}:${String(new Date().getMinutes()).padStart(2,'0')}</div></div>`;
+    c.appendChild(am);c.scrollTop=c.scrollHeight;
+  },1800);
+}
+
+document.querySelectorAll('textarea').forEach(ta=>{
+  ta.addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px';});
+});
+
+// Init chat scroll
+setTimeout(()=>{const m=document.getElementById('chat-msgs');if(m)m.scrollTop=m.scrollHeight;},100);
+</script>
+</body>
+</html>

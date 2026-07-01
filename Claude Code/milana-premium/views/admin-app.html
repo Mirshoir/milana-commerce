@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Админ — MILANA PREMIUM</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%235c1f2d'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='34' fill='%23f4efe6' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+
+  <div class="app" id="app">
+    <aside class="side">
+      <p class="side__brand">Milana <span>Admin</span></p>
+      <nav class="side__nav">
+        <button data-view="products" class="is-on">🧥 Товары</button>
+        <button data-view="orders">📦 Заказы <i class="side__badge" id="orders-badge" hidden></i></button>
+        <button data-view="support">☎️ Поддержка <i class="side__badge" id="support-badge" hidden></i></button>
+        <button data-view="design">🎨 Дизайн</button>
+        <button data-view="settings">⚙️ Настройки</button>
+      </nav>
+      <div class="side__foot">
+        <a href="/" target="_blank">↗ Открыть сайт</a>
+        <button id="logout">Выйти</button>
+      </div>
+    </aside>
+
+    <main class="main">
+
+      <!-- ===== PRODUCTS LIST ===== -->
+      <section class="view" id="view-products">
+        <header class="vhead">
+          <h1>Товары <span class="vhead__n" id="prod-count"></span></h1>
+          <div class="vhead__end">
+            <input class="ainput" id="prod-search" type="search" placeholder="Поиск…">
+            <button class="abtn abtn--primary" id="prod-new">+ Добавить товар</button>
+          </div>
+        </header>
+        <div class="tablewrap">
+          <table class="atable" id="prod-table">
+            <thead><tr><th>Номер модели</th><th>Вариант</th><th>Название</th><th>Размеры</th><th>Категория гендера</th><th>Категория одежды</th><th>Тег</th><th>Цена</th><th>Статус</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== PRODUCT EDIT ===== -->
+      <section class="view" id="view-edit" hidden>
+        <header class="vhead">
+          <h1 id="edit-title">Новый товар</h1>
+          <div class="vhead__end">
+            <button class="abtn" id="edit-cancel">← Назад</button>
+            <button class="abtn abtn--primary" id="edit-save">Сохранить</button>
+          </div>
+        </header>
+        <p class="formerr" id="edit-err" hidden></p>
+
+        <div class="editgrid">
+          <div class="card">
+            <h3>Основное</h3>
+            <div class="frow frow--4">
+              <label>Номер модели <input class="ainput" id="f-model" maxlength="40" placeholder="MP-1001"></label>
+              <label>Вариант (цвет) <input class="ainput" id="f-variant" maxlength="60" placeholder="Burgundy"></label>
+              <label>Название <input class="ainput" id="f-name" maxlength="120"></label>
+              <label>Slug (URL) <input class="ainput" id="f-slug" maxlength="80" placeholder="автоматически"></label>
+            </div>
+            <div class="frow frow--4">
+              <label>Категория гендера
+                <select class="ainput" id="f-gender">
+                  <option value="women">Женский</option><option value="men">Мужской</option>
+                  <option value="kids">Детский</option><option value="unisex">Унисекс</option>
+                </select>
+              </label>
+              <label>Категория одежды
+                <select class="ainput" id="f-cat">
+                  <option value="pajamas">Пижамы</option><option value="robes">Халаты</option>
+                  <option value="homewear">Домашняя одежда</option><option value="loungewear">Лаунж-сеты</option>
+                </select>
+              </label>
+              <label>Цена <input class="ainput" id="f-price" type="number" min="0" step="0.01"></label>
+              <label>Старая цена <input class="ainput" id="f-old" type="number" min="0" step="0.01" placeholder="—"></label>
+            </div>
+            <div class="frow frow--4">
+              <label>Тег
+                <select class="ainput" id="f-tag">
+                  <option value="">—</option><option value="bestseller">Бестселлер</option>
+                  <option value="new">Новинка</option><option value="sale">Скидка</option>
+                </select>
+              </label>
+              <label>Размеры (через запятую) <input class="ainput" id="f-sizes" placeholder="XS, S, M, L"></label>
+              <label>Рейтинг <input class="ainput" id="f-rating" type="number" min="0" max="5" step="0.1"></label>
+              <label>Отзывов <input class="ainput" id="f-reviews" type="number" min="0" step="1"></label>
+            </div>
+            <div class="frow">
+              <label class="fcheck"><input type="checkbox" id="f-active" checked> Показывать на сайте</label>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Фотографии</h3>
+            <div class="photos" id="f-photos"></div>
+            <label class="upload">
+              <input type="file" id="f-upload" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" multiple hidden>
+              <span>＋ Загрузить фото или видео (JPG / PNG / WebP до 8 МБ · MP4 / WebM до 64 МБ)</span>
+            </label>
+            <p class="hint" id="upload-status"></p>
+          </div>
+
+          <div class="card">
+            <h3>Описание</h3>
+            <div class="langtabs" id="desc-tabs">
+              <button data-lt="ru" class="is-on">RU</button><button data-lt="uz">UZ</button><button data-lt="en">EN</button>
+            </div>
+            <textarea class="ainput" id="f-desc-ru" rows="4" placeholder="Описание (русский)"></textarea>
+            <textarea class="ainput" id="f-desc-uz" rows="4" placeholder="Tavsif (o‘zbekcha)" hidden></textarea>
+            <textarea class="ainput" id="f-desc-en" rows="4" placeholder="Description (English)" hidden></textarea>
+            <div class="frow frow--3" style="margin-top:14px">
+              <label>Ткань RU <input class="ainput" id="f-fab-ru" maxlength="300" placeholder="Шёлк малберри · бургунди"></label>
+              <label>Ткань UZ <input class="ainput" id="f-fab-uz" maxlength="300" placeholder="Tut ipagi · burgundi"></label>
+              <label>Ткань EN <input class="ainput" id="f-fab-en" maxlength="300" placeholder="Mulberry silk · burgundy"></label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== ORDERS ===== -->
+      <section class="view" id="view-orders" hidden>
+        <header class="vhead"><h1>Заказы <span class="vhead__n" id="order-count"></span></h1></header>
+        <div class="tablewrap">
+          <table class="atable atable--orders" id="order-table">
+            <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Состав</th><th>Сумма</th><th>Оплата</th><th>Статус</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== SUPPORT ===== -->
+      <section class="view" id="view-support" hidden>
+        <header class="vhead"><h1>Поддержка <span class="vhead__n" id="support-count"></span></h1></header>
+        <div class="tablewrap">
+          <table class="atable atable--orders" id="support-table">
+            <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Тема</th><th>Сообщение</th><th>Статус</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== SETTINGS ===== -->
+      <section class="view" id="view-settings" hidden>
+        <header class="vhead">
+          <h1>Настройки</h1>
+          <button class="abtn abtn--primary" id="set-save">Сохранить</button>
+        </header>
+        <p class="formerr formerr--ok" id="set-msg" hidden></p>
+
+        <div class="editgrid">
+          <div class="card">
+            <h3>Контакты</h3>
+            <div class="frow frow--2">
+              <label>Телефон (как показывать) <input class="ainput" id="s-phone"></label>
+              <label>WhatsApp (только цифры) <input class="ainput" id="s-whatsapp" placeholder="998901234567"></label>
+            </div>
+            <div class="frow frow--3">
+              <label>Telegram (без @) <input class="ainput" id="s-telegram"></label>
+              <label>Instagram (без @) <input class="ainput" id="s-instagram"></label>
+              <label>E-mail <input class="ainput" id="s-email"></label>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Адрес шоурума</h3>
+            <div class="frow">
+              <label>RU <input class="ainput" id="s-address_ru"></label>
+              <label>UZ <input class="ainput" id="s-address_uz"></label>
+              <label>EN <input class="ainput" id="s-address_en"></label>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Валюта</h3>
+            <div class="frow frow--2">
+              <label>Символ / код <input class="ainput" id="s-currency" placeholder="€ или so'm"></label>
+              <label>Положение
+                <select class="ainput" id="s-currency_pos">
+                  <option value="before">Перед суммой (€189)</option>
+                  <option value="after">После суммы (189 000 so'm)</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="card">
+            <h3>Доступ в админку</h3>
+            <div class="frow frow--3">
+              <label>Логин администратора <input class="ainput" id="s-admin_user" autocomplete="off"></label>
+            </div>
+            <div class="frow frow--3">
+              <label>Текущий пароль <input class="ainput" id="p-current" type="password" autocomplete="current-password"></label>
+              <label>Новый пароль (мин. 8) <input class="ainput" id="p-next" type="password" autocomplete="new-password"></label>
+              <button class="abtn" id="p-save" style="align-self:end">Сменить пароль</button>
+            </div>
+            <p class="hint">Логин сохраняется кнопкой «Сохранить» сверху. Пароль меняется отдельной кнопкой и требует текущий пароль.</p>
+            <p class="formerr" id="p-msg" hidden></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== DESIGN ===== -->
+      <section class="view" id="view-design" hidden>
+        <header class="vhead">
+          <h1>Дизайн</h1>
+          <button class="abtn abtn--primary" id="design-save">Сохранить</button>
+        </header>
+        <p class="formerr formerr--ok" id="design-msg" hidden></p>
+
+        <div class="editgrid">
+          <div class="card">
+            <h3>Главный экран (Hero)</h3>
+            <p class="hint" style="margin:0 0 14px">Что показывать в большом блоке на главной странице — фото или видео.</p>
+            <div class="dradio">
+              <label><input type="radio" name="hero-type" value="image"> Фото</label>
+              <label><input type="radio" name="hero-type" value="video"> Видео</label>
+            </div>
+
+            <div id="d-hero-image-wrap">
+              <div class="dmedia">
+                <div class="dprev dprev--portrait" id="d-hero-image-prev"></div>
+                <div class="dctl">
+                  <p>Фото главного экрана</p>
+                  <label class="upload upload--sm">
+                    <input type="file" id="d-hero-image-file" accept="image/jpeg,image/png,image/webp" hidden>
+                    <span>＋ Загрузить фото</span>
+                  </label>
+                  <small class="hint">Вертикальное, JPG/PNG/WebP, до 8 МБ.</small>
+                </div>
+              </div>
+            </div>
+
+            <div id="d-hero-video-wrap" hidden>
+              <div class="dmedia">
+                <div class="dprev dprev--portrait" id="d-hero-video-prev"></div>
+                <div class="dctl">
+                  <p>Видео главного экрана</p>
+                  <label class="upload upload--sm">
+                    <input type="file" id="d-hero-video-file" accept="video/mp4,video/webm" hidden>
+                    <span>＋ Загрузить видео</span>
+                  </label>
+                  <small class="hint">MP4/WebM, до 64 МБ. Звук на сайте отключён, видео зациклено.</small>
+                </div>
+              </div>
+              <div class="dmedia" style="margin-top:12px">
+                <div class="dprev dprev--portrait" id="d-hero-poster-prev"></div>
+                <div class="dctl">
+                  <p>Постер (заставка до загрузки видео)</p>
+                  <label class="upload upload--sm">
+                    <input type="file" id="d-hero-poster-file" accept="image/jpeg,image/png,image/webp" hidden>
+                    <span>＋ Загрузить постер</span>
+                  </label>
+                  <small class="hint">Необязательно. Показывается, пока видео грузится.</small>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h3>Фирменный цвет</h3>
+            <p class="hint" style="margin:0 0 14px">Акцентный цвет кнопок, заголовков и тёмных блоков по всему сайту.</p>
+            <div class="swatches" id="d-themes"></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div class="atoast" id="atoast"></div>
+  <script src="/js/admin.js?v=4" defer></script>
+</body>
+</html>
