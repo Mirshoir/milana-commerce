@@ -151,6 +151,8 @@
 .auth-tabs button.is-on{background:var(--burgundy);color:var(--ivory)}
 .auth-form{display:none;flex-direction:column;gap:14px}
 .auth-form.is-on{display:flex}
+.auth-card.is-authenticated .auth-tabs,
+.auth-card.is-authenticated .auth-form,
 .auth-form[hidden],.auth-tabs[hidden]{display:none !important}
 .auth-help{font-size:.86rem;color:var(--ink-soft);line-height:1.55;margin-bottom:2px}
 .auth-form label span{

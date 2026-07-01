@@ -61,6 +61,7 @@
     const account = document.querySelector("[data-auth-account]");
     const page = document.querySelector("[data-auth-page]");
     if (!page || !account) return;
+    page.classList.toggle("is-authenticated", Boolean(me));
     const forms = page.querySelectorAll(".auth-form, .auth-tabs");
     forms.forEach((el) => (el.hidden = Boolean(me)));
     page.querySelectorAll("[data-firebase-auth]").forEach((el) => {
