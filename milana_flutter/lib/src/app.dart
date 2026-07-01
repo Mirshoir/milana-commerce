@@ -190,17 +190,26 @@ Color statusColor(String status) {
 
 int tabIndexFromFragment(String fragment) {
   switch (fragment.trim().toLowerCase()) {
+    case 'home':
+    case 'bosh':
+      return 0;
+    case 'catalog':
+    case 'shop':
+    case 'katalog':
+    case 'do‘kon':
+    case "do'kon":
+      return 1;
     case 'cart':
     case 'savat':
-      return 1;
+      return 2;
     case 'support':
     case 'help':
     case 'yordam':
-      return 2;
+      return 3;
     case 'account':
     case 'profile':
     case 'akkaunt':
-      return 3;
+      return 4;
     default:
       return 0;
   }
@@ -335,6 +344,12 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final pages = [
+      HomeScreen(
+        catalog: widget.catalog,
+        cart: widget.cart,
+        onOpenCatalog: () => setState(() => index = 1),
+        onOpenSupport: () => setState(() => index = 3),
+      ),
       CatalogScreen(
         catalog: widget.catalog,
         cart: widget.cart,
@@ -356,7 +371,7 @@ class _AppShellState extends State<AppShell> {
             title: const _BrandLockup(),
             actions: [
               TextButton.icon(
-                onPressed: () => setState(() => index = 1),
+                onPressed: () => setState(() => index = 2),
                 icon: const Icon(Icons.shopping_bag_outlined),
                 label: Text('${widget.cart.count}'),
               ),
@@ -367,6 +382,11 @@ class _AppShellState extends State<AppShell> {
             selectedIndex: index,
             onDestinationSelected: (value) => setState(() => index = value),
             destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: 'Home',
+              ),
               NavigationDestination(
                 icon: Icon(Icons.storefront_outlined),
                 selectedIcon: Icon(Icons.storefront),
@@ -417,6 +437,520 @@ class _BrandLockup extends StatelessWidget {
           style: TextStyle(fontSize: 10, letterSpacing: 3),
         ),
       ],
+    );
+  }
+}
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({
+    super.key,
+    required this.catalog,
+    required this.cart,
+    required this.onOpenCatalog,
+    required this.onOpenSupport,
+  });
+
+  final CatalogRepository catalog;
+  final CartController cart;
+  final VoidCallback onOpenCatalog;
+  final VoidCallback onOpenSupport;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late Future<List<Product>> productsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    productsFuture = widget.catalog.loadProducts();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Product>>(
+      future: productsFuture,
+      builder: (context, snap) {
+        final products = snap.data ?? const <Product>[];
+        final loading = snap.connectionState != ConnectionState.done;
+        final women = _byGender(products, 'women');
+        final men = _byGender(products, 'men');
+        final kids = _byGender(products, 'kids');
+        final heroProduct = products.isNotEmpty ? products.first : null;
+        final bestProducts = products.take(8).toList();
+        final lounge = products
+            .where((product) => product.category == 'loungewear')
+            .take(8)
+            .toList();
+        return RefreshIndicator(
+          onRefresh: () async {
+            final next = widget.catalog.loadProducts();
+            setState(() => productsFuture = next);
+            await next;
+          },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+            children: [
+              HomeHero(
+                product: heroProduct,
+                loading: loading,
+                onCatalog: widget.onOpenCatalog,
+                onSupport: widget.onOpenSupport,
+              ),
+              const SizedBox(height: 14),
+              HomeStatStrip(totalProducts: products.length),
+              const SizedBox(height: 18),
+              SectionHeader(title: 'Shop the edit', trailing: 'Optom'),
+              const SizedBox(height: 10),
+              HomeCategoryGrid(
+                women: women.length,
+                men: men.length,
+                kids: kids.length,
+                onOpenCatalog: widget.onOpenCatalog,
+              ),
+              if (bestProducts.isNotEmpty) ...[
+                const SizedBox(height: 22),
+                SectionHeader(
+                  title: 'Fresh drops',
+                  trailing: '${bestProducts.length} model',
+                ),
+                const SizedBox(height: 10),
+                FeaturedProductsRail(
+                  products: bestProducts,
+                  badgeIcon: Icons.auto_awesome,
+                  badgeLabel: 'Drop',
+                  onOpen: (product) => _openProduct(product, products),
+                  onAdd: _add,
+                ),
+              ],
+              if (lounge.isNotEmpty) ...[
+                const SizedBox(height: 22),
+                SectionHeader(
+                  title: 'Lounge systems',
+                  trailing: '${lounge.length} model',
+                ),
+                const SizedBox(height: 10),
+                FeaturedProductsRail(
+                  products: lounge,
+                  badgeIcon: Icons.layers_outlined,
+                  badgeLabel: 'Set',
+                  onOpen: (product) => _openProduct(product, products),
+                  onAdd: _add,
+                ),
+              ],
+              const SizedBox(height: 22),
+              HomeWholesaleBand(onSupport: widget.onOpenSupport),
+              if (snap.hasError && products.isEmpty) ...[
+                const SizedBox(height: 22),
+                _EmptyState(
+                  icon: Icons.cloud_off_outlined,
+                  title: 'Katalog ochilmadi',
+                  message: '${snap.error}',
+                  action: FilledButton(
+                    onPressed: () => setState(
+                      () => productsFuture = widget.catalog.loadProducts(),
+                    ),
+                    child: const Text('Qayta urinish'),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  List<Product> _byGender(List<Product> products, String gender) =>
+      products.where((product) => product.gender == gender).toList();
+
+  void _add(Product product) {
+    if (!widget.cart.canAdd(product)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${product.name} hozircha mavjud emas')),
+      );
+      return;
+    }
+    widget.cart.add(product);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${product.name} · 1 qop savatga qo‘shildi')),
+    );
+  }
+
+  void _openProduct(Product product, List<Product> products) {
+    final related = relatedProductsFor(product, products);
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => ProductSheet(
+        product: product,
+        relatedProducts: related,
+        onAdd: (qty) {
+          for (var i = 0; i < qty; i++) {
+            _add(product);
+          }
+        },
+        onOpenRelated: (relatedProduct) =>
+            _openProduct(relatedProduct, products),
+        onAddRelated: _add,
+      ),
+    );
+  }
+}
+
+class HomeHero extends StatelessWidget {
+  const HomeHero({
+    super.key,
+    required this.product,
+    required this.loading,
+    required this.onCatalog,
+    required this.onSupport,
+  });
+
+  final Product? product;
+  final bool loading;
+  final VoidCallback onCatalog;
+  final VoidCallback onSupport;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 520,
+      decoration: BoxDecoration(
+        color: milanaInk,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (product != null)
+            ProductImage(product: product!)
+          else
+            const ProductImagePlaceholder(),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: .1),
+                  Colors.black.withValues(alpha: .38),
+                  Colors.black.withValues(alpha: .72),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 18,
+            right: 18,
+            bottom: 18,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SoftBadge(
+                  icon: loading ? Icons.sync : Icons.verified_outlined,
+                  label: loading ? 'Yangilanmoqda' : 'Milana Premium',
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'Factory drops for wholesale buyers',
+                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    height: .98,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Ayollar, erkaklar va bolalar uchun uy kiyimlari. 1 qopdan buyurtma, har qopda 60 ta kiyim.',
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: Colors.white.withValues(alpha: .86),
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: onCatalog,
+                        icon: const Icon(Icons.storefront_outlined),
+                        label: const Text('Katalog'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    IconButton.filledTonal(
+                      onPressed: onSupport,
+                      icon: const Icon(Icons.support_agent_outlined),
+                      tooltip: 'Yordam',
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: milanaInk,
+                        fixedSize: const Size(52, 52),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HomeStatStrip extends StatelessWidget {
+  const HomeStatStrip({super.key, required this.totalProducts});
+
+  final int totalProducts;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        HomeStatTile(value: '$totalProducts', label: 'active models'),
+        const SizedBox(width: 10),
+        const HomeStatTile(value: '60', label: 'pieces per qop'),
+        const SizedBox(width: 10),
+        const HomeStatTile(value: '08-18', label: 'Mon-Sat'),
+      ],
+    );
+  }
+}
+
+class HomeStatTile extends StatelessWidget {
+  const HomeStatTile({super.key, required this.value, required this.label});
+
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: milanaInk.withValues(alpha: .08)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: milanaBurgundy,
+              ),
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: milanaInk.withValues(alpha: .58),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class HomeCategoryGrid extends StatelessWidget {
+  const HomeCategoryGrid({
+    super.key,
+    required this.women,
+    required this.men,
+    required this.kids,
+    required this.onOpenCatalog,
+  });
+
+  final int women;
+  final int men;
+  final int kids;
+  final VoidCallback onOpenCatalog;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth > 620;
+        final children = [
+          HomeCategoryTile(
+            title: 'Women',
+            count: women,
+            icon: Icons.checkroom_outlined,
+            color: milanaBurgundy,
+            onTap: onOpenCatalog,
+          ),
+          HomeCategoryTile(
+            title: 'Men',
+            count: men,
+            icon: Icons.man_2_outlined,
+            color: milanaMoss,
+            onTap: onOpenCatalog,
+          ),
+          HomeCategoryTile(
+            title: 'Kids',
+            count: kids,
+            icon: Icons.child_care_outlined,
+            color: const Color(0xff315f72),
+            onTap: onOpenCatalog,
+          ),
+        ];
+        return GridView.count(
+          crossAxisCount: wide ? 3 : 1,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: wide ? 1.35 : 3.5,
+          children: children,
+        );
+      },
+    );
+  }
+}
+
+class HomeCategoryTile extends StatelessWidget {
+  const HomeCategoryTile({
+    super.key,
+    required this.title,
+    required this.count,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String title;
+  final int count;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Ink(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: .16),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: Colors.white),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    '$count model',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: .78),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward, color: Colors.white),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class HomeWholesaleBand extends StatelessWidget {
+  const HomeWholesaleBand({super.key, required this.onSupport});
+
+  final VoidCallback onSupport;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: milanaSand,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.inventory_2_outlined,
+              color: milanaBurgundy,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Wholesale rule',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Minimal buyurtma: 1 modeldan kamida 1 qop. Standart qop 60 ta kiyimdan iborat.',
+                  style: TextStyle(color: milanaInk.withValues(alpha: .68)),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: onSupport,
+                  icon: const Icon(Icons.call_outlined, size: 18),
+                  label: const Text('Menejer bilan bog‘lanish'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
