@@ -180,7 +180,8 @@
 .auth-account[hidden]{display:none}
 .auth-account__label{font-size:.68rem;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-soft)}
 .auth-account strong{font-family:var(--f-display);font-weight:500;font-size:1.8rem;line-height:1.1}
-.auth-account span{color:var(--ink-soft);word-break:break-word}
+.auth-account > span{color:var(--ink-soft);word-break:break-word}
+.auth-account .btn span{color:inherit}
 .auth-account__actions{display:grid;gap:14px;margin-top:18px}
 .auth-logout{
   justify-self:center;font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
