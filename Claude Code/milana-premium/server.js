@@ -886,6 +886,39 @@ const api = {
     customer: publicCustomer(customerFromRequest(req)),
   }),
 
+  "GET /api/auth/orders": (req, res) => {
+    const customer = customerFromRequest(req);
+    if (!customer) return fail(res, 401, "unauthorized");
+    const rows = db.prepare(`
+      SELECT id, number, status, items, total, lang, created_at, updated_at
+      FROM orders
+      WHERE customer_id=?
+      ORDER BY id DESC
+      LIMIT 20
+    `).all(customer.id).map((row) => {
+      let items = [];
+      try { items = JSON.parse(row.items || "[]"); } catch {}
+      return {
+        id: row.id,
+        number: row.number,
+        status: row.status,
+        total: row.total,
+        lang: row.lang,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        items: Array.isArray(items) ? items.slice(0, 5).map((item) => ({
+          id: item.id,
+          slug: item.slug,
+          name: item.name,
+          qty: item.qty,
+          image: item.image || "",
+          price: item.price,
+        })) : [],
+      };
+    });
+    send(res, 200, { orders: rows });
+  },
+
   "POST /api/auth/signup": async (req, res) => {
     if (!rateLimit("customer-signup:" + ipOf(req), 10, 3600e3)) return fail(res, 429, "rate_limited");
     const b = await readJson(req, 12e3);

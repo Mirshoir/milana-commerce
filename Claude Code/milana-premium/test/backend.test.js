@@ -154,6 +154,23 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     password: "new-strong-pass-2026",
   });
   assert.equal(newPasswordSignin.status, 200);
+  const newCustomerCookie = newPasswordSignin.headers.get("set-cookie").split(";")[0];
+
+  const customerOrderRes = await json(app.base + "/api/orders", {
+    customer: { name: "Wholesale Buyer", phone: "+998 91 222 33 44", city: "Andijon" },
+    payment: { method: "manager" },
+    items: [{ id: product.id, qty: 1 }],
+    lang: "en",
+  }, { headers: { Cookie: newCustomerCookie } });
+  assert.equal(customerOrderRes.status, 201);
+  const customerOrder = await customerOrderRes.json();
+
+  const customerOrdersRes = await fetch(app.base + "/api/auth/orders", { headers: { Cookie: newCustomerCookie } });
+  assert.equal(customerOrdersRes.status, 200);
+  const customerOrders = (await customerOrdersRes.json()).orders;
+  assert.equal(customerOrders.length, 1);
+  assert.equal(customerOrders[0].number, customerOrder.number);
+  assert.equal(customerOrders[0].items[0].name, product.name);
 
   const supportRes = await json(app.base + "/api/support", {
     name: "Support Customer",
@@ -179,35 +196,36 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const adminOrders = await fetch(app.base + "/api/admin/orders", { headers: { Cookie: cookie } });
   assert.equal(adminOrders.status, 200);
   const orders = await adminOrders.json();
-  assert.equal(orders.length, 1);
-  assert.equal(orders[0].number, order.number);
-  assert.equal(orders[0].payment.method, "bank");
-  assert.equal(orders[0].payment.status, "pending");
-  assert.equal(orders[0].payment.amount, order.total);
-  assert.equal(orders[0].items[0].bag_size, 60);
-  assert.equal(orders[0].items[0].unit_price, product.price);
-  assert.equal(orders[0].items[0].price, Math.round(product.price * 60 * 100) / 100);
+  assert.equal(orders.length, 2);
+  const adminOrder = orders.find((row) => row.number === order.number);
+  assert.ok(adminOrder);
+  assert.equal(adminOrder.payment.method, "bank");
+  assert.equal(adminOrder.payment.status, "pending");
+  assert.equal(adminOrder.payment.amount, order.total);
+  assert.equal(adminOrder.items[0].bag_size, 60);
+  assert.equal(adminOrder.items[0].unit_price, product.price);
+  assert.equal(adminOrder.items[0].price, Math.round(product.price * 60 * 100) / 100);
   const expectedSizes = [...product.sizes, "44", "46", "48", "50", "52", "54"]
     .filter((size, idx, arr) => arr.indexOf(size) === idx)
     .slice(0, 6);
-  assert.deepEqual(orders[0].items[0].size_mix, expectedSizes.map((size) => ({ size, qty: 10 })));
+  assert.deepEqual(adminOrder.items[0].size_mix, expectedSizes.map((size) => ({ size, qty: 10 })));
 
   const blocked = await json(
-    app.base + "/api/admin/orders/" + orders[0].id,
+    app.base + "/api/admin/orders/" + adminOrder.id,
     { status: "done" },
     { method: "PUT", headers: { Cookie: cookie, Origin: "https://evil.example" } }
   );
   assert.equal(blocked.status, 403);
 
   const allowed = await json(
-    app.base + "/api/admin/orders/" + orders[0].id,
+    app.base + "/api/admin/orders/" + adminOrder.id,
     { status: "done" },
     { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
   );
   assert.equal(allowed.status, 200);
 
   const paymentAllowed = await json(
-    app.base + "/api/admin/payments/" + orders[0].payment.id,
+    app.base + "/api/admin/payments/" + adminOrder.payment.id,
     { status: "paid", reference: "BANK-TEST-1" },
     { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
   );

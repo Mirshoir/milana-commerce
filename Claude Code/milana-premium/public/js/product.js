@@ -28,13 +28,14 @@
     const poster = p.images.find((u) => !isVideo(u)) || "";
     const main = isVideo(cur)
       ? `<video src="${esc(cur)}" controls autoplay muted loop playsinline preload="metadata"${poster ? ` poster="${esc(poster)}"` : ""}></video>`
-      : `<img src="${esc(cur)}" alt="${esc(p.name)}">`;
+      : `<img src="${esc(cur)}" alt="${esc(p.name)}" decoding="async" fetchpriority="high">`;
     $("#pd-main").innerHTML = tagChip(p) + main;
     $("#pd-thumbs").innerHTML = p.images.map((u, i) => {
       const vid = isVideo(u);
-      const thumb = vid ? (poster ? `<img src="${esc(poster)}" alt="">` : "") : `<img src="${esc(u)}" alt="">`;
+      const thumb = vid ? (poster ? `<img src="${esc(poster)}" alt="" loading="lazy" decoding="async">` : "") : `<img src="${esc(u)}" alt="" loading="lazy" decoding="async">`;
       return `<button data-img="${i}" class="${i === imgIdx ? "is-on" : ""}${vid ? " is-video" : ""}" aria-label="Media ${i + 1}">${thumb}</button>`;
     }).join("");
+    window.MilanaState?.wireImages?.($("#pd"));
   }
 
   function render() {
@@ -46,10 +47,17 @@
     $("#pd-rating").innerHTML = `<svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} ${I18N.t("best.reviews")})</span>`;
     $("#pd-price").innerHTML = `<strong>${I18N.fmtPrice(p.price)}</strong>${p.old_price ? `<s>${I18N.fmtPrice(p.old_price)}</s>` : ""}<small>${I18N.t("cart.unitPrice")}</small>`;
     $("#pd-fabric").textContent = (p.fabric[lang] || p.fabric.en || "");
+    $("#pd-meta").innerHTML = [
+      [I18N.t("prod.model"), p.model_no || p.variant || p.id],
+      [I18N.t("prod.category"), I18N.catName(p.category)],
+      [I18N.t("prod.wholesaleBag"), I18N.t("cart.defaultMix")],
+    ].map(([k, v]) => `<span><i>${esc(k)}</i><b>${esc(v)}</b></span>`).join("");
     $("#pd-desc").textContent = (p.desc[lang] || p.desc.en || "");
     $("#pd-care").textContent = (p.fabric[lang] || p.fabric.en || "") + "\n" + careLine();
+    $("#pd").classList.remove("is-loading", "is-error");
     renderQty();
     renderGallery();
+    renderWish();
 
     /* sizes */
     const wrap = $("#pd-sizes");
@@ -76,7 +84,26 @@
             <p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${r.rating} <span>(${r.reviews})</span></p>
           </div>
         </article>`).join("");
+      window.MilanaState?.wireImages?.($("#related"));
     }
+  }
+
+  function renderWish() {
+    const btn = $("#pd-wish");
+    if (!btn || !p) return;
+    const active = window.MilanaState?.wishlist?.has?.(p.id);
+    btn.classList.toggle("is-active", Boolean(active));
+    btn.dataset.wishId = p.id;
+    btn.setAttribute("aria-pressed", String(Boolean(active)));
+  }
+
+  function renderError() {
+    $("#pd").classList.remove("is-loading");
+    $("#pd").classList.add("is-error");
+    $("#pd-main").innerHTML = `<div class="pd__unavailable"><p>${esc(navigator.onLine ? I18N.t("prod.unavailable") : I18N.t("shop.offline"))}</p><a class="btn btn--ghost" href="/shop"><span>${esc(I18N.t("prod.back"))}</span></a></div>`;
+    $("#pd-thumbs").innerHTML = "";
+    $("#pd-name").textContent = I18N.t("prod.unavailableTitle");
+    $("#pd-cat").textContent = "";
   }
 
   function careLine() {
@@ -92,6 +119,13 @@
   document.addEventListener("click", (e) => {
     const th = e.target.closest("[data-img]");
     if (th) { imgIdx = +th.dataset.img; renderGallery(); return; }
+
+    const wish = e.target.closest("#pd-wish");
+    if (wish && p) {
+      window.MilanaState?.wishlist?.toggle?.({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price });
+      renderWish();
+      return;
+    }
 
     const head = e.target.closest(".pd__acc-head");
     if (head) {
@@ -132,12 +166,12 @@
   /* ---------------- boot ---------------- */
   async function boot() {
     await I18N.ready;
-    if (!slug) { location.replace("/shop"); return; }
+    if (!slug) { renderError(); return; }
     try {
       const r = await fetch("/api/products/" + encodeURIComponent(slug));
       if (!r.ok) throw new Error();
       p = await r.json();
-    } catch { location.replace("/shop"); return; }
+    } catch { renderError(); return; }
     render();
     openFirstAcc();
 
@@ -155,4 +189,5 @@
   boot();
 
   window.addEventListener("i18n:change", () => { if (p) { render(); openFirstAcc(); } });
+  window.addEventListener("milana:wishlist", renderWish);
 })();

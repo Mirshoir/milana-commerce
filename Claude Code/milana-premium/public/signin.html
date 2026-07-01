@@ -8,8 +8,8 @@
   <meta name="theme-color" content="#5c1f2d">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%235c1f2d'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='34' fill='%23f4efe6' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/css/fonts.css">
-  <link rel="stylesheet" href="/css/style.css">
-  <link rel="stylesheet" href="/css/shop.css?v=20260701-auth3">
+  <link rel="stylesheet" href="/css/style.css?v=20260701-polish1">
+  <link rel="stylesheet" href="/css/shop.css?v=20260701-polish1">
   <script>document.documentElement.classList.replace('no-js','js');</script>
 </head>
 <body data-keep-title="1">
@@ -103,6 +103,23 @@
           <p class="auth-account__label" data-i18n="auth.signedInAs">Signed in as</p>
           <strong data-auth-name></strong>
           <span data-auth-email></span>
+          <div class="account-stats" data-account-stats>
+            <span><b data-account-orders>0</b><i data-i18n="auth.orders">Orders</i></span>
+            <span><b data-account-wishlist>0</b><i data-i18n="auth.wishlist">Wishlist</i></span>
+            <span><b>60</b><i data-i18n="auth.bagPieces">Pieces / bag</i></span>
+          </div>
+          <div class="account-panel">
+            <p class="account-panel__kicker" data-i18n="auth.profile">Profile</p>
+            <div class="account-profile" data-account-profile></div>
+          </div>
+          <div class="account-panel">
+            <p class="account-panel__kicker" data-i18n="auth.orderHistory">Order history</p>
+            <div class="account-orders" data-account-orders-list></div>
+          </div>
+          <div class="account-panel">
+            <p class="account-panel__kicker" data-i18n="auth.savedModels">Saved models</p>
+            <div class="account-wishlist" data-account-wishlist-list></div>
+          </div>
           <div class="auth-account__actions">
             <a class="btn btn--primary" href="/shop"><span data-i18n="auth.continueShopping">Continue shopping</span><svg class="ic"><use href="#i-arrow"/></svg></a>
             <button type="button" class="auth-logout" data-auth-logout data-i18n="auth.logout">Log out</button>
@@ -126,7 +143,8 @@
   </footer>
 
   <script src="/js/i18n.js" defer></script>
-  <script src="/js/auth.js?v=20260701-auth3" defer></script>
+  <script src="/js/app-state.js?v=20260701-polish1" defer></script>
+  <script src="/js/auth.js?v=20260701-polish1" defer></script>
   <script src="/js/cart.js" defer></script>
 </body>
 </html>

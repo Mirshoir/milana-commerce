@@ -10,8 +10,11 @@
   let provider = "local";
   let firebaseAuth = null;
   let googleProvider = null;
+  let orders = null;
 
   const t = (k) => window.I18N ? I18N.t(k) : k;
+  const fmt = (n) => window.I18N ? I18N.fmtPrice(n) : "$" + Number(n || 0).toFixed(2);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const json = async (url, body) => {
     const r = await fetch(url, {
       method: "POST",
@@ -71,6 +74,74 @@
     if (!me) return;
     page.querySelector("[data-auth-name]").textContent = me.name || t("auth.customer");
     page.querySelector("[data-auth-email]").textContent = me.email || "";
+    renderAccountDetails();
+    loadOrders();
+  }
+
+  function renderAccountDetails() {
+    if (!me) return;
+    const profile = document.querySelector("[data-account-profile]");
+    const orderCount = document.querySelector("[data-account-orders]");
+    const wishCount = document.querySelector("[data-account-wishlist]");
+    const orderList = document.querySelector("[data-account-orders-list]");
+    const wishList = document.querySelector("[data-account-wishlist-list]");
+    const wishlist = window.MilanaState?.wishlist?.all?.() || [];
+
+    if (profile) {
+      const rows = [
+        [t("auth.name"), me.name || t("auth.customer")],
+        [t("auth.phone"), me.phone || t("auth.missingPhone")],
+        [t("cart.city"), me.city || t("auth.missingCity")],
+        [t("cart.address"), me.address || t("auth.missingAddress")],
+      ];
+      profile.innerHTML = rows.map(([label, value]) => `<p><span>${esc(label)}</span><strong>${esc(value)}</strong></p>`).join("");
+    }
+
+    if (orderCount) orderCount.textContent = Array.isArray(orders) ? String(orders.length) : "0";
+    if (wishCount) wishCount.textContent = String(wishlist.length);
+
+    if (orderList) {
+      if (orders === null) {
+        orderList.innerHTML = `<div class="account-empty is-loading"><span></span><p>${esc(t("auth.loadingOrders"))}</p></div>`;
+      } else if (!orders.length) {
+        orderList.innerHTML = `<div class="account-empty"><p>${esc(t("auth.noOrders"))}</p><a href="/shop">${esc(t("auth.startOrder"))}</a></div>`;
+      } else {
+        orderList.innerHTML = orders.slice(0, 4).map((order) => {
+          const first = order.items?.[0] || {};
+          const extra = Math.max(0, (order.items?.length || 0) - 1);
+          return `<a class="account-order" href="/support?topic=order">
+            <span>${esc(order.number || "MP")}</span>
+            <strong>${esc(first.name || t("cart.title"))}${extra ? ` +${extra}` : ""}</strong>
+            <i>${esc(order.status || "new")} · ${fmt(order.total || 0)}</i>
+          </a>`;
+        }).join("");
+      }
+    }
+
+    if (wishList) {
+      if (!wishlist.length) {
+        wishList.innerHTML = `<div class="account-empty"><p>${esc(t("auth.noWishlist"))}</p><a href="/shop">${esc(t("auth.findModels"))}</a></div>`;
+      } else {
+        wishList.innerHTML = wishlist.slice(0, 4).map((item) => `<a class="account-wish" href="/p/${esc(item.slug || item.id)}">
+          <img src="${esc(item.image || "/assets/img/detail-stack.jpg")}" alt="">
+          <span><strong>${esc(item.name || t("auth.savedModel"))}</strong><i>${fmt(item.price || 0)}</i></span>
+          <button type="button" data-account-wish-remove="${esc(item.id)}" aria-label="Remove">×</button>
+        </a>`).join("");
+        window.MilanaState?.wireImages?.(wishList);
+      }
+    }
+  }
+
+  async function loadOrders() {
+    if (!me || orders !== null) return;
+    try {
+      const r = await fetch("/api/auth/orders");
+      if (!r.ok) throw new Error("orders");
+      orders = (await r.json()).orders || [];
+    } catch {
+      orders = [];
+    }
+    renderAccountDetails();
   }
 
   function setMsg(formName, msg, bad = true) {
@@ -143,9 +214,17 @@
         await json("/api/auth/logout");
         if (firebaseAuth && window.__milanaFirebase) await window.__milanaFirebase.authMod.signOut(firebaseAuth).catch(() => {});
         me = null;
+        orders = null;
         switchTab("signin");
         renderLinks();
         renderAccount();
+      }
+
+      const removeWish = e.target.closest("[data-account-wish-remove]");
+      if (removeWish) {
+        e.preventDefault();
+        window.MilanaState?.wishlist?.remove(removeWish.dataset.accountWishRemove);
+        renderAccountDetails();
       }
 
       const google = e.target.closest("[data-google-signin]");
@@ -223,6 +302,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", boot);
-  window.addEventListener("i18n:change", renderLinks);
+  window.addEventListener("i18n:change", () => { renderLinks(); renderAccount(); });
+  window.addEventListener("milana:wishlist", renderAccountDetails);
   window.MilanaAuth = { refresh, get customer() { return me; } };
 })();

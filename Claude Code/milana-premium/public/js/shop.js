@@ -75,11 +75,12 @@
 
   function card(p, i) {
     const fabric = (p.fabric && (p.fabric[I18N.lang] || p.fabric.en)) || "";
+    const wished = window.MilanaState?.wishlist?.has?.(p.id);
     return `
     <article class="product" data-id="${p.id}" style="animation-delay:${Math.min(i * 45, 400)}ms">
       <div class="product__media">
         ${tagChip(p)}
-        <button class="product__wish" aria-label="Wishlist"><svg class="ic"><use href="#i-heart"/></svg></button>
+        <button class="product__wish${wished ? " is-active" : ""}" data-wish-id="${p.id}" data-wish-slug="${esc(p.slug)}" data-wish-name="${esc(p.name)}" data-wish-image="${esc(p.images[0] || "")}" data-wish-price="${p.price}" aria-label="Wishlist" aria-pressed="${wished ? "true" : "false"}"><svg class="ic"><use href="#i-heart"/></svg></button>
         <a class="product__go" href="/p/${p.slug}"><figure>${mediaTag(p.images[0] || "", p.name, i < 9)}</figure></a>
         <div class="product__quick">
           <div class="product__sizes">${p.sizes.map((s) => `<span data-size="${esc(s)}">${esc(s)}</span>`).join("")}</div>
@@ -99,8 +100,27 @@
     const list = filtered();
     $("#found-n").textContent = list.length;
     $("#shop-grid").innerHTML = list.map(card).join("");
+    $("#shop-grid").classList.remove("is-loading");
     $("#shop-empty").classList.toggle("is-on", !list.length);
+    window.MilanaState?.wishlist?.sync?.();
+    window.MilanaState?.wireImages?.($("#shop-grid"));
     pushUrl();
+  }
+
+  function renderSkeleton() {
+    $("#shop-grid").classList.add("is-loading");
+    $("#shop-grid").innerHTML = Array.from({ length: 8 }, (_, i) => `
+      <article class="product product--skeleton" style="animation-delay:${i * 35}ms">
+        <div class="product__media"><figure></figure></div>
+        <div class="product__info"><i></i><i></i><i></i></div>
+      </article>`).join("");
+  }
+
+  function renderUnavailable() {
+    $("#shop-grid").classList.remove("is-loading");
+    $("#shop-grid").innerHTML = "";
+    $("#shop-empty").classList.add("is-on");
+    $("#shop-empty").querySelector("p").textContent = navigator.onLine ? I18N.t("shop.loadError") : I18N.t("shop.offline");
   }
 
   /* ---------- filters UI ---------- */
@@ -167,7 +187,18 @@
       Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, sizes: p.sizes });
     }
     const wish = e.target.closest(".product__wish");
-    if (wish) { wish.classList.toggle("is-active"); e.preventDefault(); }
+    if (wish) {
+      e.preventDefault();
+      const active = window.MilanaState?.wishlist?.toggle?.({
+        id: wish.dataset.wishId,
+        slug: wish.dataset.wishSlug,
+        name: wish.dataset.wishName,
+        image: wish.dataset.wishImage,
+        price: wish.dataset.wishPrice,
+      });
+      wish.classList.toggle("is-active", Boolean(active));
+      wish.setAttribute("aria-pressed", String(Boolean(active)));
+    }
   });
 
   let qTimer;
@@ -201,9 +232,10 @@
     document.title = I18N.t("shop.title") + " — MILANA PREMIUM";
     $("#shop-q").value = state.q;
     $("#shop-sort").value = state.sort;
+    renderSkeleton();
     try {
       all = await (await fetch("/api/products?limit=1000")).json();
-    } catch { all = []; }
+    } catch { all = []; renderUnavailable(); return; }
     buildFilters();
     render();
   }
