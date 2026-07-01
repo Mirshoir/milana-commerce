@@ -850,25 +850,29 @@ const SETTING_VALIDATORS = {
   accent_dark: (v) => (hexOk(v) ? v : null),
 };
 
+function healthResponse(req, res) {
+  const probe = db.prepare("SELECT 1 ok").get();
+  send(res, 200, {
+    ok: probe?.ok === 1,
+    env: NODE_ENV,
+    uptime: Math.round(process.uptime()),
+    products: db.prepare("SELECT COUNT(*) c FROM products").get().c,
+    orders: db.prepare("SELECT COUNT(*) c FROM orders").get().c,
+    catalog_source: CATALOG_SOURCE_ENABLED ? "supabase" : "sqlite",
+    catalog_cached_products: catalogCache.products.length,
+    catalog_error: catalogCache.error,
+  });
+}
+
 /* ========================= API ========================= */
 
 const api = {
 
   /* ----- public ----- */
 
-  "GET /api/health": (req, res) => {
-    const probe = db.prepare("SELECT 1 ok").get();
-    send(res, 200, {
-      ok: probe?.ok === 1,
-      env: NODE_ENV,
-      uptime: Math.round(process.uptime()),
-      products: db.prepare("SELECT COUNT(*) c FROM products").get().c,
-      orders: db.prepare("SELECT COUNT(*) c FROM orders").get().c,
-      catalog_source: CATALOG_SOURCE_ENABLED ? "supabase" : "sqlite",
-      catalog_cached_products: catalogCache.products.length,
-      catalog_error: catalogCache.error,
-    });
-  },
+  "GET /health": (req, res) => healthResponse(req, res),
+
+  "GET /api/health": (req, res) => healthResponse(req, res),
 
   "GET /api/settings": (req, res) => send(res, 200, allSettings()),
 
@@ -1387,6 +1391,13 @@ const server = http.createServer(async (req, res) => {
   const pathname = u.pathname;
 
   try {
+    if (pathname === "/health") {
+      Object.entries(corsHeaders(req)).forEach(([key, value]) => res.setHeader(key, value));
+      if (req.method === "OPTIONS") return send(res, 204, "");
+      if (req.method !== "GET" && req.method !== "HEAD") return fail(res, 405, "method_not_allowed");
+      return healthResponse(req, res);
+    }
+
     /* API */
     if (pathname.startsWith("/api/")) {
       Object.entries(corsHeaders(req)).forEach(([key, value]) => res.setHeader(key, value));
