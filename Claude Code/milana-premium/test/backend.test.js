@@ -127,6 +127,34 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   });
   assert.equal(signin.status, 200);
 
+  const recoverWrongPhone = await json(app.base + "/api/auth/recover", {
+    email: "buyer@example.com",
+    phone: "+998 90 000 00 00",
+    password: "new-strong-pass-2026",
+  });
+  assert.equal(recoverWrongPhone.status, 401);
+
+  const recover = await json(app.base + "/api/auth/recover", {
+    email: "buyer@example.com",
+    phone: "+998912223344",
+    password: "new-strong-pass-2026",
+  });
+  assert.equal(recover.status, 200);
+  const recoveryCookie = recover.headers.get("set-cookie").split(";")[0];
+  assert.match(recoveryCookie, /^cid=/);
+
+  const oldPasswordSignin = await json(app.base + "/api/auth/signin", {
+    email: "buyer@example.com",
+    password: "strong-pass-2026",
+  });
+  assert.equal(oldPasswordSignin.status, 401);
+
+  const newPasswordSignin = await json(app.base + "/api/auth/signin", {
+    email: "buyer@example.com",
+    password: "new-strong-pass-2026",
+  });
+  assert.equal(newPasswordSignin.status, 200);
+
   const supportRes = await json(app.base + "/api/support", {
     name: "Support Customer",
     phone: "+998 90 333 44 55",

@@ -598,6 +598,7 @@ const SUPPORT_TOPICS = ["general", "catalog", "price", "delivery", "defect", "pa
 const SUPPORT_STATUSES = ["new", "open", "waiting", "done", "closed"];
 const str = (v, max = 1000) => typeof v === "string" ? v.trim().slice(0, max) : "";
 const normalizeEmail = (v) => str(v, 254).toLowerCase();
+const normalizePhone = (v) => str(v, 25).replace(/\D/g, "");
 const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) && !/[<>"']/.test(v);
 const htmlText = (v) => str(v, 5000).replace(/\s+/g, " ").trim();
 
@@ -920,6 +921,28 @@ const api = {
     const token = createCustomerSession(row.id);
     audit("customer", "auth.signin", { id: row.id, provider: row.provider || "local" });
     send(res, 200, { customer: publicCustomer(row) }, { "Set-Cookie": customerCookie(req, token, 30 * 24 * 3600) });
+  },
+
+  "POST /api/auth/recover": async (req, res) => {
+    if (!rateLimit("customer-recover:" + ipOf(req), 8, 3600e3)) return fail(res, 429, "rate_limited");
+    const b = await readJson(req, 12e3);
+    const email = normalizeEmail(b.email);
+    const phone = str(b.phone, 25);
+    const password = String(b.password || "");
+    if (!emailOk(email)) return fail(res, 400, "email");
+    if (!phone || !/^[0-9+()\-\s]{5,25}$/.test(phone)) return fail(res, 400, "phone");
+    if (password.length < 8 || password.length > 100) return fail(res, 400, "password");
+    const row = db.prepare("SELECT * FROM customers WHERE email=?").get(email);
+    if (!row || !normalizePhone(row.phone) || normalizePhone(row.phone) !== normalizePhone(phone)) {
+      return fail(res, 401, "recovery_mismatch");
+    }
+    db.prepare("UPDATE customers SET password_hash=?, provider='local', updated_at=datetime('now') WHERE id=?")
+      .run(hashPassword(password), row.id);
+    db.prepare("DELETE FROM customer_sessions WHERE customer_id=?").run(row.id);
+    const updated = db.prepare("SELECT * FROM customers WHERE id=?").get(row.id);
+    const token = createCustomerSession(row.id);
+    audit("customer", "auth.password_recovered", { id: row.id, provider: row.provider || "local" });
+    send(res, 200, { customer: publicCustomer(updated) }, { "Set-Cookie": customerCookie(req, token, 30 * 24 * 3600) });
   },
 
   "POST /api/auth/firebase": async (req, res) => {

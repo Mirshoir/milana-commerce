@@ -151,6 +151,8 @@
 .auth-tabs button.is-on{background:var(--burgundy);color:var(--ivory)}
 .auth-form{display:none;flex-direction:column;gap:14px}
 .auth-form.is-on{display:flex}
+.auth-form[hidden],.auth-tabs[hidden]{display:none !important}
+.auth-help{font-size:.86rem;color:var(--ink-soft);line-height:1.55;margin-bottom:2px}
 .auth-form label span{
   display:block;font-size:.68rem;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:7px;
 }
@@ -160,6 +162,12 @@
 }
 .auth-form input:focus{outline:none;border-color:var(--burgundy)}
 .auth-submit{width:100%;margin-top:4px}
+.auth-alt{
+  justify-self:center;align-self:center;margin-top:2px;
+  font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--ink-soft);border-bottom:1px solid var(--line);padding-bottom:3px;
+}
+.auth-alt:hover{color:var(--burgundy);border-color:var(--burgundy)}
 .auth-message{font-size:.82rem;color:#a03030;line-height:1.45}
 .auth-message.is-good{color:#4f7f55}
 .auth-firebase{display:grid;gap:14px;margin-top:18px;padding-top:18px;border-top:1px solid var(--line)}

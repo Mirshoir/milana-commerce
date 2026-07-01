@@ -71,6 +71,7 @@
           <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
           <label><span data-i18n="auth.password">Password</span><input name="password" type="password" autocomplete="current-password" required minlength="8"></label>
           <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.signIn">Sign in</span><svg class="ic"><use href="#i-arrow"/></svg></button>
+          <button class="auth-alt" type="button" data-auth-recover-open data-i18n="auth.forgot">Forgot password?</button>
           <p class="auth-message" data-auth-message="signin" hidden></p>
         </form>
 
@@ -81,6 +82,16 @@
           <label><span data-i18n="auth.password">Password</span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
           <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.createAccount">Create account</span><svg class="ic"><use href="#i-arrow"/></svg></button>
           <p class="auth-message" data-auth-message="signup" hidden></p>
+        </form>
+
+        <form class="auth-form" data-auth-form="recover" novalidate>
+          <p class="auth-help" data-i18n="auth.recoverLead">Enter the email and phone number saved on your account, then set a new password.</p>
+          <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
+          <label><span data-i18n="auth.phone">Phone</span><input name="phone" autocomplete="tel" required maxlength="25" placeholder="+998 90 123 45 67"></label>
+          <label><span data-i18n="auth.newPassword">New password</span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+          <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.resetPassword">Reset password</span><svg class="ic"><use href="#i-arrow"/></svg></button>
+          <button class="auth-alt" type="button" data-auth-back-signin data-i18n="auth.backToSignIn">Back to sign in</button>
+          <p class="auth-message" data-auth-message="recover" hidden></p>
         </form>
 
         <div class="auth-firebase" data-firebase-auth hidden>

@@ -94,6 +94,17 @@
     renderAccount();
   }
 
+  async function handleRecover(form) {
+    const data = formData(form);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(data.email || ""))) throw new Error("email");
+    if (!/^[0-9+()\-\s]{5,25}$/.test(String(data.phone || ""))) throw new Error("phone");
+    if (String(data.password || "").length < 8) throw new Error("password");
+    const res = await json("/api/auth/recover", data);
+    me = res.customer || null;
+    renderLinks();
+    renderAccount();
+  }
+
   async function handleFirebase(form, mode) {
     if (!firebaseAuth || !window.__milanaFirebase) return handleLocal(form, mode);
     const data = formData(form);
@@ -123,11 +134,15 @@
       const tab = e.target.closest("[data-auth-tab]");
       if (tab) switchTab(tab.dataset.authTab);
 
+      if (e.target.closest("[data-auth-recover-open]")) switchTab("recover");
+      if (e.target.closest("[data-auth-back-signin]")) switchTab("signin");
+
       const logout = e.target.closest("[data-auth-logout]");
       if (logout) {
         await json("/api/auth/logout");
         if (firebaseAuth && window.__milanaFirebase) await window.__milanaFirebase.authMod.signOut(firebaseAuth).catch(() => {});
         me = null;
+        switchTab("signin");
         renderLinks();
         renderAccount();
       }
@@ -159,7 +174,8 @@
         setMsg(mode, "");
         btn.disabled = true;
         try {
-          if (provider === "firebase") await handleFirebase(form, mode);
+          if (mode === "recover") await handleRecover(form);
+          else if (provider === "firebase") await handleFirebase(form, mode);
           else await handleLocal(form, mode);
           setMsg(mode, t("auth.ready"), false);
         } catch (ex) {
@@ -172,6 +188,11 @@
   }
 
   function switchTab(mode) {
+    document.querySelectorAll("[data-auth-message]").forEach((el) => {
+      el.textContent = "";
+      el.hidden = true;
+      el.classList.remove("is-good");
+    });
     document.querySelectorAll("[data-auth-tab]").forEach((b) => b.classList.toggle("is-on", b.dataset.authTab === mode));
     document.querySelectorAll("[data-auth-form]").forEach((f) => f.classList.toggle("is-on", f.dataset.authForm === mode));
   }
@@ -181,8 +202,10 @@
     const map = {
       email: t("auth.errEmail"),
       password: t("auth.errPassword"),
+      phone: t("auth.errPhone"),
       email_exists: t("auth.errExists"),
       wrong_credentials: t("auth.errWrong"),
+      recovery_mismatch: t("auth.errRecover"),
     };
     return map[clean] || clean || t("auth.errGeneric");
   }
