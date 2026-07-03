@@ -11,7 +11,7 @@
   const isVideo = (u) => /\.(mp4|webm)(\?|$)/i.test(u || "");
   const mediaTag = (url, alt) => isVideo(url)
     ? `<video src="${esc(url)}" muted loop playsinline autoplay preload="metadata" aria-label="${esc(alt)}"></video>`
-    : `<img src="${esc(url)}" alt="${esc(alt)}" loading="lazy" decoding="async">`;
+    : `<img src="${esc(url)}" alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`;
   let products = [];
 
   /* ---------- bestsellers from the live catalog ---------- */

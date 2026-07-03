@@ -9,6 +9,7 @@ import 'models/cart_item.dart';
 import 'models/order.dart';
 import 'models/product.dart';
 import 'models/support_ticket.dart';
+import 'services/assistant_service.dart';
 import 'services/auth_service.dart';
 import 'services/account_overview.dart';
 import 'services/auth_forms.dart';
@@ -334,11 +335,18 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late int index;
+  late final AssistantService assistant = AssistantService();
 
   @override
   void initState() {
     super.initState();
     index = tabIndexFromLaunchUri(Uri.base);
+  }
+
+  @override
+  void dispose() {
+    assistant.close();
+    super.dispose();
   }
 
   @override
@@ -378,6 +386,11 @@ class _AppShellState extends State<AppShell> {
             ],
           ),
           body: pages[index],
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: _openAssistant,
+            icon: const Icon(Icons.auto_awesome),
+            label: const Text('AI yordam'),
+          ),
           bottomNavigationBar: NavigationBar(
             selectedIndex: index,
             onDestinationSelected: (value) => setState(() => index = value),
@@ -411,6 +424,51 @@ class _AppShellState extends State<AppShell> {
           ),
         );
       },
+    );
+  }
+
+  void _openAssistant() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => AssistantSheet(
+        assistant: assistant,
+        onProduct: _openAssistantProduct,
+        onAdd: _addAssistantProduct,
+      ),
+    );
+  }
+
+  void _addAssistantProduct(Product product) {
+    if (!widget.cart.canAdd(product)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${product.name} hozircha mavjud emas')),
+      );
+      return;
+    }
+    widget.cart.add(product);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${product.name} · 1 qop savatga qo‘shildi')),
+    );
+  }
+
+  void _openAssistantProduct(Product product) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => ProductSheet(
+        product: product,
+        relatedProducts: const <Product>[],
+        onAdd: (qty) {
+          for (var i = 0; i < qty; i++) {
+            _addAssistantProduct(product);
+          }
+        },
+        onOpenRelated: _openAssistantProduct,
+        onAddRelated: _addAssistantProduct,
+      ),
     );
   }
 }
@@ -2321,6 +2379,371 @@ class ProductImageFallback extends StatelessWidget {
             borderRadius: BorderRadius.circular(8),
           ),
           child: const Icon(Icons.broken_image_outlined, color: milanaInk),
+        ),
+      ),
+    );
+  }
+}
+
+class AssistantSheet extends StatefulWidget {
+  const AssistantSheet({
+    super.key,
+    required this.assistant,
+    required this.onProduct,
+    required this.onAdd,
+  });
+
+  final AssistantService assistant;
+  final ValueChanged<Product> onProduct;
+  final ValueChanged<Product> onAdd;
+
+  @override
+  State<AssistantSheet> createState() => _AssistantSheetState();
+}
+
+class _AssistantSheetState extends State<AssistantSheet> {
+  final controller = TextEditingController();
+  final messages = <_AssistantMessage>[
+    const _AssistantMessage(
+      text:
+          'Salom. Model, narx, qop qoidasi yoki yetkazib berish bo‘yicha so‘rashingiz mumkin.',
+      fromUser: false,
+    ),
+  ];
+  List<Product> products = const <Product>[];
+  int? sessionId;
+  bool sending = false;
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final inset = MediaQuery.viewInsetsOf(context).bottom;
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: inset),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .86,
+        minChildSize: .55,
+        maxChildSize: .96,
+        builder: (context, scrollController) {
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: milanaInk.withValues(alpha: .18),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Yopish',
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: milanaBurgundy,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.auto_awesome,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Milana AI yordamchi',
+                                style: Theme.of(context).textTheme.titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w900),
+                              ),
+                              Text(
+                                'Katalog va ulgurji savollar uchun tez javob.',
+                                style: TextStyle(
+                                  color: milanaInk.withValues(alpha: .6),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _AssistantQuickChip(
+                          label: 'Qop qoidasi',
+                          onTap: () => _send('Qop qoidasi qanday?'),
+                        ),
+                        _AssistantQuickChip(
+                          label: 'Yetkazish',
+                          onTap: () => _send('Yetkazib berish qancha vaqt?'),
+                        ),
+                        _AssistantQuickChip(
+                          label: 'Erkaklar modeli',
+                          onTap: () => _send('Erkaklar uchun paxta model top'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    ...messages.map((message) => _AssistantBubble(message)),
+                    if (sending)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: LinearProgressIndicator(minHeight: 3),
+                      ),
+                    if (products.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      SectionHeader(
+                        title: 'Tavsiya qilingan modellar',
+                        trailing: '${products.length} model',
+                      ),
+                      const SizedBox(height: 10),
+                      ...products
+                          .take(3)
+                          .map(
+                            (product) => AssistantProductResult(
+                              product: product,
+                              onOpen: () {
+                                Navigator.of(context).pop();
+                                widget.onProduct(product);
+                              },
+                              onAdd: () => widget.onAdd(product),
+                            ),
+                          ),
+                    ],
+                  ],
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: controller,
+                          minLines: 1,
+                          maxLines: 3,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: _send,
+                          decoration: const InputDecoration(
+                            hintText: 'Savolingizni yozing...',
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      FilledButton(
+                        onPressed: sending
+                            ? null
+                            : () => _send(controller.text),
+                        child: const Icon(Icons.send_outlined),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _send(String text) async {
+    final message = text.trim();
+    if (message.length < 2 || sending) return;
+    controller.clear();
+    setState(() {
+      sending = true;
+      messages.add(_AssistantMessage(text: message, fromUser: true));
+    });
+    try {
+      final reply = await widget.assistant.send(
+        message: message,
+        sessionId: sessionId,
+        lang: 'uz',
+      );
+      if (!mounted) return;
+      setState(() {
+        sessionId = reply.sessionId ?? sessionId;
+        products = reply.products;
+        messages.add(_AssistantMessage(text: reply.reply, fromUser: false));
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        messages.add(
+          const _AssistantMessage(
+            text:
+                'Hozir AI javob bera olmadi. Menejerga yozing yoki birozdan keyin qayta urinib ko‘ring.',
+            fromUser: false,
+          ),
+        );
+      });
+    } finally {
+      if (mounted) setState(() => sending = false);
+    }
+  }
+}
+
+class _AssistantMessage {
+  const _AssistantMessage({required this.text, required this.fromUser});
+
+  final String text;
+  final bool fromUser;
+}
+
+class _AssistantBubble extends StatelessWidget {
+  const _AssistantBubble(this.message);
+
+  final _AssistantMessage message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: message.fromUser
+          ? Alignment.centerRight
+          : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.sizeOf(context).width * .78,
+        ),
+        margin: const EdgeInsets.symmetric(vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: message.fromUser ? milanaBurgundy : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: message.fromUser
+              ? null
+              : Border.all(color: milanaInk.withValues(alpha: .08)),
+        ),
+        child: Text(
+          message.text,
+          style: TextStyle(
+            color: message.fromUser ? Colors.white : milanaInk,
+            height: 1.35,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AssistantQuickChip extends StatelessWidget {
+  const _AssistantQuickChip({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ActionChip(
+      avatar: const Icon(Icons.bolt_outlined, size: 18),
+      label: Text(label),
+      onPressed: onTap,
+    );
+  }
+}
+
+class AssistantProductResult extends StatelessWidget {
+  const AssistantProductResult({
+    super.key,
+    required this.product,
+    required this.onOpen,
+    required this.onAdd,
+  });
+
+  final Product product;
+  final VoidCallback onOpen;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 72,
+                  height: 92,
+                  child: ProductImage(product: product),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${genderLabel(product.gender)} · ${categoryLabel(product.category)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: milanaInk.withValues(alpha: .6)),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      money.format(product.price),
+                      style: const TextStyle(
+                        color: milanaBurgundy,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton.filledTonal(
+                onPressed: isOutOfQop(product) ? null : onAdd,
+                icon: const Icon(Icons.add_shopping_cart_outlined),
+                tooltip: 'Savatga',
+              ),
+            ],
+          ),
         ),
       ),
     );

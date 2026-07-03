@@ -8,8 +8,8 @@
   <meta name="theme-color" content="#5c1f2d">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%235c1f2d'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='34' fill='%23f4efe6' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/css/fonts.css">
-  <link rel="stylesheet" href="/css/style.css?v=20260701-polish1">
-  <link rel="stylesheet" href="/css/shop.css?v=20260701-polish1">
+  <link rel="stylesheet" href="/css/style.css?v=20260702-responsive1">
+  <link rel="stylesheet" href="/css/shop.css?v=20260703-zoom1">
   <script>document.documentElement.classList.replace('no-js','js');</script>
 </head>
 <body data-keep-title="1">
@@ -44,9 +44,29 @@
           <svg class="ic"><use href="#i-cart"/></svg>
           <i class="cartbtn__n is-zero" data-cart-count>0</i>
         </button>
+        <button class="burger" aria-label="Open menu" aria-expanded="false" aria-controls="menu">
+          <span></span><span></span>
+        </button>
       </div>
     </div>
   </header>
+
+  <div class="menu" id="menu" aria-hidden="true">
+    <nav class="menu__nav" aria-label="Mobile">
+      <a href="/shop"><i>01</i><b data-i18n="nav.shop">Shop</b></a>
+      <a href="/#collection"><i>02</i><b data-i18n="nav.collection">Collection</b></a>
+      <a href="/#categories"><i>03</i><b data-i18n="nav.categories">Categories</b></a>
+      <a href="/#maison"><i>04</i><b data-i18n="nav.maison">Brand</b></a>
+      <a href="/#wholesale"><i>05</i><b data-i18n="nav.wholesale">Wholesale</b></a>
+      <a href="/support"><i>06</i><b data-i18n="nav.support">Support</b></a>
+      <a href="/signin"><i>07</i><b data-auth-link data-i18n="auth.signIn">Sign in</b></a>
+    </nav>
+    <div class="menu__foot">
+      <a data-dyn="wa" href="https://wa.me/998501551010" target="_blank" rel="noopener"><svg class="ic"><use href="#i-wa"/></svg>WhatsApp</a>
+      <a data-dyn="tg" href="https://t.me/milanapremium2" target="_blank" rel="noopener"><svg class="ic"><use href="#i-tg"/></svg>Telegram</a>
+      <div class="lang lang--menu" data-lang-mount></div>
+    </div>
+  </div>
 
   <main class="page auth-page">
     <div class="container auth-shell">
@@ -76,18 +96,33 @@
         </form>
 
         <form class="auth-form" data-auth-form="signup" novalidate>
-          <label><span data-i18n="auth.name">Full name</span><input name="name" autocomplete="name" required maxlength="80"></label>
-          <label><span data-i18n="auth.phone">Phone</span><input name="phone" autocomplete="tel" maxlength="25" placeholder="+998 90 123 45 67"></label>
+          <div class="account-type" role="radiogroup" aria-label="Account type">
+            <label><input type="radio" name="account_type" value="business"><span><b data-i18n="auth.business">Business</b><i data-i18n="auth.businessDesc">Wholesale qop ordering for larger purchases</i></span></label>
+            <label><input type="radio" name="account_type" value="individual"><span><b data-i18n="auth.individual">Individual</b><i data-i18n="auth.individualDesc">Retail piece ordering for enabled products</i></span></label>
+          </div>
+          <div class="auth-fields">
+            <label><span data-i18n="auth.name">Full name</span><input name="name" autocomplete="name" maxlength="80" required></label>
+            <label><span data-i18n="cart.address">Delivery address</span><input name="address" autocomplete="street-address" maxlength="300" placeholder="Optional"></label>
+          </div>
+          <label><span data-i18n="auth.phone">Phone</span><input name="phone" autocomplete="tel" maxlength="25" placeholder="+998 90 123 45 67" required></label>
+          <div class="otp-row">
+            <label><span data-i18n="auth.phoneCode">Phone code</span><input name="otp_code" inputmode="numeric" maxlength="6" data-i18n-ph="auth.codePh" placeholder="6-digit code"></label>
+            <button class="btn btn--ghost" type="button" data-auth-otp-send data-i18n="auth.sendCode">Send code</button>
+          </div>
           <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
           <label><span data-i18n="auth.password">Password</span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+          <label class="terms-check"><input name="terms" type="checkbox" required><span><span data-i18n="auth.acceptTerms">I accept the</span> <a href="/terms" target="_blank" data-i18n="auth.terms">Terms & Conditions</a>.</span></label>
           <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.createAccount">Create account</span><svg class="ic"><use href="#i-arrow"/></svg></button>
           <p class="auth-message" data-auth-message="signup" hidden></p>
         </form>
 
         <form class="auth-form" data-auth-form="recover" novalidate>
-          <p class="auth-help" data-i18n="auth.recoverLead">Enter the email and phone number saved on your account, then set a new password.</p>
+          <p class="auth-help" data-i18n="auth.recoverLead">Enter your account email, verify the code, then set a new password.</p>
           <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
-          <label><span data-i18n="auth.phone">Phone</span><input name="phone" autocomplete="tel" required maxlength="25" placeholder="+998 90 123 45 67"></label>
+          <div class="otp-row">
+            <label><span data-i18n="auth.emailCode">Email code</span><input name="email_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" data-i18n-ph="auth.codePh"></label>
+            <button class="btn btn--ghost" type="button" data-auth-email-otp-send><span data-i18n="auth.sendCode">Get code</span></button>
+          </div>
           <label><span data-i18n="auth.newPassword">New password</span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
           <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.resetPassword">Reset password</span><svg class="ic"><use href="#i-arrow"/></svg></button>
           <button class="auth-alt" type="button" data-auth-back-signin data-i18n="auth.backToSignIn">Back to sign in</button>
@@ -143,8 +178,10 @@
   </footer>
 
   <script src="/js/i18n.js" defer></script>
-  <script src="/js/app-state.js?v=20260701-polish1" defer></script>
-  <script src="/js/auth.js?v=20260701-polish1" defer></script>
+  <script src="/js/app-state.js?v=20260702-responsive1" defer></script>
+  <script src="/js/auth.js?v=20260702-responsive1" defer></script>
   <script src="/js/cart.js" defer></script>
+  <script src="/js/chat-widget.js?v=20260703-chatbot2" defer></script>
+  <script src="/js/menu.js?v=20260702-responsive1" defer></script>
 </body>
 </html>

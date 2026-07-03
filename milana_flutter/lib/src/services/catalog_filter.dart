@@ -30,32 +30,130 @@ List<Product> filterCatalog(
   List<Product> products,
   CatalogFilterOptions options,
 ) {
-  final query = options.query.trim().toLowerCase();
-  final filtered = products.where((product) {
-    final text =
-        '${product.name} ${product.modelNo} ${product.variant} '
-                '${product.fabric} ${product.description} '
-                '${product.gender} ${product.category} ${product.sizes.join(' ')}'
-            .toLowerCase();
-    return (options.gender == 'all' || product.gender == options.gender) &&
-        (options.category == 'all' || product.category == options.category) &&
-        (options.size == 'all' || product.sizes.contains(options.size)) &&
-        _matchesPriceBand(product.price, options.priceBand) &&
-        (!options.savedOnly || options.savedProductIds.contains(product.id)) &&
-        (query.isEmpty || text.contains(query));
-  }).toList();
+  final query = options.query.trim();
+  final ranked = products
+      .map((product) => (product: product, score: _smartScore(product, query)))
+      .where((row) {
+        final product = row.product;
+        return (options.gender == 'all' || product.gender == options.gender) &&
+            (options.category == 'all' ||
+                product.category == options.category) &&
+            (options.size == 'all' || product.sizes.contains(options.size)) &&
+            _matchesPriceBand(product.price, options.priceBand) &&
+            (!options.savedOnly ||
+                options.savedProductIds.contains(product.id)) &&
+            (query.isEmpty || row.score > 0);
+      })
+      .toList();
 
   switch (options.sort) {
     case CatalogSort.priceLow:
-      filtered.sort((a, b) => a.price.compareTo(b.price));
+      ranked.sort((a, b) => a.product.price.compareTo(b.product.price));
     case CatalogSort.priceHigh:
-      filtered.sort((a, b) => b.price.compareTo(a.price));
+      ranked.sort((a, b) => b.product.price.compareTo(a.product.price));
     case CatalogSort.name:
-      filtered.sort((a, b) => a.name.compareTo(b.name));
+      ranked.sort((a, b) => a.product.name.compareTo(b.product.name));
     case CatalogSort.featured:
-      break;
+      ranked.sort((a, b) {
+        final byScore = b.score.compareTo(a.score);
+        if (byScore != 0) return byScore;
+        return a.product.name.compareTo(b.product.name);
+      });
   }
-  return filtered;
+  return ranked.map((row) => row.product).toList();
+}
+
+const _smartSynonyms = {
+  'ayol': 'women',
+  'ayollar': 'women',
+  'women': 'women',
+  'woman': 'women',
+  'female': 'women',
+  'erkak': 'men',
+  'erkaklar': 'men',
+  'men': 'men',
+  'man': 'men',
+  'male': 'men',
+  'bola': 'kids',
+  'bolalar': 'kids',
+  'kids': 'kids',
+  'children': 'kids',
+  'child': 'kids',
+  'pijama': 'pajamas',
+  'pajama': 'pajamas',
+  'pajamas': 'pajamas',
+  'halat': 'robes',
+  'xalat': 'robes',
+  'robe': 'robes',
+  'robes': 'robes',
+  'uy': 'homewear',
+  'home': 'homewear',
+  'homewear': 'homewear',
+  'lounge': 'loungewear',
+  'loungewear': 'loungewear',
+  'komplekt': 'loungewear',
+  'set': 'loungewear',
+  'paxta': 'cotton',
+  'cotton': 'cotton',
+  'suprem': 'suprem',
+};
+
+String _smartNormalize(String value) {
+  return value
+      .toLowerCase()
+      .replaceAll(RegExp(r"['’`ʻ]"), '')
+      .replaceAll(RegExp(r'[^a-z0-9.$]+'), ' ')
+      .trim();
+}
+
+List<String> _smartTokens(String query) {
+  final seen = <String>{};
+  final tokens = _smartNormalize(query)
+      .split(RegExp(r'\s+'))
+      .where((token) => token.length > 1)
+      .expand((token) => [token, _smartSynonyms[token]].whereType<String>())
+      .where((token) => seen.add(token))
+      .toList();
+  return tokens;
+}
+
+String _productText(Product product) {
+  return _smartNormalize(
+    [
+      product.name,
+      product.slug,
+      product.modelNo,
+      product.variant,
+      product.gender,
+      product.category,
+      product.fabric,
+      product.description,
+      product.sizes.join(' '),
+    ].where((value) => value.trim().isNotEmpty).join(' '),
+  );
+}
+
+int _smartScore(Product product, String query) {
+  final tokens = _smartTokens(query);
+  if (tokens.isEmpty) return 0;
+  final text = _productText(product);
+  final model = _smartNormalize(
+    [
+      product.modelNo,
+      product.variant,
+      product.name,
+    ].where((value) => value.trim().isNotEmpty).join(' '),
+  );
+  return tokens.fold(0, (sum, token) {
+    if (!text.contains(token)) return sum;
+    var score = sum + 8;
+    if (model.contains(token)) score += 18;
+    if (product.gender == token || product.category == token) score += 12;
+    if (product.sizes.any((size) => _smartNormalize(size) == token)) {
+      score += 10;
+    }
+    return score;
+  });
 }
 
 List<String> availableSizes(List<Product> products) {

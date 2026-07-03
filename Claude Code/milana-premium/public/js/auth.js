@@ -43,8 +43,15 @@
     } catch {
       me = null;
     }
+    if (me && window.MilanaState?.wishlist?.setAll) {
+      fetch("/api/auth/likes")
+        .then((r) => r.ok ? r.json() : null)
+        .then((data) => { if (data?.likes) window.MilanaState.wishlist.setAll(data.likes); })
+        .catch(() => {});
+    }
     renderLinks();
     renderAccount();
+    window.dispatchEvent(new CustomEvent("milana:auth", { detail: { customer: me } }));
     return me;
   }
 
@@ -89,6 +96,8 @@
 
     if (profile) {
       const rows = [
+        [t("auth.accountType"), me.account_type === "individual" ? t("auth.individual") : t("auth.business")],
+        [t("auth.status"), t("auth.status." + (me.approval_status || "active"))],
         [t("auth.name"), me.name || t("auth.customer")],
         [t("auth.phone"), me.phone || t("auth.missingPhone")],
         [t("cart.city"), me.city || t("auth.missingCity")],
@@ -156,25 +165,56 @@
     return Object.fromEntries(new FormData(form));
   }
 
+  function startCodeCooldown(button, seconds = 30) {
+    if (!button) return;
+    button.dataset.originalLabel ||= button.textContent;
+    let left = seconds;
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    const tick = () => {
+      if (left <= 0) {
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+        button.textContent = button.dataset.originalLabel || t("auth.sendCode");
+        return;
+      }
+      button.textContent = t("auth.resendIn", { seconds: left });
+      left -= 1;
+      setTimeout(tick, 1000);
+    };
+    tick();
+  }
+
   async function handleLocal(form, mode) {
     const data = formData(form);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(data.email || ""))) throw new Error("email");
     if (String(data.password || "").length < 8) throw new Error("password");
+    if (mode === "signup") {
+      if (!["business", "individual"].includes(data.account_type)) throw new Error("account_type");
+      if (!data.terms) throw new Error("terms");
+      if (!/^[0-9+()\-\s]{5,25}$/.test(String(data.phone || ""))) throw new Error("phone");
+      if (!/^\d{6}$/.test(String(data.otp_code || ""))) throw new Error("otp");
+      if (String(data.name || "").trim().length < 2) throw new Error("name");
+      await json("/api/auth/otp/verify", { phone: data.phone, code: data.otp_code });
+    }
     const res = await json(mode === "signup" ? "/api/auth/signup" : "/api/auth/signin", data);
     me = res.customer || null;
     renderLinks();
     renderAccount();
+    window.dispatchEvent(new CustomEvent("milana:auth", { detail: { customer: me } }));
   }
 
   async function handleRecover(form) {
     const data = formData(form);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(data.email || ""))) throw new Error("email");
-    if (!/^[0-9+()\-\s]{5,25}$/.test(String(data.phone || ""))) throw new Error("phone");
+    if (!/^\d{6}$/.test(String(data.email_code || ""))) throw new Error("otp");
     if (String(data.password || "").length < 8) throw new Error("password");
+    await json("/api/auth/email-otp/verify", { email: data.email, code: data.email_code });
     const res = await json("/api/auth/recover", data);
     me = res.customer || null;
     renderLinks();
     renderAccount();
+    window.dispatchEvent(new CustomEvent("milana:auth", { detail: { customer: me } }));
   }
 
   async function handleFirebase(form, mode) {
@@ -194,6 +234,7 @@
     me = res.customer || null;
     renderLinks();
     renderAccount();
+    window.dispatchEvent(new CustomEvent("milana:auth", { detail: { customer: me } }));
   }
 
   function wirePage() {
@@ -209,6 +250,34 @@
       if (e.target.closest("[data-auth-recover-open]")) switchTab("recover");
       if (e.target.closest("[data-auth-back-signin]")) switchTab("signin");
 
+      const otp = e.target.closest("[data-auth-otp-send]");
+      if (otp) {
+        const form = otp.closest("form");
+        const data = formData(form);
+        try {
+          if (!/^[0-9+()\-\s]{5,25}$/.test(String(data.phone || ""))) throw new Error("phone");
+          startCodeCooldown(otp);
+          const res = await json("/api/auth/otp/start", { phone: data.phone, lang: I18N.lang });
+          setMsg("signup", res.dev_code ? I18N.t("auth.localCode", { code: res.dev_code }) : I18N.t("auth.codeSent"), false);
+        } catch (ex) {
+          setMsg("signup", friendly(ex.message));
+        }
+      }
+
+      const emailOtp = e.target.closest("[data-auth-email-otp-send]");
+      if (emailOtp) {
+        const form = emailOtp.closest("form");
+        const data = formData(form);
+        try {
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(data.email || ""))) throw new Error("email");
+          startCodeCooldown(emailOtp);
+          const res = await json("/api/auth/email-otp/start", { email: data.email, lang: I18N.lang });
+          setMsg("recover", res.dev_code ? I18N.t("auth.localEmailCode", { code: res.dev_code }) : I18N.t("auth.emailCodeSent"), false);
+        } catch (ex) {
+          setMsg("recover", friendly(ex.message));
+        }
+      }
+
       const logout = e.target.closest("[data-auth-logout]");
       if (logout) {
         await json("/api/auth/logout");
@@ -218,6 +287,7 @@
         switchTab("signin");
         renderLinks();
         renderAccount();
+        window.dispatchEvent(new CustomEvent("milana:auth", { detail: { customer: me } }));
       }
 
       const removeWish = e.target.closest("[data-account-wish-remove]");
@@ -238,6 +308,7 @@
           me = res.customer || null;
           renderLinks();
           renderAccount();
+          window.dispatchEvent(new CustomEvent("milana:auth", { detail: { customer: me } }));
         } catch (ex) {
           setMsg("signin", friendly(ex.message));
         } finally {
@@ -286,6 +357,18 @@
       email_exists: t("auth.errExists"),
       wrong_credentials: t("auth.errWrong"),
       recovery_mismatch: t("auth.errRecover"),
+      account_type: t("auth.errAccountType"),
+      terms: t("auth.errTerms"),
+      otp: t("auth.errOtp"),
+      otp_wrong: t("auth.errOtpWrong"),
+      otp_expired: t("auth.errOtpExpired"),
+      sms_not_configured: t("auth.errSmsConfig"),
+      sms_failed: t("auth.errSmsFailed"),
+      email_not_configured: t("auth.errEmailConfig"),
+      email_failed: t("auth.errEmailSend"),
+      rate_limited: t("auth.errRateLimited"),
+      phone_not_verified: t("auth.errPhoneVerify"),
+      name: t("auth.errName"),
     };
     return map[clean] || clean || t("auth.errGeneric");
   }

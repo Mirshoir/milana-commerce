@@ -10,10 +10,20 @@
   const isVideo = (u) => /\.(mp4|webm)(\?|$)/i.test(u || "");
   const mediaTag = (url, alt, eager = false) => isVideo(url)
     ? `<video src="${esc(url)}" muted loop playsinline autoplay preload="metadata" aria-label="${esc(alt)}"></video>`
-    : `<img src="${esc(url)}" alt="${esc(alt)}" loading="${eager ? "eager" : "lazy"}" decoding="async" fetchpriority="${eager ? "high" : "auto"}">`;
+    : `<img src="${esc(url)}" alt="${esc(alt)}" loading="${eager ? "eager" : "lazy"}" decoding="async" fetchpriority="${eager ? "high" : "auto"}" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`;
   const CATS = ["pajamas", "robes", "homewear", "loungewear"]; // clothing type
   const GENDERS = ["women", "men", "kids", "unisex"];
   const TAGS = ["bestseller", "new", "sale"];
+  const SMART_SYNONYMS = {
+    ayol: "women", ayollar: "women", women: "women", woman: "women", female: "women", jenskiy: "women", zhenskij: "women",
+    erkak: "men", erkaklar: "men", men: "men", man: "men", male: "men", mujskoy: "men", muzhskoy: "men",
+    bola: "kids", bolalar: "kids", kids: "kids", children: "kids", child: "kids", detskiy: "kids",
+    pijama: "pajamas", pajama: "pajamas", pajamas: "pajamas",
+    halat: "robes", xalat: "robes", robe: "robes", robes: "robes",
+    uy: "homewear", home: "homewear", homewear: "homewear",
+    lounge: "loungewear", loungewear: "loungewear", komplekt: "loungewear", set: "loungewear",
+    paxta: "cotton", cotton: "cotton", suprem: "suprem",
+  };
 
   let all = [];          // full catalog (detail rows)
   const state = {
@@ -40,29 +50,63 @@
   }
 
   /* ---------- filtering ---------- */
+  function smartNormalize(value) {
+    return String(value || "").toLowerCase().replace(/['’`ʻ]/g, "").replace(/[^a-z0-9.$]+/g, " ").trim();
+  }
+
+  function smartTokens(query) {
+    const seen = new Set();
+    return smartNormalize(query).split(/\s+/).filter((t) => t.length > 1)
+      .flatMap((t) => [t, SMART_SYNONYMS[t]].filter(Boolean))
+      .filter((t) => {
+        if (seen.has(t)) return false;
+        seen.add(t);
+        return true;
+      });
+  }
+
+  function productText(p, lang) {
+    return smartNormalize([
+      p.name, p.slug, p.model_no, p.variant, p.gender, p.category, p.tag,
+      (p.sizes || []).join(" "), p.desc?.[lang], p.desc?.en, p.fabric?.[lang], p.fabric?.en,
+    ].filter(Boolean).join(" "));
+  }
+
+  function smartScore(p, query, lang) {
+    const tokens = smartTokens(query);
+    if (!tokens.length) return 0;
+    const text = productText(p, lang);
+    const model = smartNormalize([p.model_no, p.variant, p.name].filter(Boolean).join(" "));
+    return tokens.reduce((sum, token) => {
+      if (!text.includes(token)) return sum;
+      let score = sum + 8;
+      if (model.includes(token)) score += 18;
+      if (p.gender === token || p.category === token) score += 12;
+      if ((p.sizes || []).some((s) => smartNormalize(s) === token)) score += 10;
+      return score;
+    }, 0);
+  }
+
   function filtered() {
     const lang = I18N.lang;
-    let list = all.filter((p) => {
+    let list = all.map((p) => ({ p, score: state.q ? smartScore(p, state.q, lang) : 0 })).filter(({ p, score }) => {
       if (state.gender && p.gender !== state.gender) return false;
       if (state.category && p.category !== state.category) return false;
       if (state.tags.size && !state.tags.has(p.tag)) return false;
       if (state.sizes.size && !p.sizes.some((s) => state.sizes.has(s))) return false;
       if (state.min !== null && p.price < state.min) return false;
       if (state.max !== null && p.price > state.max) return false;
-      if (state.q) {
-        const hay = (p.name + " " + (p.model_no || "") + " " + (p.variant || "") + " " + (p.desc?.[lang] || "") + " " + (p.desc?.en || "") + " " + (p.fabric?.[lang] || "")).toLowerCase();
-        if (!hay.includes(state.q.toLowerCase())) return false;
-      }
+      if (state.q && score <= 0) return false;
       return true;
     });
     const sorts = {
-      "new": (a, b) => b.id - a.id,
-      "price-asc": (a, b) => a.price - b.price,
-      "price-desc": (a, b) => b.price - a.price,
-      "popular": (a, b) => b.reviews - a.reviews || b.rating - a.rating,
-      "default": (a, b) => b.sort - a.sort || b.id - a.id,
+      "new": (a, b) => b.p.id - a.p.id,
+      "price-asc": (a, b) => a.p.price - b.p.price,
+      "price-desc": (a, b) => b.p.price - a.p.price,
+      "popular": (a, b) => b.p.reviews - a.p.reviews || b.p.rating - a.p.rating,
+      "default": (a, b) => b.score - a.score || b.p.sort - a.p.sort || b.p.id - a.p.id,
     };
-    return list.sort(sorts[state.sort] || sorts.default);
+    return list.sort(sorts[state.sort] || sorts.default).map((row) => row.p);
   }
 
   /* ---------- render ---------- */
@@ -91,7 +135,7 @@
         <div class="product__row"><h3><a href="/p/${p.slug}">${esc(p.name)}</a></h3>
           <p class="product__price">${I18N.fmtPrice(p.price)} ${p.old_price ? `<s>${I18N.fmtPrice(p.old_price)}</s>` : ""}</p></div>
         <p class="product__fab">${esc(fabric)}</p>
-        <p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} ${I18N.t("best.reviews")})</span></p>
+        <p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} ${I18N.t("best.reviews")}${p.like_count ? ` · ${p.like_count} saved` : ""})</span></p>
       </div>
     </article>`;
   }
@@ -155,7 +199,7 @@
   }
 
   /* ---------- events ---------- */
-  document.addEventListener("click", (e) => {
+  document.addEventListener("click", async (e) => {
     const gen = e.target.closest("[data-gender]");
     if (gen) { state.gender = gen.dataset.gender; buildFilters(); render(); return; }
     const cat = e.target.closest("[data-cat]");
@@ -184,18 +228,30 @@
       e.preventDefault();
       const p = all.find((x) => x.id === Number(addBtn.dataset.add));
       if (!p) return;
-      Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, sizes: p.sizes });
+      Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, retail_price: p.retail_price || p.price, sizes: p.sizes });
     }
     const wish = e.target.closest(".product__wish");
     if (wish) {
       e.preventDefault();
-      const active = window.MilanaState?.wishlist?.toggle?.({
+      const payload = {
         id: wish.dataset.wishId,
         slug: wish.dataset.wishSlug,
         name: wish.dataset.wishName,
         image: wish.dataset.wishImage,
         price: wish.dataset.wishPrice,
-      });
+      };
+      let active;
+      if (window.MilanaAuth?.customer) {
+        const currently = wish.classList.contains("is-active");
+        const r = await fetch("/api/products/" + encodeURIComponent(payload.id) + "/like", { method: currently ? "DELETE" : "POST" });
+        if (r.ok) {
+          active = !currently;
+          active ? window.MilanaState?.wishlist?.add?.(payload) : window.MilanaState?.wishlist?.remove?.(payload.id);
+        }
+        else active = window.MilanaState?.wishlist?.toggle?.(payload);
+      } else {
+        active = window.MilanaState?.wishlist?.toggle?.(payload);
+      }
       wish.classList.toggle("is-active", Boolean(active));
       wish.setAttribute("aria-pressed", String(Boolean(active)));
     }

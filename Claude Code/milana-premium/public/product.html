@@ -8,8 +8,8 @@
   <meta name="theme-color" content="#5c1f2d">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%235c1f2d'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='34' fill='%23f4efe6' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/css/fonts.css">
-  <link rel="stylesheet" href="/css/style.css?v=20260701-polish1">
-  <link rel="stylesheet" href="/css/shop.css?v=20260701-polish1">
+  <link rel="stylesheet" href="/css/style.css?v=20260702-responsive1">
+  <link rel="stylesheet" href="/css/shop.css?v=20260703-no-preview1">
   <script>document.documentElement.classList.replace('no-js','js');</script>
 </head>
 <body data-keep-title="1">
@@ -132,6 +132,30 @@
         <h2 data-i18n="prod.related">You may also like</h2>
         <div class="shop-grid" id="related-grid"></div>
       </section>
+
+      <section class="reviews" id="reviews">
+        <div class="reviews__head">
+          <div>
+            <p class="pd__label" data-i18n="reviews.overline">Reviews</p>
+            <h2 data-i18n="reviews.title">Customer feedback</h2>
+          </div>
+          <p class="reviews__summary" id="reviews-summary">—</p>
+        </div>
+        <div class="reviews__list" id="reviews-list"></div>
+        <form class="reviews__form" id="reviews-form" hidden>
+          <input type="hidden" name="rating" value="5">
+          <div class="rating-stars" role="radiogroup" aria-label="Rating">
+            <button type="button" data-review-star="1" aria-label="1 star">★</button>
+            <button type="button" data-review-star="2" aria-label="2 stars">★</button>
+            <button type="button" data-review-star="3" aria-label="3 stars">★</button>
+            <button type="button" data-review-star="4" aria-label="4 stars">★</button>
+            <button type="button" data-review-star="5" aria-label="5 stars">★</button>
+          </div>
+          <label><span data-i18n="reviews.comment">Comment</span><textarea name="comment" rows="2" maxlength="600" data-i18n-ph="reviews.placeholder" placeholder="Short feedback"></textarea></label>
+          <button class="btn btn--ghost" type="submit" data-i18n="reviews.submit">Submit</button>
+          <p class="reviews__msg" data-review-msg hidden></p>
+        </form>
+      </section>
     </div>
   </main>
 
@@ -150,9 +174,10 @@
   </footer>
 
   <script src="/js/i18n.js" defer></script>
-  <script src="/js/app-state.js?v=20260701-polish1" defer></script>
-  <script src="/js/auth.js?v=20260701-polish1" defer></script>
+  <script src="/js/app-state.js?v=20260702-responsive1" defer></script>
+  <script src="/js/auth.js?v=20260702-responsive1" defer></script>
   <script src="/js/cart.js" defer></script>
-  <script src="/js/product.js?v=20260701-polish1" defer></script>
+  <script src="/js/chat-widget.js?v=20260703-chatbot2" defer></script>
+  <script src="/js/product.js?v=20260703-no-preview1" defer></script>
 </body>
 </html>

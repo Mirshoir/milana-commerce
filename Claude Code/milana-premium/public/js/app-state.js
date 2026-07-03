@@ -18,6 +18,17 @@
   };
   const idOf = (item) => String(item?.id || item?.slug || "");
   const all = () => wishlist.slice();
+  const setAll = (items) => {
+    wishlist = (Array.isArray(items) ? items : []).slice(0, 80).map((item) => ({
+      id: idOf(item),
+      slug: item.slug || "",
+      name: item.name || "",
+      image: item.image || "",
+      price: Number(item.price) || 0,
+      added_at: item.added_at || new Date().toISOString(),
+    })).filter((item) => item.id);
+    save();
+  };
   const has = (id) => wishlist.some((item) => idOf(item) === String(id));
   const add = (item) => {
     const id = idOf(item);
@@ -95,5 +106,5 @@
     wireOffline();
   });
 
-  window.MilanaState = { wishlist: { all, has, add, remove, toggle, sync: syncWishlistButtons }, wireImages };
+  window.MilanaState = { wishlist: { all, setAll, has, add, remove, toggle, sync: syncWishlistButtons }, wireImages };
 })();

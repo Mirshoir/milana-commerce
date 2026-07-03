@@ -8,6 +8,10 @@
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const GENDER_RU = { women: "Женский", men: "Мужской", kids: "Детский", unisex: "Унисекс" };
   const CLO_RU = { pajamas: "Пижамы", robes: "Халаты", homewear: "Домашняя одежда", loungewear: "Лаунж-сеты" };
+  const GENDER_UZ = { women: "ayollar", men: "erkaklar", kids: "bolalar", unisex: "universal" };
+  const GENDER_EN = { women: "women", men: "men", kids: "kids", unisex: "unisex" };
+  const CLO_UZ = { pajamas: "pijama", robes: "xalat", homewear: "uy kiyimi", loungewear: "lounge to'plam" };
+  const CLO_EN = { pajamas: "pajamas", robes: "robes", homewear: "homewear", loungewear: "loungewear sets" };
   const TAG_RU = { bestseller: "Бестселлер", new: "Новинка", sale: "Скидка" };
   const STATUS_RU = { new: "🆕 Новый", processing: "⏳ В работе", shipped: "🚚 Отправлен", done: "✅ Выполнен", cancelled: "✖ Отменён" };
   const PAYMENT_METHOD_RU = { manager: "Менеджер", cash: "Наличные", bank: "Банк", click: "Click", payme: "Payme", card: "Карта" };
@@ -18,8 +22,62 @@
   let products = [];
   let orders = [];
   let support = [];
+  let customers = [];
+  let reviews = [];
+  let chats = [];
   let editing = null;     // product being edited (null = new)
   let editImages = [];    // image urls of the edit form
+  let slugTouched = false;
+
+  const SMART_SYNONYMS = {
+    ayol: "women", ayollar: "women", women: "women", jenskiy: "women", женский: "women",
+    erkak: "men", erkaklar: "men", men: "men", mujskoy: "men", мужской: "men",
+    bola: "kids", bolalar: "kids", kids: "kids", detskiy: "kids", детский: "kids",
+    pijama: "pajamas", pajama: "pajamas", pajamas: "pajamas", пижама: "pajamas",
+    halat: "robes", xalat: "robes", robe: "robes", халат: "robes",
+    uy: "homewear", homewear: "homewear", lounge: "loungewear", set: "loungewear",
+  };
+
+  function smartNormalize(value) {
+    return String(value || "").toLowerCase().replace(/['’`ʻ]/g, "").replace(/[^a-z0-9а-яёёўқғҳ]+/gi, " ").trim();
+  }
+
+  function smartTokens(query) {
+    const seen = new Set();
+    return smartNormalize(query).split(/\s+/).filter((t) => t.length > 1)
+      .flatMap((t) => [t, SMART_SYNONYMS[t]].filter(Boolean))
+      .filter((t) => {
+        if (seen.has(t)) return false;
+        seen.add(t);
+        return true;
+      });
+  }
+
+  function productSearchScore(p, query) {
+    const tokens = smartTokens(query);
+    if (!tokens.length) return 1;
+    const hay = smartNormalize([
+      p.name, p.slug, p.model_no, p.variant, p.gender, p.category, p.tag,
+      (p.sizes || []).join(" "), p.desc?.ru, p.desc?.uz, p.desc?.en, p.fabric?.ru, p.fabric?.uz, p.fabric?.en,
+    ].filter(Boolean).join(" "));
+    const model = smartNormalize([p.model_no, p.variant, p.name].join(" "));
+    return tokens.reduce((score, token) => {
+      if (!hay.includes(token)) return score;
+      let next = score + 8;
+      if (model.includes(token)) next += 16;
+      if (p.gender === token || p.category === token) next += 12;
+      if ((p.sizes || []).some((s) => smartNormalize(s) === token)) next += 10;
+      return next;
+    }, 0);
+  }
+
+  function slugifyLocal(value) {
+    return smartNormalize(value)
+      .replace(/[а-яёёўқғҳ]/gi, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80);
+  }
 
   /* ---------------- api ---------------- */
   async function api(path, opts = {}) {
@@ -43,7 +101,7 @@
 
   /* ---------------- auth ---------------- */
   async function showApp() {
-    await Promise.all([loadProducts(), loadOrders(), loadSupport()]);
+    await Promise.all([loadProducts(), loadCustomers(), loadOrders(), loadReviews(), loadChat(), loadSupport()]);
   }
 
   $("#logout").addEventListener("click", async () => {
@@ -59,8 +117,11 @@
     });
   });
   function switchView(name) {
-    ["products", "edit", "orders", "support", "settings", "design"].forEach((v) => { $("#view-" + v).hidden = v !== name; });
+    ["products", "edit", "customers", "orders", "reviews", "chat", "support", "settings", "design"].forEach((v) => { $("#view-" + v).hidden = v !== name; });
+    if (name === "customers") loadCustomers();
     if (name === "orders") loadOrders();
+    if (name === "reviews") loadReviews();
+    if (name === "chat") loadChat();
     if (name === "support") loadSupport();
     if (name === "settings") loadSettings();
     if (name === "design") loadDesign();
@@ -73,10 +134,12 @@
   }
 
   function renderProducts() {
-    const q = ($("#prod-search").value || "").toLowerCase();
-    const list = products.filter((p) => !q
-      || p.name.toLowerCase().includes(q) || p.slug.includes(q)
-      || (p.model_no || "").toLowerCase().includes(q) || (p.variant || "").toLowerCase().includes(q));
+    const q = $("#prod-search").value || "";
+    const list = products
+      .map((p) => ({ p, score: productSearchScore(p, q) }))
+      .filter((row) => !q.trim() || row.score > 0)
+      .sort((a, b) => b.score - a.score || (b.p.sort || 0) - (a.p.sort || 0) || b.p.id - a.p.id)
+      .map((row) => row.p);
     $("#prod-count").textContent = "· " + list.length;
     $("#prod-table tbody").innerHTML = list.map((p) => `
       <tr data-id="${p.id}">
@@ -131,6 +194,7 @@
 
   function openEdit(p) {
     editing = p;
+    slugTouched = Boolean(p?.slug);
     editImages = p ? [...p.images] : [];
     $("#edit-title").textContent = p ? "Изменить: " + p.name : "Новый товар";
     $("#edit-err").hidden = true;
@@ -142,6 +206,11 @@
     $("#f-cat").value = p?.category || "pajamas";
     $("#f-price").value = p?.price ?? "";
     $("#f-old").value = p?.old_price ?? "";
+    $("#f-wholesale-price").value = p?.wholesale_price ?? p?.price ?? "";
+    $("#f-wholesale-moq").value = p?.wholesale_moq ?? 60;
+    $("#f-retail-price").value = p?.retail_price ?? p?.price ?? "";
+    $("#f-retail-stock").value = p?.retail_stock ?? 0;
+    $("#f-retail-enabled").checked = p ? !!p.retail_enabled : true;
     $("#f-tag").value = p?.tag || "";
     $("#f-sizes").value = (p?.sizes || []).join(", ");
     $("#f-rating").value = p?.rating ?? 4.8;
@@ -152,7 +221,9 @@
       $("#f-fab-" + l).value = p?.fabric?.[l] || "";
     });
     renderPhotos();
+    updateEditChecklist();
     $("#upload-status").textContent = "";
+    $("#edit-ai-msg").textContent = "";
     switchView("edit");
   }
 
@@ -173,6 +244,18 @@
         </div>
       </div>`;
     }).join("");
+    updateEditChecklist();
+  }
+
+  function updateEditChecklist() {
+    const items = [
+      { ok: $("#f-name").value.trim().length >= 2, label: "Название" },
+      { ok: Number($("#f-price").value) > 0, label: "Цена" },
+      { ok: ($("#f-sizes").value || "").split(",").map((s) => s.trim()).filter(Boolean).length > 0, label: "Размеры" },
+      { ok: editImages.length > 0, label: "Фото" },
+      { ok: $("#f-desc-ru").value.trim().length > 20 || $("#f-desc-uz").value.trim().length > 20 || $("#f-desc-en").value.trim().length > 20, label: "Описание" },
+    ];
+    $("#edit-checklist").innerHTML = items.map((item) => `<span class="${item.ok ? "is-ok" : "is-miss"}">${item.ok ? "✓" : "•"} ${item.label}</span>`).join("");
   }
 
   $("#f-photos").addEventListener("click", (e) => {
@@ -221,6 +304,48 @@
     ["ru", "uz", "en"].forEach((l) => { $("#f-desc-" + l).hidden = l !== b.dataset.lt; });
   });
 
+  $("#f-slug").addEventListener("input", () => { slugTouched = true; updateEditChecklist(); });
+  ["#f-name", "#f-model", "#f-variant"].forEach((sel) => {
+    $(sel).addEventListener("input", () => {
+      if (!slugTouched) $("#f-slug").value = slugifyLocal([$("#f-model").value, $("#f-variant").value, $("#f-name").value].filter(Boolean).join(" "));
+      updateEditChecklist();
+    });
+  });
+  ["#f-price", "#f-sizes", "#f-desc-ru", "#f-desc-uz", "#f-desc-en"].forEach((sel) => {
+    $(sel).addEventListener("input", updateEditChecklist);
+  });
+
+  function smartFillCopy() {
+    const model = $("#f-model").value.trim() || $("#f-name").value.trim() || "Milana";
+    const variant = $("#f-variant").value.trim();
+    const name = $("#f-name").value.trim() || [model, variant].filter(Boolean).join(" / ");
+    const category = $("#f-cat").value;
+    const gender = $("#f-gender").value;
+    const sizes = ($("#f-sizes").value || "48, 50, 52, 54, 56, 58").split(",").map((s) => s.trim()).filter(Boolean).join(", ");
+    const price = $("#f-price").value ? `$${Number($("#f-price").value).toFixed(2)}` : "";
+    const moq = Number($("#f-wholesale-moq").value || 60);
+    const fabricRu = $("#f-fab-ru").value.trim() || "Suprem · хлопок 100%";
+    const fabricUz = $("#f-fab-uz").value.trim() || "Suprem · 100% paxta";
+    const fabricEn = $("#f-fab-en").value.trim() || "Suprem · 100% cotton";
+    if (!$("#f-name").value.trim()) $("#f-name").value = name;
+    if (!$("#f-wholesale-price").value && $("#f-price").value) $("#f-wholesale-price").value = $("#f-price").value;
+    if (!$("#f-retail-price").value && $("#f-price").value) $("#f-retail-price").value = $("#f-price").value;
+    if (!$("#f-fab-ru").value.trim()) $("#f-fab-ru").value = fabricRu;
+    if (!$("#f-fab-uz").value.trim()) $("#f-fab-uz").value = fabricUz;
+    if (!$("#f-fab-en").value.trim()) $("#f-fab-en").value = fabricEn;
+    const ru = `${name} — ${CLO_RU[category].toLowerCase()} для категории ${GENDER_RU[gender].toLowerCase()}. Модель ${model}${variant ? `, вариант ${variant}` : ""}. Размеры: ${sizes}. Оптовый заказ от ${moq} единиц; финальную доступность и отправку подтверждает менеджер.${price ? ` Цена: ${price}.` : ""}`;
+    const uz = `${name} — ${GENDER_UZ[gender]} uchun ${CLO_UZ[category]}. Model ${model}${variant ? `, variant ${variant}` : ""}. O'lchamlar: ${sizes}. Ulgurji buyurtma ${moq} donadan boshlanadi; mavjudlik va jo'natishni menejer tasdiqlaydi.${price ? ` Narx: ${price}.` : ""}`;
+    const en = `${name} — ${CLO_EN[category]} for ${GENDER_EN[gender]}. Model ${model}${variant ? `, variant ${variant}` : ""}. Sizes: ${sizes}. Wholesale orders start from ${moq} units; availability and dispatch are confirmed by a manager.${price ? ` Price: ${price}.` : ""}`;
+    if (!$("#f-desc-ru").value.trim()) $("#f-desc-ru").value = ru;
+    if (!$("#f-desc-uz").value.trim()) $("#f-desc-uz").value = uz;
+    if (!$("#f-desc-en").value.trim()) $("#f-desc-en").value = en;
+    if (!slugTouched) $("#f-slug").value = slugifyLocal([model, variant, name].filter(Boolean).join(" "));
+    updateEditChecklist();
+    $("#edit-ai-msg").textContent = "Smart fill заполнил только пустые поля. Чтобы переписать текст, очистите поле и нажмите снова.";
+  }
+
+  $("#edit-ai-fill").addEventListener("click", smartFillCopy);
+
   $("#edit-save").addEventListener("click", async () => {
     const err = $("#edit-err");
     err.hidden = true;
@@ -233,6 +358,11 @@
       category: $("#f-cat").value,
       price: Number($("#f-price").value),
       old_price: $("#f-old").value === "" ? null : Number($("#f-old").value),
+      wholesale_price: Number($("#f-wholesale-price").value || $("#f-price").value),
+      wholesale_moq: Number($("#f-wholesale-moq").value || 60),
+      retail_enabled: $("#f-retail-enabled").checked,
+      retail_price: Number($("#f-retail-price").value || $("#f-price").value),
+      retail_stock: Number($("#f-retail-stock").value || 0),
       tag: $("#f-tag").value,
       sizes: $("#f-sizes").value.split(",").map((s) => s.trim()).filter(Boolean),
       rating: Number($("#f-rating").value) || 0,
@@ -264,6 +394,52 @@
     }
   });
 
+  /* ================= CUSTOMERS ================= */
+  async function loadCustomers() {
+    customers = await api("/api/admin/customers");
+    const pending = customers.filter((c) => c.approval_status === "pending_review").length;
+    const badge = $("#customers-badge");
+    badge.hidden = !pending;
+    badge.textContent = pending;
+    $("#customer-count").textContent = "· " + customers.length;
+    $("#customer-table tbody").innerHTML = customers.map((c) => `
+      <tr>
+        <td class="ocust">
+          ${esc(c.name || c.contact_person || c.email)}
+          <small>${esc(c.email)}</small>
+          <small>${esc((c.created_at || "").slice(0, 10))}</small>
+        </td>
+        <td>${c.account_type === "individual" ? "Розница" : "Бизнес"}</td>
+        <td class="oitems">
+          <b>${esc(c.company_name || "—")}</b>
+          <small>${esc(c.tax_id || "")}</small>
+          <small>${esc(c.legal_address || c.address || "")}</small>
+        </td>
+        <td class="ocust">
+          <a href="tel:${esc(c.phone)}">${esc(c.phone || "—")}</a>
+          <small>${c.phone_verified ? "Телефон подтверждён" : "Телефон не подтверждён"}</small>
+        </td>
+        <td>
+          <select class="osel ${c.approval_status === "pending_review" ? "osel--new" : ""}" data-customer="${c.id}">
+            <option value="pending_review" ${c.approval_status === "pending_review" ? "selected" : ""}>⏳ На проверке</option>
+            <option value="active" ${c.approval_status === "active" ? "selected" : ""}>✅ Активен</option>
+            <option value="info_requested" ${c.approval_status === "info_requested" ? "selected" : ""}>❔ Нужна информация</option>
+            <option value="rejected" ${c.approval_status === "rejected" ? "selected" : ""}>✖ Отклонён</option>
+          </select>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="5" style="text-align:center;color:var(--soft);padding:36px">Клиентов пока нет</td></tr>`;
+  }
+
+  $("#customer-table").addEventListener("change", async (e) => {
+    const sel = e.target.closest("[data-customer]");
+    if (!sel) return;
+    try {
+      await api("/api/admin/customers/" + sel.dataset.customer + "/approval", { method: "PUT", body: { approval_status: sel.value } });
+      toast("Статус клиента обновлён");
+      loadCustomers();
+    } catch (ex) { toast("Ошибка: " + ex.message); }
+  });
+
   /* ================= ORDERS ================= */
   async function loadOrders() {
     orders = await api("/api/admin/orders");
@@ -284,13 +460,14 @@
           <small>${esc([o.customer.city, o.customer.address].filter(Boolean).join(", "))}</small>
           ${o.customer.comment ? `<small>💬 ${esc(o.customer.comment)}</small>` : ""}
         </td>
+        <td>${o.order_type === "retail" ? "Розница" : "Опт"}</td>
         <td class="oitems">${o.items.map((i) => {
           const bagSize = i.bag_size || 60;
           const unit = i.unit_price ? ` · ${i.unit_price} × ${bagSize}` : "";
           const mix = Array.isArray(i.size_mix) && i.size_mix.length
             ? " · " + i.size_mix.map((m) => `${esc(m.size)}×${m.qty}`).join(", ")
             : "";
-          return `<b>${esc(i.name)}</b> × ${i.qty} qop${unit}${mix}`;
+          return `<b>${esc(i.name)}</b> × ${i.qty} ${i.unit_type === "piece" ? "pcs" : "qop"}${unit}${mix}`;
         }).join("<br>")}</td>
         <td class="osum">${o.total}</td>
         <td class="opay">
@@ -306,7 +483,7 @@
           </select>
         </td>
       </tr>`;
-    }).join("") || `<tr><td colspan="7" style="text-align:center;color:var(--soft);padding:36px">Заказов пока нет</td></tr>`;
+    }).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--soft);padding:36px">Заказов пока нет</td></tr>`;
   }
 
   $("#order-table").addEventListener("change", async (e) => {
@@ -317,6 +494,79 @@
       sel.classList.toggle("osel--new", sel.value === "new");
       toast("Статус обновлён");
       loadOrders();
+    } catch (ex) { toast("Ошибка: " + ex.message); }
+  });
+
+  /* ================= REVIEWS ================= */
+  async function loadReviews() {
+    reviews = await api("/api/admin/reviews");
+    const pending = reviews.filter((r) => r.status === "pending").length;
+    const badge = $("#reviews-badge");
+    badge.hidden = !pending;
+    badge.textContent = pending;
+    $("#review-count").textContent = "· " + reviews.length;
+    $("#review-table tbody").innerHTML = reviews.map((r) => `
+      <tr>
+        <td class="odate">${esc((r.created_at || "").slice(0, 16).replace("T", " "))}</td>
+        <td class="ocust">${esc(r.customer_name || "—")}<small>${esc(r.customer_email || "")}</small></td>
+        <td class="onum">${esc(r.product_slug || r.product_id || "—")}</td>
+        <td>${"★".repeat(Number(r.rating) || 0)}</td>
+        <td class="oitems">${esc(r.comment || "—")}</td>
+        <td>
+          <select class="osel ${r.status === "pending" ? "osel--new" : ""}" data-review="${r.id}">
+            <option value="pending" ${r.status === "pending" ? "selected" : ""}>⏳ На модерации</option>
+            <option value="approved" ${r.status === "approved" ? "selected" : ""}>✅ Опубликован</option>
+            <option value="rejected" ${r.status === "rejected" ? "selected" : ""}>✖ Отклонён</option>
+          </select>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="6" style="text-align:center;color:var(--soft);padding:36px">Отзывов пока нет</td></tr>`;
+  }
+
+  $("#review-table").addEventListener("change", async (e) => {
+    const sel = e.target.closest("[data-review]");
+    if (!sel) return;
+    try {
+      await api("/api/admin/reviews/" + sel.dataset.review, { method: "PUT", body: { status: sel.value } });
+      toast("Отзыв обновлён");
+      loadReviews();
+    } catch (ex) { toast("Ошибка: " + ex.message); }
+  });
+
+  /* ================= CHAT ================= */
+  async function loadChat() {
+    chats = await api("/api/admin/chat");
+    const open = chats.filter((c) => ["escalated", "open"].includes(c.status)).length;
+    const badge = $("#chat-badge");
+    badge.hidden = !open;
+    badge.textContent = open;
+    $("#chat-count").textContent = "· " + chats.length;
+    $("#chat-table tbody").innerHTML = chats.map((c) => `
+      <tr>
+        <td class="odate">${esc((c.created_at || "").slice(0, 16).replace("T", " "))}</td>
+        <td class="ocust">
+          ${esc(c.customer_name || c.visitor_name || "Visitor")}
+          <small>${esc(c.customer_email || c.visitor_email || "")}</small>
+          <small>${esc(c.visitor_phone || "")}</small>
+        </td>
+        <td class="oitems">${(c.messages || []).slice(-4).map((m) => `<b>${esc(m.sender_type)}:</b> ${esc(m.message)}`).join("<br>")}</td>
+        <td>
+          <select class="osel ${c.status === "escalated" ? "osel--new" : ""}" data-chat="${c.id}">
+            <option value="bot" ${c.status === "bot" ? "selected" : ""}>Bot</option>
+            <option value="escalated" ${c.status === "escalated" ? "selected" : ""}>Escalated</option>
+            <option value="open" ${c.status === "open" ? "selected" : ""}>Open</option>
+            <option value="closed" ${c.status === "closed" ? "selected" : ""}>Closed</option>
+          </select>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="4" style="text-align:center;color:var(--soft);padding:36px">Чатов пока нет</td></tr>`;
+  }
+
+  $("#chat-table").addEventListener("change", async (e) => {
+    const sel = e.target.closest("[data-chat]");
+    if (!sel) return;
+    try {
+      await api("/api/admin/chat/" + sel.dataset.chat, { method: "PUT", body: { status: sel.value } });
+      toast("Статус чата обновлён");
+      loadChat();
     } catch (ex) { toast("Ошибка: " + ex.message); }
   });
 

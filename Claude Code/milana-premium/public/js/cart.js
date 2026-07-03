@@ -11,9 +11,11 @@
   try { items = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch {}
   if (!Array.isArray(items)) items = [];
 
+  const orderMode = () => window.MilanaAuth?.customer?.account_type === "individual" ? "retail" : "wholesale";
   const save = () => { localStorage.setItem(KEY, JSON.stringify(items)); updateBadges(); };
   const count = () => items.reduce((s, i) => s + i.qty, 0);
-  const lineTotal = (i) => i.price * BAG_SIZE() * i.qty;
+  const unitPrice = (i) => orderMode() === "retail" ? Number(i.retail_price || i.price || 0) : Number(i.price || 0);
+  const lineTotal = (i) => unitPrice(i) * (orderMode() === "retail" ? 1 : BAG_SIZE()) * i.qty;
   const total = () => items.reduce((s, i) => s + lineTotal(i), 0);
   const t = (k, v) => window.I18N ? I18N.t(k, v) : k;
   const fmt = (n) => window.I18N ? I18N.fmtPrice(n) : "$" + n;
@@ -68,6 +70,7 @@
 
     if (view === "checkout") {
       const customer = window.MilanaAuth?.customer || {};
+      const mode = orderMode();
       bodyEl().innerHTML = `
         <form class="drawer__form" id="checkout-form" novalidate>
           <label><span>${t("cart.name")} *</span><input name="name" required maxlength="80" autocomplete="name" value="${esc(customer.name || "")}"></label>
@@ -85,9 +88,9 @@
             </select>
           </label>
           <label><span>${t("cart.comment")}</span><textarea name="comment" maxlength="1000" rows="3"></textarea></label>
-          <p class="drawer__note">${t("cart.bagRule")}</p>
+          <p class="drawer__note">${mode === "retail" ? "Retail order: quantities are pieces. Manager confirms delivery and availability before dispatch." : t("cart.bagRule")}</p>
           <p class="drawer__note">${t("cart.paymentNote")}</p>
-          <p class="drawer__note">${t("cart.orderNote")}</p>
+          <p class="drawer__note"><a href="/ordering" target="_blank">How ordering works</a> · ${t("cart.orderNote")}</p>
           <p class="drawer__err" hidden></p>
         </form>`;
       footEl().innerHTML = `
@@ -108,17 +111,17 @@
       footEl().innerHTML = "";
       return;
     }
+    const mode = orderMode();
     bodyEl().innerHTML = items.map((it, idx) => `
       <div class="citem">
           <a class="citem__img" href="/p/${it.slug}"><img src="${it.image}" alt=""></a>
         <div class="citem__info">
           <a class="citem__name" href="/p/${it.slug}">${esc(it.name)}</a>
-          <p class="citem__size">${t("cart.unitPrice")}: ${fmt(it.price)}</p>
-          <p class="citem__size">${t("cart.sizeMix")}: ${mixText(it.sizes)}</p>
-          <p class="citem__size">${t("cart.bagTotal")}: ${fmt(it.price * BAG_SIZE())}</p>
+          <p class="citem__size">${t("cart.unitPrice")}: ${fmt(unitPrice(it))}</p>
+          ${mode === "retail" ? `<p class="citem__size">Retail pieces</p>` : `<p class="citem__size">${t("cart.sizeMix")}: ${mixText(it.sizes)}</p><p class="citem__size">${t("cart.bagTotal")}: ${fmt(it.price * BAG_SIZE())}</p>`}
           <div class="citem__row">
             <div class="citem__qty">
-              <button data-qty="${idx}:-1" aria-label="−">−</button><span>${it.qty} ${t("cart.bagShort")}</span><button data-qty="${idx}:1" aria-label="+">+</button>
+              <button data-qty="${idx}:-1" aria-label="−">−</button><span>${it.qty} ${mode === "retail" ? "pcs" : t("cart.bagShort")}</span><button data-qty="${idx}:1" aria-label="+">+</button>
             </div>
             <strong>${fmt(lineTotal(it))}</strong>
           </div>
@@ -163,8 +166,10 @@
         body: JSON.stringify({
           customer: data,
           payment: { method: data.payment_method || "manager" },
+          order_type: orderMode() === "retail" ? "retail" : "wholesale",
           items: items.map((i) => ({ id: i.id, qty: i.qty })),
           lang: window.I18N ? I18N.lang : "en",
+          source: "website",
         }),
       });
       const res = await r.json();
@@ -206,12 +211,12 @@
     toastTimer = setTimeout(() => el.classList.remove("is-on"), 2200);
   }
 
-  function add({ id, slug, name, image, price, sizes = [], qty = 1 }) {
+  function add({ id, slug, name, image, price, retail_price, sizes = [], qty = 1 }) {
     qty = Math.max(1, Math.round(Number(qty) || 1));
     sizes = Array.isArray(sizes) ? sizes.slice(0, 12) : [];
     const same = items.find((i) => i.id === id);
     if (same) same.qty = Math.min(20, same.qty + qty);
-    else items.push({ id, slug, name, image, price, sizes, qty });
+    else items.push({ id, slug, name, image, price, retail_price, sizes, qty });
     save();
     toast(t("prod.added"));
     const btn = document.querySelector("[data-cart-open]");

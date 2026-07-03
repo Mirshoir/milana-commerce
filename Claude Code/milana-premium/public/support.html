@@ -8,8 +8,8 @@
   <meta name="theme-color" content="#5c1f2d">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%235c1f2d'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='34' fill='%23f4efe6' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/css/fonts.css">
-  <link rel="stylesheet" href="/css/style.css?v=20260701-polish1">
-  <link rel="stylesheet" href="/css/shop.css?v=20260701-polish1">
+  <link rel="stylesheet" href="/css/style.css?v=20260702-responsive1">
+  <link rel="stylesheet" href="/css/shop.css?v=20260703-zoom1">
   <script>document.documentElement.classList.replace('no-js','js');</script>
 </head>
 <body data-keep-title="1">
@@ -34,9 +34,29 @@
         <a class="header__tel" data-dyn="tel" href="tel:+998501551010">+998 50 155 10 10</a>
         <a class="auth-link" href="/signin" data-auth-link data-i18n="auth.signIn">Sign in</a>
         <button class="cartbtn" data-cart-open aria-label="Cart"><svg class="ic"><use href="#i-cart"/></svg><i class="cartbtn__n is-zero" data-cart-count>0</i></button>
+        <button class="burger" aria-label="Open menu" aria-expanded="false" aria-controls="menu">
+          <span></span><span></span>
+        </button>
       </div>
     </div>
   </header>
+
+  <div class="menu" id="menu" aria-hidden="true">
+    <nav class="menu__nav" aria-label="Mobile">
+      <a href="/shop"><i>01</i><b data-i18n="nav.shop">Shop</b></a>
+      <a href="/#collection"><i>02</i><b data-i18n="nav.collection">Collection</b></a>
+      <a href="/#categories"><i>03</i><b data-i18n="nav.categories">Categories</b></a>
+      <a href="/#maison"><i>04</i><b data-i18n="nav.maison">Brand</b></a>
+      <a href="/#wholesale"><i>05</i><b data-i18n="nav.wholesale">Wholesale</b></a>
+      <a href="/support"><i>06</i><b data-i18n="nav.support">Support</b></a>
+      <a href="/signin"><i>07</i><b data-auth-link data-i18n="auth.signIn">Sign in</b></a>
+    </nav>
+    <div class="menu__foot">
+      <a data-dyn="wa" href="https://wa.me/998501551010" target="_blank" rel="noopener"><svg class="ic"><use href="#i-wa"/></svg>WhatsApp</a>
+      <a data-dyn="tg" href="https://t.me/milanapremium2" target="_blank" rel="noopener"><svg class="ic"><use href="#i-tg"/></svg>Telegram</a>
+      <div class="lang lang--menu" data-lang-mount></div>
+    </div>
+  </div>
 
   <main class="page support-page">
     <div class="container support-shell">
@@ -84,9 +104,11 @@
     <div class="container"><div class="footer__bottom"><p>© <span id="year">2026</span> Milana Premium — Uzbekistan, Andijan</p><div class="footer__legal"><a data-dyn="wa" href="#" target="_blank" rel="noopener">WhatsApp</a><a data-dyn="tg" href="#" target="_blank" rel="noopener">Telegram</a></div></div></div>
   </footer>
   <script src="/js/i18n.js" defer></script>
-  <script src="/js/app-state.js?v=20260701-polish1" defer></script>
-  <script src="/js/auth.js?v=20260701-polish1" defer></script>
+  <script src="/js/app-state.js?v=20260702-responsive1" defer></script>
+  <script src="/js/auth.js?v=20260702-responsive1" defer></script>
   <script src="/js/cart.js" defer></script>
+  <script src="/js/chat-widget.js?v=20260703-chatbot2" defer></script>
+  <script src="/js/menu.js?v=20260702-responsive1" defer></script>
   <script src="/js/support.js" defer></script>
 </body>
 </html>

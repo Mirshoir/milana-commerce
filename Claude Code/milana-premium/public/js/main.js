@@ -11,12 +11,13 @@
   const hasGsap = typeof window.gsap !== "undefined";
   const hasST = hasGsap && typeof window.ScrollTrigger !== "undefined";
   const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  const desktopViewport = window.matchMedia("(min-width: 1024px)").matches;
 
   if (hasST) gsap.registerPlugin(ScrollTrigger);
 
   /* ---------------- smooth scroll (Lenis) ---------------- */
   let lenis = null;
-  if (!reduceMotion && typeof window.Lenis !== "undefined" && hasST) {
+  if (!reduceMotion && finePointer && desktopViewport && typeof window.Lenis !== "undefined" && hasST) {
     lenis = new Lenis({ duration: 1.15, smoothWheel: true });
     doc.classList.add("lenis-on");
     lenis.on("scroll", ScrollTrigger.update);

@@ -184,6 +184,30 @@ data/
 
 Админские API находятся в `/api/admin/*` и доступны только после входа.
 
+## Telegram-уведомления о заказах
+
+Пока онлайн-оплата остаётся ручной, сайт и Flutter app отправляют заказы в один
+backend endpoint: `POST /api/orders`. После сохранения заказа backend может
+отправить сообщение менеджерам в Telegram.
+
+Настройки:
+
+```bash
+TELEGRAM_BOT_TOKEN=123456:bot-token-from-botfather
+TELEGRAM_ORDER_CHAT_ID=-1001234567890
+TELEGRAM_ORDERS_ENABLED=1
+# optional, only for Telegram forum/topic groups
+TELEGRAM_ORDER_THREAD_ID=
+```
+
+Локально эти значения можно положить в `data/telegram.env`. На сервере лучше
+держать их в systemd EnvironmentFile / shared env рядом с остальными backend
+секретами. Если токен или chat id не заданы, заказ всё равно создаётся, просто
+без Telegram-уведомления.
+
+Flutter app должен использовать тот же endpoint и передавать `source: "flutter"`
+в JSON payload. Сумма, qop-правила и size mix всё равно считаются сервером.
+
 ## Деплой на сервер (когда появится)
 
 1. Скопируйте папку проекта на сервер (вместе с `data/`, если нужно сохранить контент).

@@ -16,7 +16,10 @@
       <p class="side__brand">Milana <span>Admin</span></p>
       <nav class="side__nav">
         <button data-view="products" class="is-on">🧥 Товары</button>
+        <button data-view="customers">👥 Клиенты <i class="side__badge" id="customers-badge" hidden></i></button>
         <button data-view="orders">📦 Заказы <i class="side__badge" id="orders-badge" hidden></i></button>
+        <button data-view="reviews">★ Отзывы <i class="side__badge" id="reviews-badge" hidden></i></button>
+        <button data-view="chat">💬 Чат <i class="side__badge" id="chat-badge" hidden></i></button>
         <button data-view="support">☎️ Поддержка <i class="side__badge" id="support-badge" hidden></i></button>
         <button data-view="design">🎨 Дизайн</button>
         <button data-view="settings">⚙️ Настройки</button>
@@ -93,9 +96,17 @@
               <label>Рейтинг <input class="ainput" id="f-rating" type="number" min="0" max="5" step="0.1"></label>
               <label>Отзывов <input class="ainput" id="f-reviews" type="number" min="0" step="1"></label>
             </div>
+            <div class="frow frow--4">
+              <label>Опт. цена <input class="ainput" id="f-wholesale-price" type="number" min="0" step="0.01"></label>
+              <label>Опт. MOQ (дона) <input class="ainput" id="f-wholesale-moq" type="number" min="1" step="1" value="60"></label>
+              <label>Розница цена <input class="ainput" id="f-retail-price" type="number" min="0" step="0.01"></label>
+              <label>Розница склад <input class="ainput" id="f-retail-stock" type="number" min="0" step="1"></label>
+            </div>
             <div class="frow">
               <label class="fcheck"><input type="checkbox" id="f-active" checked> Показывать на сайте</label>
+              <label class="fcheck"><input type="checkbox" id="f-retail-enabled" checked> Доступно в розницу</label>
             </div>
+            <div class="smartcheck" id="edit-checklist"></div>
           </div>
 
           <div class="card">
@@ -109,7 +120,10 @@
           </div>
 
           <div class="card">
-            <h3>Описание</h3>
+            <div class="card__top">
+              <h3>Описание</h3>
+              <button class="abtn" id="edit-ai-fill" type="button">Smart fill</button>
+            </div>
             <div class="langtabs" id="desc-tabs">
               <button data-lt="ru" class="is-on">RU</button><button data-lt="uz">UZ</button><button data-lt="en">EN</button>
             </div>
@@ -121,7 +135,19 @@
               <label>Ткань UZ <input class="ainput" id="f-fab-uz" maxlength="300" placeholder="Tut ipagi · burgundi"></label>
               <label>Ткань EN <input class="ainput" id="f-fab-en" maxlength="300" placeholder="Mulberry silk · burgundy"></label>
             </div>
+            <p class="hint" id="edit-ai-msg"></p>
           </div>
+        </div>
+      </section>
+
+      <!-- ===== ORDERS ===== -->
+      <section class="view" id="view-customers" hidden>
+        <header class="vhead"><h1>Клиенты <span class="vhead__n" id="customer-count"></span></h1></header>
+        <div class="tablewrap">
+          <table class="atable atable--orders" id="customer-table">
+            <thead><tr><th>Клиент</th><th>Тип</th><th>Компания</th><th>Контакты</th><th>Статус</th></tr></thead>
+            <tbody></tbody>
+          </table>
         </div>
       </section>
 
@@ -130,7 +156,29 @@
         <header class="vhead"><h1>Заказы <span class="vhead__n" id="order-count"></span></h1></header>
         <div class="tablewrap">
           <table class="atable atable--orders" id="order-table">
-            <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Состав</th><th>Сумма</th><th>Оплата</th><th>Статус</th></tr></thead>
+            <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Тип</th><th>Состав</th><th>Сумма</th><th>Оплата</th><th>Статус</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== REVIEWS ===== -->
+      <section class="view" id="view-reviews" hidden>
+        <header class="vhead"><h1>Отзывы <span class="vhead__n" id="review-count"></span></h1></header>
+        <div class="tablewrap">
+          <table class="atable atable--orders" id="review-table">
+            <thead><tr><th>Дата</th><th>Клиент</th><th>Товар</th><th>Оценка</th><th>Комментарий</th><th>Статус</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ===== CHAT ===== -->
+      <section class="view" id="view-chat" hidden>
+        <header class="vhead"><h1>Чат <span class="vhead__n" id="chat-count"></span></h1></header>
+        <div class="tablewrap">
+          <table class="atable atable--orders" id="chat-table">
+            <thead><tr><th>Дата</th><th>Клиент</th><th>Последние сообщения</th><th>Статус</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
