@@ -129,7 +129,7 @@
 
   /* ================= PRODUCTS ================= */
   async function loadProducts() {
-    products = await api("/api/admin/products");
+    products = await api("/api/admin/products?refresh=1");
     renderProducts();
   }
 
@@ -144,7 +144,9 @@
   }
 
   function renderProducts() {
-    const q = $("#prod-search").value || "";
+    const search = $("#prod-search");
+    if (search && search.value.trim().toLowerCase() === "admin") search.value = "";
+    const q = search?.value || "";
     const list = products
       .map((p) => ({ p, score: productSearchScore(p, q) }))
       .filter((row) => !q.trim() || row.score > 0)
@@ -169,6 +171,9 @@
       </tr>`).join("");
   }
 
+  $("#prod-search").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") e.preventDefault();
+  });
   $("#prod-search").addEventListener("input", renderProducts);
   window.addEventListener("pageshow", () => setTimeout(clearAutofilledProductSearch, 80));
   setTimeout(clearAutofilledProductSearch, 250);
