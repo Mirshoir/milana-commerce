@@ -102,6 +102,49 @@ async function startOpenAIStub(t) {
   return { base: `http://127.0.0.1:${port}`, requests };
 }
 
+async function startSmtpStub(t) {
+  const port = await freePort();
+  const messages = [];
+  const server = net.createServer((socket) => {
+    let buffer = "";
+    let dataMode = false;
+    let data = "";
+    socket.write("220 local.smtp ESMTP\r\n");
+    socket.on("data", (chunk) => {
+      buffer += chunk.toString("utf8");
+      let index;
+      while ((index = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, index).replace(/\r$/, "");
+        buffer = buffer.slice(index + 1);
+        if (dataMode) {
+          if (line === ".") {
+            messages.push(data);
+            data = "";
+            dataMode = false;
+            socket.write("250 queued\r\n");
+          } else {
+            data += line + "\n";
+          }
+          continue;
+        }
+        if (/^EHLO\b/i.test(line)) socket.write("250-local.smtp\r\n250 AUTH PLAIN LOGIN\r\n");
+        else if (/^AUTH\b/i.test(line)) socket.write("235 authenticated\r\n");
+        else if (/^MAIL FROM:/i.test(line)) socket.write("250 ok\r\n");
+        else if (/^RCPT TO:/i.test(line)) socket.write("250 ok\r\n");
+        else if (/^DATA$/i.test(line)) { dataMode = true; socket.write("354 go ahead\r\n"); }
+        else if (/^QUIT$/i.test(line)) { socket.write("221 bye\r\n"); socket.end(); }
+        else socket.write("250 ok\r\n");
+      }
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.listen(port, "127.0.0.1", resolve);
+    server.on("error", reject);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  return { port, messages };
+}
+
 async function json(url, body, opts = {}) {
   return await fetch(url, {
     method: opts.method || "POST",
@@ -176,6 +219,27 @@ test("chat assistant uses OpenAI when configured", async (t) => {
   assert.equal(openai.requests[0].url, "/responses");
   assert.equal(openai.requests[0].auth, "Bearer sk-test");
   assert.equal(openai.requests[0].body.model, "test-model");
+});
+
+test("password recovery code can be sent through SMTP", async (t) => {
+  const smtp = await startSmtpStub(t);
+  const app = await startServer(t, {
+    EMAIL_SEND_IN_DEV: "1",
+    SMTP_HOST: "127.0.0.1",
+    SMTP_PORT: String(smtp.port),
+    SMTP_STARTTLS: "0",
+    SMTP_USER: "passwordMilanapremium@gmail.com",
+    SMTP_PASS: "test-app-password",
+    SMTP_FROM_EMAIL: "Milana Premium <passwordMilanapremium@gmail.com>",
+  });
+
+  const otp = await json(app.base + "/api/auth/email-otp/start", { email: "buyer@example.com", lang: "uz" });
+  assert.equal(otp.status, 200);
+  assert.equal((await otp.json()).dev_code, undefined);
+  assert.equal(smtp.messages.length, 1);
+  assert.match(smtp.messages[0], /From: Milana Premium <passwordMilanapremium@gmail.com>/);
+  assert.match(smtp.messages[0], /To: buyer@example.com/);
+  assert.match(smtp.messages[0], /Milana Premium tasdiqlash kodi/);
 });
 
 test("public API, order placement, newsletter, and admin protections work", async (t) => {

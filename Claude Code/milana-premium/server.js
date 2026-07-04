@@ -10,6 +10,8 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const net = require("node:net");
+const tls = require("node:tls");
 const { DatabaseSync } = require("node:sqlite");
 
 const ROOT = __dirname;
@@ -49,6 +51,13 @@ const SMS_WEBHOOK_TOKEN = (process.env.SMS_WEBHOOK_TOKEN || "").trim();
 const SMS_SEND_IN_DEV = process.env.SMS_SEND_IN_DEV === "1";
 const RESEND_API_KEY = (process.env.RESEND_API_KEY || "").trim();
 const RESEND_FROM_EMAIL = (process.env.RESEND_FROM_EMAIL || "Milana Premium <onboarding@resend.dev>").trim();
+const SMTP_HOST = (process.env.SMTP_HOST || "").trim();
+const SMTP_PORT = Number(process.env.SMTP_PORT) || 587;
+const SMTP_SECURE = process.env.SMTP_SECURE === "1" || SMTP_PORT === 465;
+const SMTP_STARTTLS = process.env.SMTP_STARTTLS !== "0";
+const SMTP_USER = (process.env.SMTP_USER || "").trim();
+const SMTP_PASS = (process.env.SMTP_PASS || "").trim();
+const SMTP_FROM_EMAIL = (process.env.SMTP_FROM_EMAIL || RESEND_FROM_EMAIL || SMTP_USER).trim();
 const EMAIL_WEBHOOK_URL = (process.env.EMAIL_WEBHOOK_URL || "").trim();
 const EMAIL_WEBHOOK_TOKEN = (process.env.EMAIL_WEBHOOK_TOKEN || "").trim();
 const EMAIL_SEND_IN_DEV = process.env.EMAIL_SEND_IN_DEV === "1";
@@ -347,7 +356,138 @@ function emailHtml(text) {
     .replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[ch]))
     .replace(/\r?\n/g, "<br>")}</p>`;
 }
+
+function emailAddress(value) {
+  const match = String(value || "").match(/<([^<>@\s]+@[^<>\s]+)>/);
+  if (match) return match[1];
+  const plain = String(value || "").trim();
+  return emailOk(plain) ? plain : "";
+}
+
+function encodeHeader(value) {
+  const clean = String(value || "").replace(/[\r\n]+/g, " ").trim();
+  return /^[\x20-\x7e]*$/.test(clean) ? clean : `=?UTF-8?B?${Buffer.from(clean, "utf8").toString("base64")}?=`;
+}
+
+function smtpMessage({ from, to, subject, text }) {
+  const html = emailHtml(text);
+  const boundary = "milana-" + crypto.randomBytes(12).toString("hex");
+  const headers = [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: ${encodeHeader(subject)}`,
+    "MIME-Version: 1.0",
+    `Message-ID: <${crypto.randomBytes(12).toString("hex")}@milanapremium.uz>`,
+    `Date: ${new Date().toUTCString()}`,
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+  ];
+  return [
+    ...headers,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/plain; charset=UTF-8",
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    String(text || ""),
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=UTF-8",
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    html,
+    "",
+    `--${boundary}--`,
+    "",
+  ].join("\r\n").replace(/^\./gm, "..");
+}
+
+function smtpRead(socket, state) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => cleanup(new Error("smtp_timeout")), 20_000);
+    const onData = (chunk) => {
+      state.buffer += chunk.toString("utf8");
+      const lines = state.buffer.split(/\r?\n/);
+      if (!state.buffer.endsWith("\n")) state.buffer = lines.pop() || "";
+      else state.buffer = "";
+      for (const line of lines) {
+        if (!line) continue;
+        const match = line.match(/^(\d{3})([\s-])(.*)$/);
+        if (match && match[2] === " ") cleanup(null, { code: Number(match[1]), line });
+      }
+    };
+    const onError = (err) => cleanup(err);
+    function cleanup(err, value) {
+      clearTimeout(timer);
+      socket.off("data", onData);
+      socket.off("error", onError);
+      if (err) reject(err);
+      else resolve(value);
+    }
+    socket.on("data", onData);
+    socket.on("error", onError);
+  });
+}
+
+async function smtpCommand(socket, state, command, okCodes) {
+  if (command) socket.write(command + "\r\n");
+  const res = await smtpRead(socket, state);
+  if (!okCodes.includes(res.code)) throw new Error(`smtp_${res.code}`);
+  return res;
+}
+
+function smtpConnect() {
+  return new Promise((resolve, reject) => {
+    const options = { host: SMTP_HOST, port: SMTP_PORT, servername: SMTP_HOST, rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== "0" };
+    const socket = SMTP_SECURE ? tls.connect(options) : net.connect(options);
+    socket.setTimeout(25_000);
+    socket.once(SMTP_SECURE ? "secureConnect" : "connect", () => resolve(socket));
+    socket.once("error", reject);
+    socket.once("timeout", () => reject(new Error("smtp_timeout")));
+  });
+}
+
+function smtpUpgrade(socket) {
+  return new Promise((resolve, reject) => {
+    const secure = tls.connect({ socket, servername: SMTP_HOST, rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== "0" });
+    secure.once("secureConnect", () => resolve(secure));
+    secure.once("error", reject);
+  });
+}
+
+async function sendSmtpEmail(to, subject, text) {
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return { ok: false, error: "email_not_configured" };
+  const from = SMTP_FROM_EMAIL || SMTP_USER;
+  const fromAddress = emailAddress(from) || SMTP_USER;
+  let socket;
+  let state = { buffer: "" };
+  try {
+    socket = await smtpConnect();
+    await smtpCommand(socket, state, "", [220]);
+    await smtpCommand(socket, state, `EHLO ${HOST === "0.0.0.0" ? "milanapremium.uz" : HOST}`, [250]);
+    if (!SMTP_SECURE && SMTP_STARTTLS) {
+      await smtpCommand(socket, state, "STARTTLS", [220]);
+      socket = await smtpUpgrade(socket);
+      state = { buffer: "" };
+      await smtpCommand(socket, state, `EHLO ${HOST === "0.0.0.0" ? "milanapremium.uz" : HOST}`, [250]);
+    }
+    await smtpCommand(socket, state, "AUTH PLAIN " + Buffer.from(`\0${SMTP_USER}\0${SMTP_PASS}`).toString("base64"), [235]);
+    await smtpCommand(socket, state, `MAIL FROM:<${fromAddress}>`, [250]);
+    await smtpCommand(socket, state, `RCPT TO:<${to}>`, [250, 251]);
+    await smtpCommand(socket, state, "DATA", [354]);
+    socket.write(smtpMessage({ from, to, subject, text }) + "\r\n.\r\n");
+    await smtpCommand(socket, state, "", [250]);
+    await smtpCommand(socket, state, "QUIT", [221]);
+    socket.end();
+    return { ok: true };
+  } catch (e) {
+    if (socket) socket.destroy();
+    console.error("SMTP email failed:", e.message);
+    return { ok: false, error: "email_failed" };
+  }
+}
+
 async function sendEmail(to, subject, text, meta = {}) {
+  if (SMTP_HOST && SMTP_USER && SMTP_PASS) return sendSmtpEmail(to, subject, text, meta);
   if (RESEND_API_KEY) {
     let response;
     try {
