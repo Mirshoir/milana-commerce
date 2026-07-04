@@ -69,8 +69,12 @@
     root.querySelectorAll("img").forEach((img) => {
       if (img.dataset.imgState === "1") return;
       img.dataset.imgState = "1";
-      img.classList.toggle("is-loaded", img.complete && img.naturalWidth > 0);
-      img.addEventListener("load", () => img.classList.add("is-loaded"), { once: true });
+      const reveal = () => img.classList.add("is-loaded");
+      if (img.complete && img.naturalWidth > 0) reveal();
+      requestAnimationFrame(() => {
+        if (img.complete && img.naturalWidth > 0) reveal();
+      });
+      img.addEventListener("load", reveal, { once: true });
       img.addEventListener("error", () => img.classList.add("is-broken"), { once: true });
     });
   }

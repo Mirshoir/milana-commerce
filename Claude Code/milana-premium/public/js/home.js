@@ -9,9 +9,9 @@
   const $ = (s, r = document) => r.querySelector(s);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const isVideo = (u) => /\.(mp4|webm)(\?|$)/i.test(u || "");
-  const mediaTag = (url, alt) => isVideo(url)
+  const mediaTag = (url, alt, eager = false) => isVideo(url)
     ? `<video src="${esc(url)}" muted loop playsinline autoplay preload="metadata" aria-label="${esc(alt)}"></video>`
-    : `<img src="${esc(url)}" alt="${esc(alt)}" loading="lazy" decoding="async" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`;
+    : `<img src="${esc(url)}" alt="${esc(alt)}" loading="${eager ? "eager" : "lazy"}" decoding="async" fetchpriority="${eager ? "high" : "auto"}" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`;
   let products = [];
 
   /* ---------- bestsellers from the live catalog ---------- */
@@ -30,7 +30,7 @@
     return `<p class="product__price">${I18N.fmtPrice(p.price)} ${p.old_price ? `<s>${I18N.fmtPrice(p.old_price)}</s>` : ""}</p>`;
   }
 
-  function card(p) {
+  function card(p, i = 0) {
     const lang = I18N.lang;
     const fabric = (p.fabric && (p.fabric[lang] || p.fabric.en)) || "";
     return `
@@ -38,7 +38,7 @@
       <div class="product__media">
         ${tagChip(p)}
         <button class="product__wish" aria-label="Wishlist"><svg class="ic"><use href="#i-heart"/></svg></button>
-        <a class="product__go" href="/p/${p.slug}"><figure>${mediaTag(p.images[0] || "", p.name)}</figure></a>
+        <a class="product__go" href="/p/${p.slug}"><figure>${mediaTag(p.images[0] || "", p.name, i < 4)}</figure></a>
         <div class="product__quick">
           <div class="product__sizes">${p.sizes.map((s) => `<span data-size="${esc(s)}">${esc(s)}</span>`).join("")}</div>
           <button class="product__add" data-add="${p.id}"><svg class="ic"><use href="#i-cart"/></svg><span data-i18n="best.add">${I18N.t("best.add")}</span></button>
@@ -60,6 +60,7 @@
       const r = await fetch("/api/products?limit=4");
       products = await r.json();
       grid.innerHTML = products.map(card).join("");
+      window.MilanaState?.wireImages?.(grid);
       window.dispatchEvent(new CustomEvent("products:rendered"));
     } catch { /* static fallback cards stay */ }
   }
