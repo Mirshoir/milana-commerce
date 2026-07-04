@@ -406,5 +406,7 @@
   "ordering.step4Title": "To‘lov va jo‘natish",
   "ordering.step4Text": "To‘lov hozir menejer tomonidan tasdiqlanadi. Hududiy yetkazish muddati cargo yo‘nalishiga qarab jo‘natilgandan keyin odatda 1-5 ish kuni.",
   "ordering.step5Title": "Holatni kuzating",
-  "ordering.step5Text": "Akkauntdagi buyurtmalar tarixi yangi, jarayonda, jo‘natilgan, bajarilgan yoki bekor qilingan holatlarni ko‘rsatadi. Trek raqamini admin qo‘shishi mumkin."
+  "ordering.step5Text": "Akkauntdagi buyurtmalar tarixi yangi, jarayonda, jo‘natilgan, bajarilgan yoki bekor qilingan holatlarni ko‘rsatadi. Trek raqamini admin qo‘shishi mumkin.",
+  "price.manager": "Narxni menejer tasdiqlaydi",
+  "cart.totalPending": "Umumiy summani menejer tasdiqlaydi"
 }

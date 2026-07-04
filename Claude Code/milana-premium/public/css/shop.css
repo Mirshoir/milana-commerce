@@ -445,6 +445,7 @@
 .pd__rating span{color:var(--ink-soft)}
 .pd__price{display:flex;align-items:baseline;gap:8px 14px;flex-wrap:wrap;margin:clamp(18px,2.4vw,26px) 0}
 .pd__price strong{font-family:var(--f-display);font-weight:500;font-size:clamp(1.7rem,2.6vw,2.3rem)}
+.pd__price--pending strong{font-family:var(--f-sans);font-size:.92rem;letter-spacing:.14em;text-transform:uppercase;color:var(--burgundy)}
 .pd__price s{color:var(--ink-soft);font-size:1.1rem;font-weight:300}
 .pd__price small{display:block;font-size:.76rem;color:var(--ink-soft);letter-spacing:.04em}
 .pd__fabricline{font-size:.95rem;color:var(--ink-soft);line-height:1.6;margin-bottom:clamp(20px,2.6vw,28px);padding-bottom:clamp(20px,2.6vw,28px);border-bottom:1px solid var(--line)}

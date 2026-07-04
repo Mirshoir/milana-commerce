@@ -14,11 +14,14 @@
   const orderMode = () => window.MilanaAuth?.customer?.account_type === "individual" ? "retail" : "wholesale";
   const save = () => { localStorage.setItem(KEY, JSON.stringify(items)); updateBadges(); };
   const count = () => items.reduce((s, i) => s + i.qty, 0);
+  const pendingPrice = (i) => i.price_visible === false || i.price_pending === true;
   const unitPrice = (i) => orderMode() === "retail" ? Number(i.retail_price || i.price || 0) : Number(i.price || 0);
-  const lineTotal = (i) => unitPrice(i) * (orderMode() === "retail" ? 1 : BAG_SIZE()) * i.qty;
+  const lineTotal = (i) => pendingPrice(i) ? 0 : unitPrice(i) * (orderMode() === "retail" ? 1 : BAG_SIZE()) * i.qty;
   const total = () => items.reduce((s, i) => s + lineTotal(i), 0);
+  const hasPendingTotal = () => items.some(pendingPrice);
   const t = (k, v) => window.I18N ? I18N.t(k, v) : k;
   const fmt = (n) => window.I18N ? I18N.fmtPrice(n) : "$" + n;
+  const priceText = (i, amount = unitPrice(i)) => pendingPrice(i) ? t("price.manager") : fmt(amount);
   const mix = (sizes = []) => sizes.slice(0, 6).filter(Boolean);
   const mixText = (sizes = []) => {
     const list = mix(sizes);
@@ -94,7 +97,7 @@
           <p class="drawer__err" hidden></p>
         </form>`;
       footEl().innerHTML = `
-        <div class="drawer__total"><span>${t("cart.total")}</span><strong>${fmt(total())}</strong></div>
+        <div class="drawer__total"><span>${t("cart.total")}</span><strong>${hasPendingTotal() ? t("cart.totalPending") : fmt(total())}</strong></div>
         <button class="btn btn--primary drawer__cta" data-place><span>${t("cart.place")}</span><svg class="ic"><use href="#i-arrow"/></svg></button>
         <button class="drawer__backlink" data-back>&larr; ${t("cart.back")}</button>`;
       return;
@@ -117,19 +120,19 @@
           <a class="citem__img" href="/p/${it.slug}"><img src="${it.image}" alt=""></a>
         <div class="citem__info">
           <a class="citem__name" href="/p/${it.slug}">${esc(it.name)}</a>
-          <p class="citem__size">${t("cart.unitPrice")}: ${fmt(unitPrice(it))}</p>
-          ${mode === "retail" ? `<p class="citem__size">Retail pieces</p>` : `<p class="citem__size">${t("cart.sizeMix")}: ${mixText(it.sizes)}</p><p class="citem__size">${t("cart.bagTotal")}: ${fmt(it.price * BAG_SIZE())}</p>`}
+          <p class="citem__size">${t("cart.unitPrice")}: ${priceText(it)}</p>
+          ${mode === "retail" ? `<p class="citem__size">Retail pieces</p>` : `<p class="citem__size">${t("cart.sizeMix")}: ${mixText(it.sizes)}</p><p class="citem__size">${t("cart.bagTotal")}: ${priceText(it, it.price * BAG_SIZE())}</p>`}
           <div class="citem__row">
             <div class="citem__qty">
               <button data-qty="${idx}:-1" aria-label="−">−</button><span>${it.qty} ${mode === "retail" ? "pcs" : t("cart.bagShort")}</span><button data-qty="${idx}:1" aria-label="+">+</button>
             </div>
-            <strong>${fmt(lineTotal(it))}</strong>
+            <strong>${priceText(it, lineTotal(it))}</strong>
           </div>
         </div>
         <button class="citem__x" data-del="${idx}" aria-label="Remove">&#10005;</button>
       </div>`).join("");
     footEl().innerHTML = `
-      <div class="drawer__total"><span>${t("cart.total")}</span><strong>${fmt(total())}</strong></div>
+      <div class="drawer__total"><span>${t("cart.total")}</span><strong>${hasPendingTotal() ? t("cart.totalPending") : fmt(total())}</strong></div>
       <button class="btn btn--primary drawer__cta" data-checkout><span>${t("cart.checkout")}</span><svg class="ic"><use href="#i-arrow"/></svg></button>`;
   }
 
@@ -211,12 +214,12 @@
     toastTimer = setTimeout(() => el.classList.remove("is-on"), 2200);
   }
 
-  function add({ id, slug, name, image, price, retail_price, sizes = [], qty = 1 }) {
+  function add({ id, slug, name, image, price, retail_price, price_visible = true, price_label = "", sizes = [], qty = 1 }) {
     qty = Math.max(1, Math.round(Number(qty) || 1));
     sizes = Array.isArray(sizes) ? sizes.slice(0, 12) : [];
     const same = items.find((i) => i.id === id);
     if (same) same.qty = Math.min(20, same.qty + qty);
-    else items.push({ id, slug, name, image, price, retail_price, sizes, qty });
+    else items.push({ id, slug, name, image, price, retail_price, price_visible: price_visible !== false, price_label, sizes, qty });
     save();
     toast(t("prod.added"));
     const btn = document.querySelector("[data-cart-open]");

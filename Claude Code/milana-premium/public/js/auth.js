@@ -133,7 +133,7 @@
       } else {
         wishList.innerHTML = wishlist.slice(0, 4).map((item) => `<a class="account-wish" href="/p/${esc(item.slug || item.id)}">
           <img src="${esc(item.image || "/assets/img/detail-stack.jpg")}" alt="">
-          <span><strong>${esc(item.name || t("auth.savedModel"))}</strong><i>${fmt(item.price || 0)}</i></span>
+          <span><strong>${esc(item.name || t("auth.savedModel"))}</strong><i>${item.price_visible === false ? t("price.manager") : fmt(item.price || 0)}</i></span>
           <button type="button" data-account-wish-remove="${esc(item.id)}" aria-label="Remove">×</button>
         </a>`).join("");
         window.MilanaState?.wireImages?.(wishList);

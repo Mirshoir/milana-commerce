@@ -406,5 +406,7 @@
   "ordering.step4Title": "Payment & shipping",
   "ordering.step4Text": "Payment is currently manager-confirmed. Regional delivery time is usually 1-5 business days after dispatch, depending on cargo route.",
   "ordering.step5Title": "Track status",
-  "ordering.step5Text": "Your account order history shows new, processing, shipped, done, or cancelled status. Tracking number can be added by admin."
+  "ordering.step5Text": "Your account order history shows new, processing, shipped, done, or cancelled status. Tracking number can be added by admin.",
+  "price.manager": "Manager confirms price",
+  "cart.totalPending": "Manager confirms total"
 }

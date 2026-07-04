@@ -113,8 +113,13 @@
   function tagChip(p) {
     if (p.tag === "bestseller") return `<span class="product__tag">${I18N.t("best.tagBest")}</span>`;
     if (p.tag === "new") return `<span class="product__tag product__tag--new">${I18N.t("best.tagNew")}</span>`;
-    if (p.tag === "sale" && p.old_price) return `<span class="product__tag product__tag--sale">−${Math.round((1 - p.price / p.old_price) * 100)}%</span>`;
+    if (p.price_visible !== false && p.tag === "sale" && p.old_price) return `<span class="product__tag product__tag--sale">−${Math.round((1 - p.price / p.old_price) * 100)}%</span>`;
     return "";
+  }
+
+  function priceHtml(p) {
+    if (p.price_visible === false) return `<p class="product__price product__price--pending">${I18N.t("price.manager")}</p>`;
+    return `<p class="product__price">${I18N.fmtPrice(p.price)} ${p.old_price ? `<s>${I18N.fmtPrice(p.old_price)}</s>` : ""}</p>`;
   }
 
   function card(p, i) {
@@ -124,7 +129,7 @@
     <article class="product" data-id="${p.id}" style="animation-delay:${Math.min(i * 45, 400)}ms">
       <div class="product__media">
         ${tagChip(p)}
-        <button class="product__wish${wished ? " is-active" : ""}" data-wish-id="${p.id}" data-wish-slug="${esc(p.slug)}" data-wish-name="${esc(p.name)}" data-wish-image="${esc(p.images[0] || "")}" data-wish-price="${p.price}" aria-label="Wishlist" aria-pressed="${wished ? "true" : "false"}"><svg class="ic"><use href="#i-heart"/></svg></button>
+        <button class="product__wish${wished ? " is-active" : ""}" data-wish-id="${p.id}" data-wish-slug="${esc(p.slug)}" data-wish-name="${esc(p.name)}" data-wish-image="${esc(p.images[0] || "")}" data-wish-price="${p.price}" data-wish-price-visible="${p.price_visible !== false}" aria-label="Wishlist" aria-pressed="${wished ? "true" : "false"}"><svg class="ic"><use href="#i-heart"/></svg></button>
         <a class="product__go" href="/p/${p.slug}"><figure>${mediaTag(p.images[0] || "", p.name, i < 9)}</figure></a>
         <div class="product__quick">
           <div class="product__sizes">${p.sizes.map((s) => `<span data-size="${esc(s)}">${esc(s)}</span>`).join("")}</div>
@@ -133,7 +138,7 @@
       </div>
       <div class="product__info">
         <div class="product__row"><h3><a href="/p/${p.slug}">${esc(p.name)}</a></h3>
-          <p class="product__price">${I18N.fmtPrice(p.price)} ${p.old_price ? `<s>${I18N.fmtPrice(p.old_price)}</s>` : ""}</p></div>
+          ${priceHtml(p)}</div>
         <p class="product__fab">${esc(fabric)}</p>
         <p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} ${I18N.t("best.reviews")}${p.like_count ? ` · ${p.like_count} saved` : ""})</span></p>
       </div>
@@ -228,7 +233,7 @@
       e.preventDefault();
       const p = all.find((x) => x.id === Number(addBtn.dataset.add));
       if (!p) return;
-      Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, retail_price: p.retail_price || p.price, sizes: p.sizes });
+      Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, retail_price: p.retail_price || p.price, price_visible: p.price_visible, price_label: p.price_label, sizes: p.sizes });
     }
     const wish = e.target.closest(".product__wish");
     if (wish) {
@@ -239,6 +244,7 @@
         name: wish.dataset.wishName,
         image: wish.dataset.wishImage,
         price: wish.dataset.wishPrice,
+        price_visible: wish.dataset.wishPriceVisible !== "false",
       };
       let active;
       if (window.MilanaAuth?.customer) {

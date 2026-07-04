@@ -25,6 +25,7 @@
       name: item.name || "",
       image: item.image || "",
       price: Number(item.price) || 0,
+      price_visible: item.price_visible !== false,
       added_at: item.added_at || new Date().toISOString(),
     })).filter((item) => item.id);
     save();
@@ -39,6 +40,7 @@
       name: item.name || "",
       image: item.image || "",
       price: Number(item.price) || 0,
+      price_visible: item.price_visible !== false,
       added_at: new Date().toISOString(),
     });
     save();

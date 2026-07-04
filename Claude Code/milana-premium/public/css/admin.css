@@ -103,6 +103,7 @@ textarea.admin-searchbox{
 .psizes{font-size:.8rem;color:var(--soft);white-space:nowrap}
 .pprice{white-space:nowrap}
 .pprice s{color:var(--soft);font-weight:400;margin-left:4px}
+.ainput--mini{height:34px;padding:6px 8px;margin-top:6px;font-size:.82rem;min-width:120px}
 .pstatus{display:inline-flex;align-items:center;gap:8px}
 .pstatus i{font-style:normal;font-size:.78rem;color:var(--soft)}
 .ptag{font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;padding:3px 8px;border-radius:3px;background:var(--sand)}

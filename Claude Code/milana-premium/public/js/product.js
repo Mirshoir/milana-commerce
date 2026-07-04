@@ -21,8 +21,13 @@
   function tagChip(prod) {
     if (prod.tag === "bestseller") return `<span class="product__tag pd__tagchip">${I18N.t("best.tagBest")}</span>`;
     if (prod.tag === "new") return `<span class="product__tag product__tag--new pd__tagchip">${I18N.t("best.tagNew")}</span>`;
-    if (prod.tag === "sale" && prod.old_price) return `<span class="product__tag product__tag--sale pd__tagchip">−${Math.round((1 - prod.price / prod.old_price) * 100)}%</span>`;
+    if (prod.price_visible !== false && prod.tag === "sale" && prod.old_price) return `<span class="product__tag product__tag--sale pd__tagchip">−${Math.round((1 - prod.price / prod.old_price) * 100)}%</span>`;
     return "";
+  }
+
+  function priceHtml(prod) {
+    if (prod.price_visible === false) return `<strong>${I18N.t("price.manager")}</strong><small>${I18N.t("cart.unitPrice")}</small>`;
+    return `<strong>${I18N.fmtPrice(prod.price)}</strong>${prod.old_price ? `<s>${I18N.fmtPrice(prod.old_price)}</s>` : ""}<small>${I18N.t("cart.unitPrice")}</small>`;
   }
 
   function renderGallery() {
@@ -47,7 +52,8 @@
     $("#pd-cat").textContent = I18N.catName(p.category);
     $("#pd-name").textContent = p.name;
     $("#pd-rating").innerHTML = `<svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} ${I18N.t("best.reviews")})</span>`;
-    $("#pd-price").innerHTML = `<strong>${I18N.fmtPrice(p.price)}</strong>${p.old_price ? `<s>${I18N.fmtPrice(p.old_price)}</s>` : ""}<small>${I18N.t("cart.unitPrice")}</small>`;
+    $("#pd-price").classList.toggle("pd__price--pending", p.price_visible === false);
+    $("#pd-price").innerHTML = priceHtml(p);
     $("#pd-fabric").textContent = (p.fabric[lang] || p.fabric.en || "");
     $("#pd-meta").innerHTML = [
       [I18N.t("prod.model"), p.model_no || p.variant || p.id],
@@ -83,7 +89,7 @@
           </div>
           <div class="product__info">
             <div class="product__row"><h3><a href="/p/${r.slug}">${esc(r.name)}</a></h3>
-              <p class="product__price">${I18N.fmtPrice(r.price)}</p></div>
+              <p class="product__price${r.price_visible === false ? " product__price--pending" : ""}">${r.price_visible === false ? I18N.t("price.manager") : I18N.fmtPrice(r.price)}</p></div>
             <p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${r.rating} <span>(${r.reviews})</span></p>
           </div>
         </article>`).join("");
@@ -125,7 +131,7 @@
 
     const wish = e.target.closest("#pd-wish");
     if (wish && p) {
-      const payload = { id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price };
+      const payload = { id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, price_visible: p.price_visible };
       if (window.MilanaAuth?.customer) {
         const active = wish.classList.contains("is-active");
         fetch("/api/products/" + encodeURIComponent(p.id) + "/like", { method: active ? "DELETE" : "POST" })
@@ -158,7 +164,7 @@
 
   $("#pd-add").addEventListener("click", () => {
     if (!p) return;
-    Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, retail_price: p.retail_price || p.price, sizes: p.sizes, qty });
+    Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, retail_price: p.retail_price || p.price, price_visible: p.price_visible, price_label: p.price_label, sizes: p.sizes, qty });
     Cart.open();
   });
 
@@ -270,7 +276,7 @@
     ld.textContent = JSON.stringify({
       "@context": "https://schema.org", "@type": "Product",
       name: p.name, image: p.images, description: p.desc.en,
-      offers: { "@type": "Offer", price: p.price, priceCurrency: p.currency || "USD", availability: "https://schema.org/InStock" },
+      offers: p.price_visible === false ? undefined : { "@type": "Offer", price: p.price, priceCurrency: p.currency || "USD", availability: "https://schema.org/InStock" },
       aggregateRating: p.reviews ? { "@type": "AggregateRating", ratingValue: p.rating, reviewCount: p.reviews } : undefined,
     });
     document.head.appendChild(ld);

@@ -104,6 +104,7 @@ db.exec(`
     retail_enabled INTEGER DEFAULT 1,
     retail_price REAL DEFAULT 0,
     retail_stock INTEGER DEFAULT 0,
+    available_qop INTEGER,
     like_count INTEGER DEFAULT 0,
     active INTEGER DEFAULT 1,
     sort INTEGER DEFAULT 0,
@@ -155,6 +156,9 @@ db.exec(`
     business_license_url TEXT DEFAULT '',
     terms_accepted_at TEXT DEFAULT '',
     phone_verified INTEGER DEFAULT 0,
+    customer_tier TEXT DEFAULT 'regular',
+    assigned_manager TEXT DEFAULT '',
+    price_discount REAL DEFAULT 0,
     provider TEXT DEFAULT 'local',
     provider_uid TEXT DEFAULT '',
     password_hash TEXT DEFAULT '',
@@ -482,6 +486,7 @@ const seedMod = require("./seed.js");
   if (!cols.includes("retail_enabled")) db.exec("ALTER TABLE products ADD COLUMN retail_enabled INTEGER DEFAULT 1");
   if (!cols.includes("retail_price")) db.exec("ALTER TABLE products ADD COLUMN retail_price REAL DEFAULT 0");
   if (!cols.includes("retail_stock")) db.exec("ALTER TABLE products ADD COLUMN retail_stock INTEGER DEFAULT 0");
+  if (!cols.includes("available_qop")) db.exec("ALTER TABLE products ADD COLUMN available_qop INTEGER");
   if (!cols.includes("like_count")) db.exec("ALTER TABLE products ADD COLUMN like_count INTEGER DEFAULT 0");
   db.exec("UPDATE products SET wholesale_price=price WHERE COALESCE(wholesale_price,0)<=0");
   db.exec("UPDATE products SET retail_price=price WHERE COALESCE(retail_price,0)<=0");
@@ -528,6 +533,9 @@ const seedMod = require("./seed.js");
   if (!customerCols.includes("business_license_url")) db.exec("ALTER TABLE customers ADD COLUMN business_license_url TEXT DEFAULT ''");
   if (!customerCols.includes("terms_accepted_at")) db.exec("ALTER TABLE customers ADD COLUMN terms_accepted_at TEXT DEFAULT ''");
   if (!customerCols.includes("phone_verified")) db.exec("ALTER TABLE customers ADD COLUMN phone_verified INTEGER DEFAULT 0");
+  if (!customerCols.includes("customer_tier")) db.exec("ALTER TABLE customers ADD COLUMN customer_tier TEXT DEFAULT 'regular'");
+  if (!customerCols.includes("assigned_manager")) db.exec("ALTER TABLE customers ADD COLUMN assigned_manager TEXT DEFAULT ''");
+  if (!customerCols.includes("price_discount")) db.exec("ALTER TABLE customers ADD COLUMN price_discount REAL DEFAULT 0");
 })();
 
 if (SEED_FALLBACK_CATALOG && !db.prepare("SELECT COUNT(*) c FROM products").get().c) {
@@ -580,10 +588,16 @@ const DEV_CORS_ORIGINS = new Set([
   "http://127.0.0.1:5180",
   "http://localhost:5180",
 ]);
+const CONFIGURED_CORS_ORIGINS = new Set(
+  String(process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim().replace(/\/+$/, ""))
+    .filter(Boolean)
+);
 
 function corsHeaders(req) {
-  const origin = req.headers.origin || "";
-  if (!DEV_CORS_ORIGINS.has(origin)) return {};
+  const origin = String(req.headers.origin || "").replace(/\/+$/, "");
+  if (!DEV_CORS_ORIGINS.has(origin) && !CONFIGURED_CORS_ORIGINS.has(origin)) return {};
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
@@ -644,6 +658,10 @@ function sameOrigin(req) {
   } catch {
     return false;
   }
+}
+function trustedRequestOrigin(req) {
+  const origin = String(req.headers.origin || "").replace(/\/+$/, "");
+  return !origin || sameOrigin(req) || DEV_CORS_ORIGINS.has(origin) || CONFIGURED_CORS_ORIGINS.has(origin);
 }
 
 /* ---------- rate limiting ---------- */
@@ -708,6 +726,9 @@ function publicCustomer(row) {
     contact_person: row.contact_person || "",
     expected_volume: row.expected_volume || "",
     phone_verified: !!row.phone_verified,
+    customer_tier: normalizeCustomerTier(row.customer_tier),
+    assigned_manager: row.assigned_manager || "",
+    price_discount: Math.max(0, Math.min(90, Number(row.price_discount) || 0)),
     provider: row.provider || "local",
     role: row.role || "customer",
   };
@@ -721,7 +742,9 @@ function createCustomerSession(customerId) {
 }
 
 function customerFromRequest(req) {
-  const token = parseCookies(req).cid;
+  const auth = String(req.headers.authorization || "");
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  const token = bearer || parseCookies(req).cid;
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const tokenHash = sha256(token);
   const row = db.prepare(`
@@ -735,6 +758,10 @@ function customerFromRequest(req) {
     return null;
   }
   return row;
+}
+
+function authResponse(req, res, code, customer, token) {
+  send(res, code, { customer: publicCustomer(customer), session_token: token }, { "Set-Cookie": customerCookie(req, token, 30 * 24 * 3600) });
 }
 
 function firebasePublicConfig() {
@@ -787,6 +814,9 @@ async function verifyFirebaseIdToken(idToken) {
 
 function normalizeAccountType(v) {
   return v === "individual" ? "individual" : v === "business" ? "business" : "";
+}
+function normalizeCustomerTier(v) {
+  return ["regular", "premium", "vip"].includes(v) ? v : "regular";
 }
 function normalizeApproval(v, accountType) {
   if (["active", "pending_review", "rejected", "info_requested"].includes(v)) return v;
@@ -904,11 +934,12 @@ const GENDERS = ["women", "men", "kids", "unisex"];
 const TAGS = ["", "bestseller", "new", "sale"];
 const ORDER_STATUSES = ["new", "processing", "shipped", "done", "cancelled"];
 const PAYMENT_METHODS = ["manager", "cash", "bank", "click", "payme", "card"];
-const PAYMENT_STATUSES = ["pending", "invoice_sent", "paid", "failed", "refunded", "cancelled"];
+const PAYMENT_STATUSES = ["pending", "invoice_sent", "waiting_for_customer", "submitted", "paid", "failed", "refunded", "cancelled"];
 const SUPPORT_TOPICS = ["general", "catalog", "price", "delivery", "defect", "payment", "order"];
 const SUPPORT_STATUSES = ["new", "open", "waiting", "done", "closed"];
 const ACCOUNT_TYPES = ["business", "individual"];
 const APPROVAL_STATUSES = ["active", "pending_review", "rejected", "info_requested"];
+const CUSTOMER_TIERS = ["regular", "premium", "vip"];
 const REVIEW_STATUSES = ["pending", "approved", "rejected"];
 const CHAT_STATUSES = ["bot", "escalated", "open", "closed"];
 const str = (v, max = 1000) => typeof v === "string" ? v.trim().slice(0, max) : "";
@@ -931,12 +962,15 @@ function truncateTelegram(text) {
 function formatTelegramOrder({ number, customer, items, total, orderType, paymentMethod, source, lang }) {
   const orderTypeLabel = orderType === "retail" ? "chakana" : "ulgurji";
   const paymentLabel = paymentMethod === "bank" ? "bank" : paymentMethod === "cash" ? "naqd" : "menejer orqali";
+  const hasPendingPrice = items.some((item) => item.price_pending);
   const lines = [
     `Yangi Milana buyurtmasi ${number}`,
     `Manba: ${source || "website"} · Til: ${lang || "uz"} · Tur: ${orderTypeLabel}`,
     `Mijoz: ${customer.name || "-"}`,
     `Telefon: ${customer.phone || "-"}`,
   ];
+  if (customer.customer_tier) lines.push(`Mijoz turi: ${customer.customer_tier}`);
+  if (customer.assigned_manager) lines.push(`Biriktirilgan menejer: ${customer.assigned_manager}`);
   if (customer.email) lines.push(`Email: ${customer.email}`);
   if (customer.city || customer.address) lines.push(`Manzil: ${[customer.city, customer.address].filter(Boolean).join(", ")}`);
   if (customer.comment) lines.push(`Izoh: ${customer.comment}`);
@@ -946,10 +980,14 @@ function formatTelegramOrder({ number, customer, items, total, orderType, paymen
     lines.push(`${idx + 1}. ${item.name}`);
     const unit = item.unit_type === "piece" ? "dona" : "qop";
     const packLabel = item.unit_type === "piece" ? "dona" : "qop";
-    lines.push(`   ${item.qty} ${unit} · ${item.bag_size} dona/${packLabel} · birlik ${money(item.unit_price)} · jami ${money(item.price * item.qty)}`);
+    if (item.price_pending) {
+      lines.push(`   ${item.qty} ${unit} · ${item.bag_size} dona/${packLabel} · narxni menejer tasdiqlaydi`);
+    } else {
+      lines.push(`   ${item.qty} ${unit} · ${item.bag_size} dona/${packLabel} · birlik ${money(item.unit_price)} · jami ${money(item.price * item.qty)}`);
+    }
     if (mix) lines.push(`   O'lchamlar: ${mix}`);
   });
-  lines.push("", `Umumiy summa: ${money(total)}`, `To'lov: ${paymentLabel} · kutilmoqda/qo'lda tasdiqlanadi`);
+  lines.push("", `Umumiy summa: ${hasPendingPrice ? "menejer tasdiqlaydi" : money(total)}`, `To'lov: ${paymentLabel} · kutilmoqda/qo'lda tasdiqlanadi`);
   lines.push(`Admin: ${process.env.PUBLIC_SITE_URL || "https://milanapremium.uz"}/admin`);
   return truncateTelegram(lines.join("\n"));
 }
@@ -1113,9 +1151,63 @@ function decorateProduct(p) {
     retail_enabled: p.retail_enabled !== false && Number(p.retail_enabled) !== 0,
     retail_price: retail,
     retail_stock: Math.max(0, Math.round(Number(p.retail_stock) || 0)),
+    available_qop: p.available_qop == null || p.available_qop === "" ? null : Math.max(0, Math.round(Number(p.available_qop) || 0)),
     like_count: likeCount(p.id, p.slug),
     rating,
     reviews,
+  };
+}
+
+function customerCanSeeContractPrice(customer) {
+  const tier = normalizeCustomerTier(customer?.customer_tier);
+  return Boolean(customer && customer.approval_status === "active" && (tier === "premium" || tier === "vip"));
+}
+
+function contractDiscount(customer) {
+  if (!customerCanSeeContractPrice(customer)) return 0;
+  return Math.max(0, Math.min(90, Number(customer.price_discount) || 0));
+}
+
+function priceForCustomer(product, customer, orderType = "wholesale") {
+  const retail = orderType === "retail";
+  const base = Number(retail ? product.retail_price || product.price : product.wholesale_price || product.price) || 0;
+  if (!customerCanSeeContractPrice(customer)) {
+    return {
+      visible: false,
+      unit: 0,
+      base,
+      discount: 0,
+      source: "manager_confirmation",
+      label: "manager",
+      assigned_manager: customer?.assigned_manager || "",
+    };
+  }
+  const discount = contractDiscount(customer);
+  const unit = Math.round(base * (1 - discount / 100) * 100) / 100;
+  return {
+    visible: true,
+    unit,
+    base,
+    discount,
+    source: discount ? "customer_discount" : "premium_catalog",
+    label: normalizeCustomerTier(customer.customer_tier),
+    assigned_manager: customer.assigned_manager || "",
+  };
+}
+
+function productForCustomer(product, customer, orderType = "wholesale") {
+  const pricing = priceForCustomer(product, customer, orderType);
+  return {
+    ...product,
+    price: pricing.visible ? pricing.unit : 0,
+    wholesale_price: pricing.visible ? pricing.unit : 0,
+    retail_price: pricing.visible ? pricing.unit : 0,
+    old_price: pricing.visible ? product.old_price : null,
+    price_visible: pricing.visible,
+    price_label: pricing.label,
+    price_source: pricing.source,
+    price_discount: pricing.discount,
+    assigned_manager: pricing.assigned_manager,
   };
 }
 
@@ -1154,6 +1246,7 @@ function catalogRowToProduct(row) {
     source: CATALOG_API_BASE ? "catalog_api" : "supabase_catalog",
     source_pdf: row.source_pdf,
     currency: row.currency || "USD",
+    available_qop: row.available_qop,
   });
 }
 
@@ -1366,7 +1459,10 @@ function isProductIntent(message) {
 }
 
 function localizedAssistantProductReply(products, lang) {
-  const lines = products.map((p, index) => `${index + 1}. ${p.name} — ${money(p.price)} · ${["uz", "ru"].includes(lang) ? "o'lchamlar" : "sizes"}: ${(p.sizes || []).slice(0, 6).join(", ") || "—"} · /p/${p.slug}`);
+  const priceText = (p) => p.price_visible === false
+    ? (lang === "ru" ? "цену подтвердит менеджер" : lang === "en" ? "manager confirms price" : "narxni menejer tasdiqlaydi")
+    : money(p.price);
+  const lines = products.map((p, index) => `${index + 1}. ${p.name} — ${priceText(p)} · ${["uz", "ru"].includes(lang) ? "o'lchamlar" : "sizes"}: ${(p.sizes || []).slice(0, 6).join(", ") || "—"} · /p/${p.slug}`);
   if (lang === "ru") return "Подходящие товары:\n" + lines.join("\n");
   if (lang === "en") return "Matching products:\n" + lines.join("\n");
   return "Mos keladigan mahsulotlar:\n" + lines.join("\n");
@@ -1504,6 +1600,7 @@ function rowToProduct(r, lite = false) {
     retail_enabled: r.retail_enabled,
     retail_price: r.retail_price || r.price,
     retail_stock: r.retail_stock || 0,
+    available_qop: r.available_qop,
     like_count: r.like_count || 0,
     sizes: JSON.parse(r.sizes || "[]"), images: JSON.parse(r.images || "[]"),
     tag: r.tag, rating: r.rating, reviews: r.reviews, active: !!r.active, sort: r.sort,
@@ -1535,6 +1632,9 @@ function validateProduct(b) {
   const retail_price = Number(b.retail_price || b.price);
   if (retail_enabled && !(retail_price > 0 && retail_price < 1e9)) throw new Error("retail_price");
   const retail_stock = Math.max(0, Math.min(1e6, Math.round(Number(b.retail_stock) || 0)));
+  const available_qop = b.available_qop === null || b.available_qop === "" || b.available_qop === undefined
+    ? null
+    : Math.max(0, Math.min(1e6, Math.round(Number(b.available_qop) || 0)));
   let old_price = b.old_price === null || b.old_price === "" || b.old_price === undefined ? null : Number(b.old_price);
   if (old_price !== null && !(old_price > 0 && old_price < 1e9)) throw new Error("old_price");
   const sizes = Array.isArray(b.sizes) ? b.sizes.map((s) => str(s, 8)).filter(Boolean).slice(0, 12) : [];
@@ -1550,7 +1650,7 @@ function validateProduct(b) {
   const reviews = Math.min(1e6, Math.max(0, Math.round(Number(b.reviews) || 0)));
   return {
     name, model_no, variant, gender, category: b.category, price: wholesale_price, old_price, tag, rating, reviews,
-    wholesale_price, wholesale_moq, retail_enabled, retail_price, retail_stock,
+    wholesale_price, wholesale_moq, retail_enabled, retail_price, retail_stock, available_qop,
     sizes: JSON.stringify(sizes), images: JSON.stringify(images),
     desc_en: str(b.desc?.en, 5000), desc_ru: str(b.desc?.ru, 5000), desc_uz: str(b.desc?.uz, 5000),
     fabric_en: str(b.fabric?.en, 300), fabric_ru: str(b.fabric?.ru, 300), fabric_uz: str(b.fabric?.uz, 300),
@@ -1723,10 +1823,13 @@ const api = {
       FROM orders
       WHERE customer_id=?
       ORDER BY id DESC
-      LIMIT 20
+      LIMIT 50
     `).all(customer.id).map((row) => {
       let items = [];
       try { items = JSON.parse(row.items || "[]"); } catch {}
+      const payment = db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(row.id) || {};
+      let paymentPayload = {};
+      try { paymentPayload = JSON.parse(payment.payload || "{}"); } catch {}
       return {
         id: row.id,
         number: row.number,
@@ -1737,17 +1840,67 @@ const api = {
         lang: row.lang,
         created_at: row.created_at,
         updated_at: row.updated_at,
-        items: Array.isArray(items) ? items.slice(0, 5).map((item) => ({
+        payment: {
+          id: payment.id || null,
+          method: payment.method || "manager",
+          provider: payment.provider || "manual",
+          status: payment.status || "pending",
+          amount: payment.amount || row.total,
+          currency: payment.currency || "USD",
+          reference: payment.reference || "",
+          submission: paymentPayload.submission || {},
+        },
+        delivery: {
+          tracking_number: row.tracking_number || "",
+        },
+        items: Array.isArray(items) ? items.map((item) => ({
           id: item.id,
           slug: item.slug,
           name: item.name,
           qty: item.qty,
+          unit_price: item.unit_price,
+          bag_size: item.bag_size,
+          unit_type: item.unit_type,
           image: item.image || "",
+          images: item.image ? [item.image] : [],
           price: item.price,
+          line_total: Math.round(Number(item.price || 0) * Number(item.qty || 0) * 100) / 100,
+          size_mix: Array.isArray(item.size_mix) ? item.size_mix : [],
         })) : [],
       };
     });
     send(res, 200, { orders: rows });
+  },
+
+  "GET /api/auth/support": (req, res) => {
+    const customer = customerFromRequest(req);
+    if (!customer) return fail(res, 401, "unauthorized");
+    const rows = db.prepare(`
+      SELECT id, number, topic, message, status, lang, created_at, updated_at
+      FROM support_requests
+      WHERE customer_id=?
+      ORDER BY id DESC
+      LIMIT 50
+    `).all(customer.id);
+    send(res, 200, { support: rows });
+  },
+
+  "PUT /api/auth/profile": async (req, res) => {
+    const customer = customerFromRequest(req);
+    if (!customer) return fail(res, 401, "unauthorized");
+    const b = await readJson(req, 12e3);
+    const name = str(b.name, 80);
+    const phone = str(b.phone, 25);
+    if (name.length < 2) return fail(res, 400, "name");
+    if (phone && !/^[0-9+()\-\s]{5,25}$/.test(phone)) return fail(res, 400, "phone");
+    db.prepare(`
+      UPDATE customers
+      SET name=?, phone=?, city=?, address=?, updated_at=datetime('now')
+      WHERE id=?
+    `).run(name, phone, str(b.city, 80), str(b.address, 300), customer.id);
+    const updated = db.prepare("SELECT * FROM customers WHERE id=?").get(customer.id);
+    audit("customer", "auth.profile_updated", { id: customer.id });
+    send(res, 200, { customer: publicCustomer(updated) });
   },
 
   "POST /api/auth/signup": async (req, res) => {
@@ -1796,7 +1949,7 @@ const api = {
     });
     const token = createCustomerSession(customer.id);
     audit("customer", "auth.signup", { id: customer.id, provider: "local" });
-    send(res, 201, { customer: publicCustomer(customer) }, { "Set-Cookie": customerCookie(req, token, 30 * 24 * 3600) });
+    authResponse(req, res, 201, customer, token);
   },
 
   "POST /api/auth/register": async (req, res) => api["POST /api/auth/signup"](req, res),
@@ -1811,7 +1964,7 @@ const api = {
     }
     const token = createCustomerSession(row.id);
     audit("customer", "auth.signin", { id: row.id, provider: row.provider || "local" });
-    send(res, 200, { customer: publicCustomer(row) }, { "Set-Cookie": customerCookie(req, token, 30 * 24 * 3600) });
+    authResponse(req, res, 200, row, token);
   },
 
   "POST /api/auth/recover": async (req, res) => {
@@ -1839,7 +1992,7 @@ const api = {
     const updated = db.prepare("SELECT * FROM customers WHERE id=?").get(row.id);
     const token = createCustomerSession(row.id);
     audit("customer", "auth.password_recovered", { id: row.id, provider: row.provider || "local" });
-    send(res, 200, { customer: publicCustomer(updated) }, { "Set-Cookie": customerCookie(req, token, 30 * 24 * 3600) });
+    authResponse(req, res, 200, updated, token);
   },
 
   "POST /api/auth/firebase": async (req, res) => {
@@ -1861,17 +2014,20 @@ const api = {
     });
     const token = createCustomerSession(customer.id);
     audit("customer", "auth.firebase", { id: customer.id, uid: payload.sub });
-    send(res, 200, { customer: publicCustomer(customer) }, { "Set-Cookie": customerCookie(req, token, 30 * 24 * 3600) });
+    authResponse(req, res, 200, customer, token);
   },
 
   "POST /api/auth/logout": (req, res) => {
-    const token = parseCookies(req).cid;
+    const auth = String(req.headers.authorization || "");
+    const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+    const token = bearer || parseCookies(req).cid;
     if (token) db.prepare("DELETE FROM customer_sessions WHERE token=?").run(sha256(token));
     send(res, 200, { ok: true }, { "Set-Cookie": customerCookie(req, "x", 0) });
   },
 
   "GET /api/products": async (req, res, u) => {
     const q = u.searchParams;
+    const customer = customerFromRequest(req);
     if (CATALOG_SOURCE_ENABLED) {
       try {
         let products = await activeProductsForCatalog();
@@ -1891,7 +2047,7 @@ const api = {
         };
         products = products.slice().sort(sorts[q.get("sort")] || sorts.default);
         const limit = Math.min(1000, Math.max(1, Number(q.get("limit")) || 1000));
-        return send(res, 200, products.slice(0, limit).map((p) => publicProductCard(p)));
+        return send(res, 200, products.slice(0, limit).map((p) => publicProductCard(productForCustomer(p, customer))));
       } catch (e) {
         catalogCache.error = e.message;
         console.error("Catalog source failed; falling back to SQLite:", e.message);
@@ -1914,7 +2070,7 @@ const api = {
     sql += " LIMIT " + (term ? 1000 : limit);
     let products = db.prepare(sql).all(...args).map((r) => rowToProduct(r));
     if (term) products = smartSearchProducts(products, term, limit);
-    send(res, 200, products.slice(0, limit).map((p) => publicProductCard(p)));
+    send(res, 200, products.slice(0, limit).map((p) => publicProductCard(productForCustomer(p, customer))));
   },
 
   "GET /api/search/smart": async (req, res, u) => {
@@ -1926,7 +2082,8 @@ const api = {
     if (GENDERS.includes(gender)) products = products.filter((p) => p.gender === gender);
     if (CATS.includes(category)) products = products.filter((p) => p.category === category);
     const limit = Math.min(24, Math.max(1, Number(u.searchParams.get("limit")) || 8));
-    send(res, 200, { query, products: smartSearchProducts(products, query, limit) });
+    const customer = customerFromRequest(req);
+    send(res, 200, { query, products: smartSearchProducts(products.map((p) => productForCustomer(p, customer)), query, limit) });
   },
 
   "GET /api/recommendations": async (req, res, u) => {
@@ -1936,21 +2093,24 @@ const api = {
     const seed = products.find((p) => (slug && p.slug === slug) || (id && p.id === id));
     if (!seed) return send(res, 200, { products: [] });
     const limit = Math.min(12, Math.max(1, Number(u.searchParams.get("limit")) || 4));
-    send(res, 200, { products: smartRecommendProducts(products, seed, limit) });
+    const customer = customerFromRequest(req);
+    send(res, 200, { products: smartRecommendProducts(products, seed, limit).map((p) => publicProductCard(productForCustomer(p, customer))) });
   },
 
   "GET /api/products/:slug": async (req, res, u, m) => {
+    const customer = customerFromRequest(req);
     const row = db.prepare("SELECT * FROM products WHERE slug=? AND active=1").get(m.slug);
     if (row) {
-      const related = smartRecommendProducts(await activeProductsForCatalog(), rowToProduct(row), 4);
-      return send(res, 200, { ...rowToProduct(row), related });
+      const localProduct = rowToProduct(row);
+      const related = smartRecommendProducts(await activeProductsForCatalog(), localProduct, 4).map((p) => publicProductCard(productForCustomer(p, customer)));
+      return send(res, 200, { ...productForCustomer(localProduct, customer), related });
     }
     if (CATALOG_SOURCE_ENABLED) {
       try {
         const product = await catalogProductBySlug(m.slug);
         if (product && product.active !== false) {
-          const related = smartRecommendProducts(await activeProductsForCatalog(), product, 4);
-          return send(res, 200, { ...product, related });
+          const related = smartRecommendProducts(await activeProductsForCatalog(), product, 4).map((p) => publicProductCard(productForCustomer(p, customer)));
+          return send(res, 200, { ...productForCustomer(product, customer), related });
         }
       } catch (e) {
         catalogCache.error = e.message;
@@ -2099,10 +2259,11 @@ const api = {
     const replies = chatReplies[chatLang];
     let reply = replies.default;
     let products = [];
+    const visibleCatalog = async () => (await activeProductsForCatalog()).map((p) => productForCustomer(p, signedInCustomer));
     const wantsHuman = /human|manager|оператор|odam|менеджер/.test(lower);
     if (!wantsHuman && OPENAI_ASSISTANT_ENABLED) {
       try {
-        const ai = await openAiAssistantReply(message, chatLang, await activeProductsForCatalog());
+        const ai = await openAiAssistantReply(message, chatLang, await visibleCatalog());
         if (ai?.reply) {
           reply = ai.reply;
           products = ai.products || [];
@@ -2113,7 +2274,7 @@ const api = {
     }
     if (!products.length && isProductIntent(message)) {
       try {
-        products = smartSearchProducts(await activeProductsForCatalog(), message, 3);
+        products = smartSearchProducts(await visibleCatalog(), message, 3);
         if (products.length && reply === replies.default) reply = localizedAssistantProductReply(products, chatLang);
       } catch (e) {
         console.error("Smart assistant catalog lookup failed:", e.message);
@@ -2168,9 +2329,12 @@ const api = {
       name, phone,
       email: signedInCustomer?.email || normalizeEmail(c.email || ""),
       city: str(c.city, 80), address: str(c.address, 300), comment: str(c.comment, 1000),
+      customer_tier: normalizeCustomerTier(signedInCustomer?.customer_tier),
+      assigned_manager: signedInCustomer?.assigned_manager || "",
     };
     if (!Array.isArray(b.items) || !b.items.length || b.items.length > 50) return fail(res, 400, "items");
     const items = [];
+    const stockAdjustments = [];
     let total = 0;
     for (const it of b.items) {
       let product = null;
@@ -2180,7 +2344,6 @@ const api = {
       if (product && product.active === false) product = null;
       const row = product ? null : db.prepare("SELECT * FROM products WHERE id=? AND active=1").get(Number(it.id));
       if (!product && !row) return fail(res, 400, "item_unavailable");
-      const qty = Math.min(orderType === "retail" ? 99 : 20, Math.max(1, Math.round(Number(it.qty) || 1)));
       const sizes = product ? product.sizes : JSON.parse(row.sizes || "[]");
       const images = product ? product.images : JSON.parse(row.images || "[]");
       const id = product ? product.id : row.id;
@@ -2188,24 +2351,42 @@ const api = {
       const name = product ? product.name : row.name;
       const gender = product ? product.gender : row.gender;
       const category = product ? product.category : row.category;
-      const wholesalePrice = Number(product ? product.wholesale_price || product.price : row.wholesale_price || row.price) || 0;
+      const sourceProduct = product || rowToProduct(row);
+      const pricing = priceForCustomer(sourceProduct, signedInCustomer, orderType);
       const retailEnabled = product ? product.retail_enabled !== false : Number(row.retail_enabled) !== 0;
-      const retailPrice = Number(product ? product.retail_price || product.price : row.retail_price || row.price) || 0;
+      const availableQop = product ? product.available_qop : row.available_qop;
+      const retailStock = Number(product ? product.retail_stock : row.retail_stock) || 0;
+      const rawQty = Number(it.qty);
+      if (!Number.isInteger(rawQty) || rawQty < 1) return fail(res, 400, "invalid_qty");
+      const maxQty = orderType === "retail" ? 99 : 20;
+      if (rawQty > maxQty) return fail(res, 400, "qty_limit");
+      if (orderType === "wholesale" && availableQop != null && rawQty > Number(availableQop)) return fail(res, 400, "insufficient_stock");
+      if (orderType === "retail" && retailStock > 0 && rawQty > retailStock) return fail(res, 400, "insufficient_stock");
       let size_mix = [];
-      let unit_price = wholesalePrice;
+      let unit_price = pricing.unit;
       let bag_size = ORDER_BAG_SIZE;
       let price = Math.round(unit_price * bag_size * 100) / 100;
       let unit_type = "qop";
+      const price_pending = !pricing.visible;
+      const qty = rawQty;
       if (orderType === "retail") {
         if (!retailEnabled) return fail(res, 400, "retail_unavailable");
-        unit_price = retailPrice;
+        unit_price = pricing.unit;
         bag_size = 1;
         price = Math.round(unit_price * 100) / 100;
         unit_type = "piece";
+        if (row && retailStock > 0) stockAdjustments.push({ type: "retail", id: row.id, qty });
       } else {
         size_mix = orderSizeMix(sizes, gender, category);
+        if (row && availableQop != null) stockAdjustments.push({ type: "wholesale", id: row.id, qty });
       }
-      items.push({ id, slug, name, qty, unit_price, bag_size, unit_type, size_mix, price, image: images[0] || "" });
+      items.push({
+        id, slug, name, qty, unit_price, bag_size, unit_type, size_mix, price, image: images[0] || "",
+        price_pending,
+        price_source: pricing.source,
+        price_label: pricing.label,
+        assigned_manager: pricing.assigned_manager,
+      });
       total += price * qty;
     }
     const lang = ["en", "ru", "uz"].includes(b.lang) ? b.lang : "en";
@@ -2229,8 +2410,66 @@ const api = {
     );
     audit("customer", "order.created", { order_id: r.lastInsertRowid, number, total: Math.round(total * 100) / 100, order_type: orderType });
     audit("customer", "payment.created", { order_id: r.lastInsertRowid, payment_id: payment.lastInsertRowid, method: paymentMethod, amount });
+    for (const adjustment of stockAdjustments) {
+      if (adjustment.type === "retail") {
+        db.prepare("UPDATE products SET retail_stock=MAX(0, retail_stock-?) WHERE id=?").run(adjustment.qty, adjustment.id);
+      } else {
+        db.prepare("UPDATE products SET available_qop=MAX(0, available_qop-?) WHERE id=? AND available_qop IS NOT NULL").run(adjustment.qty, adjustment.id);
+      }
+    }
     notifyTelegramOrderLater({ id: r.lastInsertRowid, number, customer, items, total: amount, orderType, paymentMethod, source, lang });
-    send(res, 201, { number, total: amount, order_type: orderType, payment: { method: paymentMethod, status: "pending", amount, currency: "USD" } });
+    send(res, 201, { id: r.lastInsertRowid, order_id: r.lastInsertRowid, number, total: amount, order_type: orderType, payment: { method: paymentMethod, status: "pending", amount, currency: "USD" } });
+  },
+
+  "POST /api/auth/orders/:id/cancel": async (req, res, u, m) => {
+    const customer = customerFromRequest(req);
+    if (!customer) return fail(res, 401, "unauthorized");
+    const id = Number(m.id);
+    const order = db.prepare("SELECT * FROM orders WHERE id=? AND customer_id=?").get(id, customer.id);
+    if (!order) return fail(res, 404, "not_found");
+    const payment = db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(id) || {};
+    if (order.status !== "new" || !["pending", "waiting_for_customer", "invoice_sent"].includes(payment.status || "pending")) {
+      return fail(res, 409, "cannot_cancel");
+    }
+    const b = await readJson(req, 4e3);
+    db.prepare("UPDATE orders SET status='cancelled', updated_at=datetime('now') WHERE id=?").run(id);
+    db.prepare("UPDATE payments SET status='cancelled', payload=?, updated_at=datetime('now') WHERE id=?").run(
+      JSON.stringify({ cancelled_by: "customer", reason: str(b.reason, 500), cancelled_at: new Date().toISOString() }),
+      payment.id
+    );
+    audit("customer", "order.cancelled", { id, number: order.number, reason: str(b.reason, 120) });
+    send(res, 200, { order_id: id, status: "cancelled", payment_status: "cancelled", cancelled_at: new Date().toISOString(), stock_released_qop: 0 });
+  },
+
+  "POST /api/auth/orders/:id/payment-proof": async (req, res, u, m) => {
+    const customer = customerFromRequest(req);
+    if (!customer) return fail(res, 401, "unauthorized");
+    const id = Number(m.id);
+    const order = db.prepare("SELECT * FROM orders WHERE id=? AND customer_id=?").get(id, customer.id);
+    if (!order) return fail(res, 404, "not_found");
+    if (["cancelled", "done"].includes(order.status)) return fail(res, 409, "order_closed");
+    const payment = db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(id);
+    if (!payment) return fail(res, 404, "payment_not_found");
+    const b = await readJson(req, 8e3);
+    const method = PAYMENT_METHODS.includes(b.method) ? b.method : payment.method || "manager";
+    const reference = str(b.reference, 120);
+    const note = str(b.note, 1000);
+    const amount = Number(b.amount);
+    if (!reference && !note) return fail(res, 400, "proof");
+    const submittedAt = new Date().toISOString();
+    let payload = {};
+    try { payload = JSON.parse(payment.payload || "{}"); } catch {}
+    payload.submission = {
+      method,
+      amount: Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : payment.amount,
+      reference,
+      note,
+      submitted_at: submittedAt,
+    };
+    db.prepare("UPDATE payments SET method=?, status='submitted', reference=COALESCE(NULLIF(?,''), reference), payload=?, updated_at=datetime('now') WHERE id=?")
+      .run(method, reference, JSON.stringify(payload), payment.id);
+    audit("customer", "payment.submitted", { order_id: id, payment_id: payment.id, method });
+    send(res, 200, { order_id: id, payment_status: "submitted", submitted_at: submittedAt });
   },
 
   "POST /api/newsletter": async (req, res) => {
@@ -2298,7 +2537,8 @@ const api = {
     let rows = db.prepare(`
       SELECT id, email, name, phone, city, address, account_type, approval_status,
              company_name, tax_id, legal_address, contact_person, expected_volume,
-             phone_verified, provider, created_at, updated_at
+             phone_verified, customer_tier, assigned_manager, price_discount,
+             provider, created_at, updated_at
       FROM customers
       ORDER BY CASE approval_status WHEN 'pending_review' THEN 0 WHEN 'info_requested' THEN 1 ELSE 2 END, id DESC
       LIMIT 1000
@@ -2317,6 +2557,29 @@ const api = {
     if (!existing) return fail(res, 404, "not_found");
     db.prepare("UPDATE customers SET approval_status=?, updated_at=datetime('now') WHERE id=?").run(b.approval_status, id);
     audit("admin", "customer.approval_changed", { id, from: existing.approval_status, to: b.approval_status });
+    send(res, 200, publicCustomer(db.prepare("SELECT * FROM customers WHERE id=?").get(id)));
+  },
+
+  "PUT /api/admin/customers/:id/commercial": async (req, res, u, m) => {
+    const b = await readJson(req, 8e3);
+    const id = Number(m.id);
+    const existing = db.prepare("SELECT * FROM customers WHERE id=?").get(id);
+    if (!existing) return fail(res, 404, "not_found");
+    const tier = normalizeCustomerTier(b.customer_tier);
+    const manager = str(b.assigned_manager, 80);
+    const discount = Math.max(0, Math.min(90, Number(b.price_discount) || 0));
+    db.prepare(`
+      UPDATE customers
+      SET customer_tier=?, assigned_manager=?, price_discount=?, updated_at=datetime('now')
+      WHERE id=?
+    `).run(tier, manager, discount, id);
+    audit("admin", "customer.commercial_changed", {
+      id,
+      from_tier: existing.customer_tier || "regular",
+      to_tier: tier,
+      manager,
+      discount,
+    });
     send(res, 200, publicCustomer(db.prepare("SELECT * FROM customers WHERE id=?").get(id)));
   },
 
@@ -2593,6 +2856,8 @@ function serveUpload(req, res, absPath) {
   const type = MIME[ext] || "application/octet-stream";
   const base = {
     ...SECURITY_HEADERS,
+    ...corsHeaders(req),
+    "Access-Control-Allow-Origin": "*",
     "Content-Type": type,
     "Cache-Control": "public, max-age=604800",
     "Accept-Ranges": "bytes",
@@ -2632,6 +2897,8 @@ async function proxyCatalogStorage(req, res, pathname) {
   }
   const responseHeaders = {
     ...SECURITY_HEADERS,
+    ...corsHeaders(req),
+    "Access-Control-Allow-Origin": "*",
     "Cache-Control": "public, max-age=86400",
     "Content-Type": upstream.headers.get("content-type") || "application/octet-stream",
   };
@@ -2671,7 +2938,7 @@ const server = http.createServer(async (req, res) => {
       if (!route) return fail(res, 404, "not_found");
       const unsafe = !["GET", "HEAD", "OPTIONS"].includes(req.method);
       const cookieAuthPath = pathname.startsWith("/api/admin/") || pathname.startsWith("/api/auth/") || pathname.startsWith("/api/products/") || pathname.startsWith("/api/reviews") || pathname.startsWith("/api/chat") || pathname === "/api/logout" || pathname === "/api/login";
-      if (unsafe && cookieAuthPath && !sameOrigin(req)) return fail(res, 403, "bad_origin");
+      if (unsafe && cookieAuthPath && !trustedRequestOrigin(req)) return fail(res, 403, "bad_origin");
       if (pathname.startsWith("/api/admin/") && !isAdmin(req)) return fail(res, 401, "unauthorized");
       return await route.handler(req, res, u, route.params);
     }
@@ -2686,6 +2953,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname.startsWith("/storage/")) {
+      Object.entries(corsHeaders(req)).forEach(([key, value]) => res.setHeader(key, value));
       if (await proxyCatalogStorage(req, res, pathname)) return;
       return fail(res, 404, "not_found");
     }

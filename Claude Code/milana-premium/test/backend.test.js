@@ -238,7 +238,9 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(signup.status, 201);
   const customerCookie = signup.headers.get("set-cookie").split(";")[0];
   assert.match(customerCookie, /^cid=/);
-  const signedUpCustomer = (await signup.json()).customer;
+  const signupBody = await signup.json();
+  assert.match(signupBody.session_token, /^[a-f0-9]{64}$/);
+  const signedUpCustomer = signupBody.customer;
   assert.equal(signedUpCustomer.email, "buyer@example.com");
   assert.equal(signedUpCustomer.account_type, "individual");
   assert.equal(signedUpCustomer.approval_status, "active");
@@ -295,6 +297,8 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   });
   assert.equal(newPasswordSignin.status, 200);
   const newCustomerCookie = newPasswordSignin.headers.get("set-cookie").split(";")[0];
+  const newCustomerToken = (await newPasswordSignin.json()).session_token;
+  assert.match(newCustomerToken, /^[a-f0-9]{64}$/);
 
   const likeRes = await json(app.base + "/api/products/" + product.id + "/like", {}, {
     headers: { Cookie: newCustomerCookie, Origin: app.base },
@@ -322,6 +326,41 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(customerOrders[0].number, customerOrder.number);
   assert.equal(customerOrders[0].order_type, "retail");
   assert.equal(customerOrders[0].items[0].name, product.name);
+  assert.equal(customerOrders[0].payment.status, "pending");
+
+  const paymentProof = await json(app.base + "/api/auth/orders/" + customerOrder.id + "/payment-proof", {
+    method: "bank",
+    amount: customerOrder.total,
+    reference: "TRX-123",
+    note: "Paid by bank",
+  }, { headers: { Authorization: "Bearer " + newCustomerToken, Origin: app.base } });
+  assert.equal(paymentProof.status, 200);
+  assert.equal((await paymentProof.json()).payment_status, "submitted");
+
+  const cancelAfterProof = await json(app.base + "/api/auth/orders/" + customerOrder.id + "/cancel", {
+    reason: "Changed mind",
+  }, { headers: { Authorization: "Bearer " + newCustomerToken, Origin: app.base } });
+  assert.equal(cancelAfterProof.status, 409);
+
+  const cancellableOrderRes = await json(app.base + "/api/orders", {
+    customer: { name: "Retail Buyer", phone: "+998 91 222 33 44", city: "Andijon" },
+    payment: { method: "manager" },
+    items: [{ id: product.id, qty: 1 }],
+    lang: "en",
+  }, { headers: { Authorization: "Bearer " + newCustomerToken } });
+  assert.equal(cancellableOrderRes.status, 201);
+  const cancellableOrder = await cancellableOrderRes.json();
+  const cancelOrder = await json(app.base + "/api/auth/orders/" + cancellableOrder.id + "/cancel", {
+    reason: "Duplicate order",
+  }, { headers: { Authorization: "Bearer " + newCustomerToken, Origin: app.base } });
+  assert.equal(cancelOrder.status, 200);
+  assert.equal((await cancelOrder.json()).status, "cancelled");
+
+  const tooManyQop = await json(app.base + "/api/orders", {
+    customer: { name: "Limit Buyer", phone: "+998 90 000 00 00" },
+    items: [{ id: product.id, qty: 21 }],
+  });
+  assert.equal(tooManyQop.status, 400);
 
   const reviewRes = await json(app.base + "/api/reviews", {
     product_id: product.id,
@@ -354,10 +393,13 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     topic: "delivery",
     message: "Please explain cargo delivery for one bag.",
     lang: "en",
-  });
+  }, { headers: { Authorization: "Bearer " + newCustomerToken } });
   assert.equal(supportRes.status, 201);
   const supportTicket = await supportRes.json();
   assert.match(supportTicket.number, /^MS-\d{4}-\d{4}$/);
+  const supportHistory = await fetch(app.base + "/api/auth/support", { headers: { Authorization: "Bearer " + newCustomerToken } });
+  assert.equal(supportHistory.status, 200);
+  assert.equal((await supportHistory.json()).support[0].number, supportTicket.number);
 
   const chatRes = await json(app.base + "/api/chat/message", { message: "I want to talk to a manager" }, {
     headers: { Origin: app.base },
@@ -390,7 +432,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const adminOrders = await fetch(app.base + "/api/admin/orders", { headers: { Cookie: cookie } });
   assert.equal(adminOrders.status, 200);
   const orders = await adminOrders.json();
-  assert.equal(orders.length, 2);
+  assert.equal(orders.length, 3);
   const adminOrder = orders.find((row) => row.number === order.number);
   assert.ok(adminOrder);
   assert.equal(adminOrder.order_type, "wholesale");

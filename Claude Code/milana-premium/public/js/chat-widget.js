@@ -71,7 +71,7 @@
           <a class="chat-widget__product" href="/p/${esc(p.slug)}">
             <span>${p.images?.[0] ? `<img src="${esc(p.images[0])}" alt="${esc(p.name)}" loading="lazy" decoding="async">` : ""}</span>
             <b>${esc(p.name)}</b>
-            <small>${esc(p.price)} USD</small>
+            <small>${p.price_visible === false ? esc(tr("price.manager")) : `${esc(p.price)} USD`}</small>
           </a>
         `).join("")}
       </div>`);

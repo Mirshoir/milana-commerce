@@ -566,6 +566,7 @@ img.is-broken{opacity:.28;filter:grayscale(1)}
 .product__row{display:flex;align-items:baseline;justify-content:space-between;gap:14px}
 .product__row h3{font-family:var(--f-display);font-size:1.32rem;font-weight:500}
 .product__price{font-size:.98rem;font-weight:500;letter-spacing:.04em;white-space:nowrap}
+.product__price--pending{font-size:.76rem;text-transform:uppercase;letter-spacing:.12em;color:var(--burgundy);white-space:normal;text-align:right}
 .product__price s{color:var(--ink-soft);font-weight:300;margin-left:6px;font-size:.84rem}
 .product__price small{display:block;margin-top:3px;font-size:.68rem;font-weight:400;letter-spacing:.04em;color:var(--ink-soft);white-space:normal;text-align:right}
 .product__fab{font-size:.82rem;color:var(--ink-soft);margin-top:3px}

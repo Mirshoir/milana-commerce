@@ -18,11 +18,16 @@
   function tagChip(p) {
     if (p.tag === "bestseller") return `<span class="product__tag" data-i18n="best.tagBest">${I18N.t("best.tagBest")}</span>`;
     if (p.tag === "new") return `<span class="product__tag product__tag--new" data-i18n="best.tagNew">${I18N.t("best.tagNew")}</span>`;
-    if (p.tag === "sale" && p.old_price) {
+    if (p.price_visible !== false && p.tag === "sale" && p.old_price) {
       const pct = Math.round((1 - p.price / p.old_price) * 100);
       return `<span class="product__tag product__tag--sale">−${pct}%</span>`;
     }
     return "";
+  }
+
+  function priceHtml(p) {
+    if (p.price_visible === false) return `<p class="product__price product__price--pending">${I18N.t("price.manager")}</p>`;
+    return `<p class="product__price">${I18N.fmtPrice(p.price)} ${p.old_price ? `<s>${I18N.fmtPrice(p.old_price)}</s>` : ""}</p>`;
   }
 
   function card(p) {
@@ -41,7 +46,7 @@
       </div>
       <div class="product__info">
         <div class="product__row"><h3><a href="/p/${p.slug}">${esc(p.name)}</a></h3>
-          <p class="product__price">${I18N.fmtPrice(p.price)} ${p.old_price ? `<s>${I18N.fmtPrice(p.old_price)}</s>` : ""}</p></div>
+          ${priceHtml(p)}</div>
         <p class="product__fab" data-fab>${esc(fabric)}</p>
         <p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} <i data-i18n="best.reviews">${I18N.t("best.reviews")}</i>)</span></p>
       </div>
@@ -66,7 +71,7 @@
       e.preventDefault();
       const p = products.find((x) => x.id === Number(addBtn.dataset.add));
       if (!p) return;
-      Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, sizes: p.sizes });
+      Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, price_visible: p.price_visible, price_label: p.price_label, sizes: p.sizes });
     }
     const wish = e.target.closest(".product__wish");
     if (wish && !wish.dataset.bound) { wish.classList.toggle("is-active"); e.preventDefault(); }
@@ -102,7 +107,10 @@
       const fab = card.querySelector("[data-fab]");
       if (fab) fab.textContent = (p.fabric && (p.fabric[I18N.lang] || p.fabric.en)) || "";
       const price = card.querySelector(".product__price");
-      if (price) price.innerHTML = I18N.fmtPrice(p.price) + (p.old_price ? ` <s>${I18N.fmtPrice(p.old_price)}</s>` : "");
+      if (price) {
+        price.classList.toggle("product__price--pending", p.price_visible === false);
+        price.innerHTML = p.price_visible === false ? I18N.t("price.manager") : I18N.fmtPrice(p.price) + (p.old_price ? ` <s>${I18N.fmtPrice(p.old_price)}</s>` : "");
+      }
     });
   }
 

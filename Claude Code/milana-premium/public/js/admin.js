@@ -18,6 +18,7 @@
   const PAYMENT_STATUS_RU = { pending: "⏳ Ожидает", invoice_sent: "📨 Счёт отправлен", paid: "✅ Оплачено", failed: "⚠ Ошибка", refunded: "↩ Возврат", cancelled: "✖ Отменено" };
   const SUPPORT_STATUS_RU = { new: "🆕 Новый", open: "👀 Открыт", waiting: "⏳ Ждём", done: "✅ Решён", closed: "✖ Закрыт" };
   const SUPPORT_TOPIC_RU = { general: "Общий", catalog: "Каталог", price: "Цена", delivery: "Доставка", defect: "Брак", payment: "Оплата", order: "Заказ" };
+  const TIER_RU = { regular: "Обычный", premium: "Премиум", vip: "VIP" };
 
   let products = [];
   let orders = [];
@@ -437,6 +438,15 @@
           <small>${c.phone_verified ? "Телефон подтверждён" : "Телефон не подтверждён"}</small>
         </td>
         <td>
+          <select class="osel" data-customer-tier="${c.id}">
+            ${Object.entries(TIER_RU).map(([value, label]) => `<option value="${value}" ${c.customer_tier === value ? "selected" : ""}>${label}</option>`).join("")}
+          </select>
+          <input class="ainput ainput--mini" data-customer-discount="${c.id}" type="number" min="0" max="90" step="1" value="${Number(c.price_discount || 0)}" placeholder="Скидка %">
+        </td>
+        <td>
+          <input class="ainput ainput--mini" data-customer-manager="${c.id}" value="${esc(c.assigned_manager || "")}" placeholder="Имя менеджера">
+        </td>
+        <td>
           <select class="osel ${c.approval_status === "pending_review" ? "osel--new" : ""}" data-customer="${c.id}">
             <option value="pending_review" ${c.approval_status === "pending_review" ? "selected" : ""}>⏳ На проверке</option>
             <option value="active" ${c.approval_status === "active" ? "selected" : ""}>✅ Активен</option>
@@ -444,16 +454,33 @@
             <option value="rejected" ${c.approval_status === "rejected" ? "selected" : ""}>✖ Отклонён</option>
           </select>
         </td>
-      </tr>`).join("") || `<tr><td colspan="5" style="text-align:center;color:var(--soft);padding:36px">Клиентов пока нет</td></tr>`;
+      </tr>`).join("") || `<tr><td colspan="7" style="text-align:center;color:var(--soft);padding:36px">Клиентов пока нет</td></tr>`;
   }
 
   $("#customer-table").addEventListener("change", async (e) => {
     const sel = e.target.closest("[data-customer]");
-    if (!sel) return;
+    const tier = e.target.closest("[data-customer-tier]");
+    const discount = e.target.closest("[data-customer-discount]");
+    const manager = e.target.closest("[data-customer-manager]");
     try {
-      await api("/api/admin/customers/" + sel.dataset.customer + "/approval", { method: "PUT", body: { approval_status: sel.value } });
-      toast("Статус клиента обновлён");
-      loadCustomers();
+      if (sel) {
+        await api("/api/admin/customers/" + sel.dataset.customer + "/approval", { method: "PUT", body: { approval_status: sel.value } });
+        toast("Статус клиента обновлён");
+        loadCustomers();
+      }
+      const commercial = tier || discount || manager;
+      if (commercial) {
+        const id = commercial.dataset.customerTier || commercial.dataset.customerDiscount || commercial.dataset.customerManager;
+        await api("/api/admin/customers/" + id + "/commercial", {
+          method: "PUT",
+          body: {
+            customer_tier: document.querySelector(`[data-customer-tier="${id}"]`)?.value || "regular",
+            assigned_manager: document.querySelector(`[data-customer-manager="${id}"]`)?.value || "",
+            price_discount: Number(document.querySelector(`[data-customer-discount="${id}"]`)?.value || 0),
+          },
+        });
+        toast("Условия клиента сохранены");
+      }
     } catch (ex) { toast("Ошибка: " + ex.message); }
   });
 
