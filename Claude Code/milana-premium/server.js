@@ -1299,12 +1299,12 @@ function smartRecommendProducts(products, seed, limit = 4) {
     .map((row) => publicProductCard(row.p, { smart_score: row.score }));
 }
 
-async function activeProductsForCatalog() {
+async function activeProductsForCatalog(forceCatalogRefresh = false) {
   const localProducts = db.prepare("SELECT * FROM products WHERE active=1 ORDER BY sort DESC, id DESC LIMIT 1000").all().map((r) => rowToProduct(r));
   if (CATALOG_SOURCE_ENABLED) {
     try {
       const seen = new Set(localProducts.map((p) => p.slug));
-      const imported = (await catalogProducts()).filter((p) => !seen.has(p.slug));
+      const imported = (await catalogProducts(forceCatalogRefresh)).filter((p) => !seen.has(p.slug));
       return [...localProducts, ...imported];
     }
     catch (e) {
@@ -2322,7 +2322,14 @@ const api = {
     send(res, 200, { ok: true });
   },
 
-  "GET /api/admin/products": (req, res) => {
+  "GET /api/admin/products": async (req, res, u) => {
+    if (CATALOG_SOURCE_ENABLED) {
+      try {
+        return send(res, 200, await activeProductsForCatalog(u.searchParams.get("refresh") === "1"));
+      } catch (e) {
+        catalogCache.error = e.message;
+      }
+    }
     send(res, 200, db.prepare("SELECT * FROM products ORDER BY sort DESC, id DESC").all().map((r) => rowToProduct(r)));
   },
 

@@ -133,6 +133,16 @@
     renderProducts();
   }
 
+  function clearAutofilledProductSearch() {
+    const input = $("#prod-search");
+    if (!input) return;
+    const value = input.value.trim().toLowerCase();
+    if (value === "admin") {
+      input.value = "";
+      renderProducts();
+    }
+  }
+
   function renderProducts() {
     const q = $("#prod-search").value || "";
     const list = products
@@ -160,6 +170,8 @@
   }
 
   $("#prod-search").addEventListener("input", renderProducts);
+  window.addEventListener("pageshow", () => setTimeout(clearAutofilledProductSearch, 80));
+  setTimeout(clearAutofilledProductSearch, 250);
 
   $("#prod-table").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-act]");
