@@ -261,6 +261,11 @@ db.exec(`
     meta TEXT DEFAULT '{}',
     created_at TEXT DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS catalog_product_overrides (
+    catalog_id INTEGER PRIMARY KEY,
+    active INTEGER DEFAULT 1,
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
   CREATE INDEX IF NOT EXISTS idx_products_public ON products(active, gender, category, tag, sort DESC, id DESC);
   CREATE INDEX IF NOT EXISTS idx_products_slug ON products(slug);
   CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at DESC);
@@ -989,6 +994,30 @@ const catalogSourceMeta = (source) => CATALOGS.find((c) => c.source_pdf === sour
 
 let catalogCache = { at: 0, products: [], byId: new Map(), bySlug: new Map(), error: null };
 
+function catalogOverrideMap() {
+  try {
+    return new Map(db.prepare("SELECT catalog_id, active FROM catalog_product_overrides").all().map((r) => [Number(r.catalog_id), Number(r.active) !== 0]));
+  } catch {
+    return new Map();
+  }
+}
+
+function applyCatalogOverrides(products) {
+  const overrides = catalogOverrideMap();
+  return products.map((p) => ({
+    ...p,
+    active: overrides.has(Number(p.id)) ? overrides.get(Number(p.id)) : p.active,
+  }));
+}
+
+function setCatalogProductActive(id, active) {
+  db.prepare(`
+    INSERT INTO catalog_product_overrides (catalog_id, active, updated_at)
+    VALUES (?,?,datetime('now'))
+    ON CONFLICT(catalog_id) DO UPDATE SET active=excluded.active, updated_at=datetime('now')
+  `).run(Number(id), active ? 1 : 0);
+}
+
 function catalogHeaders() {
   if (CATALOG_API_TOKEN) return { Authorization: "Bearer " + CATALOG_API_TOKEN };
   return { apikey: CATALOG_SUPABASE_KEY, Authorization: "Bearer " + CATALOG_SUPABASE_KEY };
@@ -1162,7 +1191,7 @@ async function catalogProducts(force = false) {
   if (!CATALOG_SOURCE_ENABLED) return [];
   if (!CATALOG_API_BASE && (!CATALOG_SUPABASE_URL || !CATALOG_SUPABASE_KEY)) return [];
   const now = Date.now();
-  if (!force && catalogCache.products.length && now - catalogCache.at < CATALOG_CACHE_MS) return catalogCache.products;
+  if (!force && catalogCache.products.length && now - catalogCache.at < CATALOG_CACHE_MS) return applyCatalogOverrides(catalogCache.products);
   const rows = await fetchCatalogRows();
   const products = rows
     .filter((row) => row && row.extraction_status !== "admin_hidden")
@@ -1175,17 +1204,17 @@ async function catalogProducts(force = false) {
     bySlug: new Map(products.map((p) => [p.slug, p])),
     error: null,
   };
-  return products;
+  return applyCatalogOverrides(products);
 }
 
 async function catalogProductById(id) {
   const products = await catalogProducts();
-  return catalogCache.byId.get(Number(id)) || products.find((p) => p.id === Number(id));
+  return products.find((p) => p.id === Number(id)) || catalogCache.byId.get(Number(id));
 }
 
 async function catalogProductBySlug(slug) {
   const products = await catalogProducts();
-  return catalogCache.bySlug.get(slug) || products.find((p) => p.slug === slug);
+  return products.find((p) => p.slug === slug) || catalogCache.bySlug.get(slug);
 }
 
 const SMART_SYNONYMS = {
@@ -1304,10 +1333,25 @@ async function activeProductsForCatalog(forceCatalogRefresh = false) {
   if (CATALOG_SOURCE_ENABLED) {
     try {
       const seen = new Set(localProducts.map((p) => p.slug));
-      const imported = (await catalogProducts(forceCatalogRefresh)).filter((p) => !seen.has(p.slug));
+      const imported = (await catalogProducts(forceCatalogRefresh)).filter((p) => p.active !== false && !seen.has(p.slug));
       return [...localProducts, ...imported];
     }
     catch (e) {
+      catalogCache.error = e.message;
+      console.error("Catalog source failed; falling back to SQLite:", e.message);
+    }
+  }
+  return localProducts;
+}
+
+async function adminProductsForCatalog(forceCatalogRefresh = false) {
+  const localProducts = db.prepare("SELECT * FROM products ORDER BY sort DESC, id DESC LIMIT 1000").all().map((r) => rowToProduct(r));
+  if (CATALOG_SOURCE_ENABLED) {
+    try {
+      const seen = new Set(localProducts.map((p) => p.slug));
+      const imported = (await catalogProducts(forceCatalogRefresh)).filter((p) => !seen.has(p.slug));
+      return [...localProducts, ...imported];
+    } catch (e) {
       catalogCache.error = e.message;
       console.error("Catalog source failed; falling back to SQLite:", e.message);
     }
@@ -1904,8 +1948,8 @@ const api = {
     if (CATALOG_SOURCE_ENABLED) {
       try {
         const product = await catalogProductBySlug(m.slug);
-        if (product) {
-          const related = smartRecommendProducts(await catalogProducts(), product, 4);
+        if (product && product.active !== false) {
+          const related = smartRecommendProducts(await activeProductsForCatalog(), product, 4);
           return send(res, 200, { ...product, related });
         }
       } catch (e) {
@@ -2133,6 +2177,7 @@ const api = {
       if (CATALOG_SOURCE_ENABLED) {
         try { product = await catalogProductById(Number(it.id)); } catch (e) { catalogCache.error = e.message; }
       }
+      if (product && product.active === false) product = null;
       const row = product ? null : db.prepare("SELECT * FROM products WHERE id=? AND active=1").get(Number(it.id));
       if (!product && !row) return fail(res, 400, "item_unavailable");
       const qty = Math.min(orderType === "retail" ? 99 : 20, Math.max(1, Math.round(Number(it.qty) || 1)));
@@ -2325,7 +2370,7 @@ const api = {
   "GET /api/admin/products": async (req, res, u) => {
     if (CATALOG_SOURCE_ENABLED) {
       try {
-        return send(res, 200, await activeProductsForCatalog(u.searchParams.get("refresh") === "1"));
+        return send(res, 200, await adminProductsForCatalog(u.searchParams.get("refresh") === "1"));
       } catch (e) {
         catalogCache.error = e.message;
       }
@@ -2349,8 +2394,16 @@ const api = {
   "PUT /api/admin/products/:id": async (req, res, u, m) => {
     const id = Number(m.id);
     const existing = db.prepare("SELECT * FROM products WHERE id=?").get(id);
-    if (!existing) return fail(res, 404, "not_found");
     const b = await readJson(req);
+    if (!existing && CATALOG_SOURCE_ENABLED) {
+      const product = await catalogProductById(id);
+      if (!product) return fail(res, 404, "not_found");
+      setCatalogProductActive(id, b.active !== false);
+      audit("admin", "catalog_product.availability_changed", { id, active: b.active !== false });
+      const updated = (await catalogProductById(id)) || { ...product, active: b.active !== false };
+      return send(res, 200, updated);
+    }
+    if (!existing) return fail(res, 404, "not_found");
     let v;
     try { v = validateProduct(b); } catch (e) { return fail(res, 400, "invalid_" + e.message); }
     const slug = uniqueSlug(slugify(str(b.slug, 80) || v.name), id);
@@ -2363,6 +2416,12 @@ const api = {
 
   "DELETE /api/admin/products/:id": (req, res, u, m) => {
     const id = Number(m.id);
+    const existing = db.prepare("SELECT id FROM products WHERE id=?").get(id);
+    if (!existing && CATALOG_SOURCE_ENABLED) {
+      setCatalogProductActive(id, false);
+      audit("admin", "catalog_product.hidden", { id });
+      return send(res, 200, { ok: true });
+    }
     db.prepare("DELETE FROM products WHERE id=?").run(id);
     audit("admin", "product.deleted", { id });
     send(res, 200, { ok: true });
