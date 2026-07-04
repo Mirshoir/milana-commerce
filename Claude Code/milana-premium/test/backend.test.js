@@ -188,6 +188,8 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const products = await (await fetch(app.base + "/api/products?limit=1")).json();
   assert.equal(products.length, 1);
   const product = products[0];
+  assert.equal(product.price_visible, true);
+  assert.equal(product.price > 0, true);
 
   const smartSearch = await (await fetch(app.base + "/api/search/smart?q=" + encodeURIComponent(product.model_no || product.name))).json();
   assert.equal(smartSearch.products.length > 0, true);

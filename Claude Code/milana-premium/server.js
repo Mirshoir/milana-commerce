@@ -1171,17 +1171,6 @@ function contractDiscount(customer) {
 function priceForCustomer(product, customer, orderType = "wholesale") {
   const retail = orderType === "retail";
   const base = Number(retail ? product.retail_price || product.price : product.wholesale_price || product.price) || 0;
-  if (!customerCanSeeContractPrice(customer)) {
-    return {
-      visible: false,
-      unit: 0,
-      base,
-      discount: 0,
-      source: "manager_confirmation",
-      label: "manager",
-      assigned_manager: customer?.assigned_manager || "",
-    };
-  }
   const discount = contractDiscount(customer);
   const unit = Math.round(base * (1 - discount / 100) * 100) / 100;
   return {
@@ -1189,9 +1178,9 @@ function priceForCustomer(product, customer, orderType = "wholesale") {
     unit,
     base,
     discount,
-    source: discount ? "customer_discount" : "premium_catalog",
-    label: normalizeCustomerTier(customer.customer_tier),
-    assigned_manager: customer.assigned_manager || "",
+    source: discount ? "customer_discount" : "public_catalog",
+    label: customer ? normalizeCustomerTier(customer.customer_tier) : "public",
+    assigned_manager: customer?.assigned_manager || "",
   };
 }
 
@@ -1199,10 +1188,10 @@ function productForCustomer(product, customer, orderType = "wholesale") {
   const pricing = priceForCustomer(product, customer, orderType);
   return {
     ...product,
-    price: pricing.visible ? pricing.unit : 0,
-    wholesale_price: pricing.visible ? pricing.unit : 0,
-    retail_price: pricing.visible ? pricing.unit : 0,
-    old_price: pricing.visible ? product.old_price : null,
+    price: pricing.unit,
+    wholesale_price: pricing.unit,
+    retail_price: pricing.unit,
+    old_price: product.old_price,
     price_visible: pricing.visible,
     price_label: pricing.label,
     price_source: pricing.source,
