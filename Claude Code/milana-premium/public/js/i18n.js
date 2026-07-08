@@ -1,12 +1,13 @@
 /* ============================================================
-   MILANA — i18n (EN / RU / UZ) + shared site settings
+   MILANA — i18n (UZ / RU / ENG) + shared site settings
    Usage: <el data-i18n="key">, <input data-i18n-ph="key">
    window.I18N = { lang, t, set, ready, fmtPrice, catName }
    ============================================================ */
 (() => {
   "use strict";
 
-  const LANGS = ["en", "ru", "uz"];
+  const LANGS = ["uz", "ru", "en"];
+  const LANG_LABELS = { uz: "UZ", ru: "RU", en: "ENG" };
   const dicts = {};
   let lang = localStorage.getItem("ml-lang");
   if (!LANGS.includes(lang)) {
@@ -62,7 +63,7 @@
   function buildSwitchers() {
     document.querySelectorAll("[data-lang-mount]").forEach((mount) => {
       mount.innerHTML = LANGS.map((l) =>
-        `<button type="button" data-lang="${l}" class="${l === lang ? "is-on" : ""}">${l.toUpperCase()}</button>`
+        `<button type="button" data-lang="${l}" class="${l === lang ? "is-on" : ""}">${LANG_LABELS[l] || l.toUpperCase()}</button>`
       ).join("");
       mount.addEventListener("click", (e) => {
         const b = e.target.closest("button[data-lang]");
@@ -74,8 +75,7 @@
   function fmtPrice(n) {
     const num = Math.round(Number(n) * 100) / 100;
     const txt = (num % 1 ? num.toFixed(2) : String(num)).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
-    const cur = settings?.currency || "$";
-    return settings?.currency_pos === "after" ? txt + " " + cur : cur + txt;
+    return "$" + txt;
   }
 
   const BAG_SIZE = 60;

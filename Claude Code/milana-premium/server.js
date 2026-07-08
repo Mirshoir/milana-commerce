@@ -1793,7 +1793,8 @@ const PUBLIC_SETTING_KEYS = ["phone", "whatsapp", "telegram", "instagram", "emai
   "hero_type", "hero_image", "hero_video", "hero_poster", "accent", "accent_dark"];
 const allSettings = () => {
   const settings = Object.fromEntries(PUBLIC_SETTING_KEYS.map((k) => [k, getSetting(k) ?? ""]));
-  if (CATALOG_SOURCE_ENABLED && settings.currency === "€") settings.currency = "$";
+  settings.currency = "$";
+  settings.currency_pos = "before";
   return settings;
 };
 

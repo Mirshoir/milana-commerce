@@ -668,11 +668,15 @@
   async function loadSettings() {
     const s = await api("/api/admin/settings");
     S_KEYS.forEach((k) => { const el = $("#s-" + k); if (el) el.value = s[k] ?? ""; });
+    if ($("#s-currency")) $("#s-currency").value = "$";
+    if ($("#s-currency_pos")) $("#s-currency_pos").value = "before";
   }
 
   $("#set-save").addEventListener("click", async () => {
     const body = {};
     S_KEYS.forEach((k) => { const el = $("#s-" + k); if (el) body[k] = el.value; });
+    body.currency = "$";
+    body.currency_pos = "before";
     try {
       await api("/api/admin/settings", { method: "PUT", body });
       const m = $("#set-msg");

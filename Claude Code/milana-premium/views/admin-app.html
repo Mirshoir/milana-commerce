@@ -125,7 +125,7 @@
               <button class="abtn" id="edit-ai-fill" type="button">Smart fill</button>
             </div>
             <div class="langtabs" id="desc-tabs">
-              <button data-lt="ru" class="is-on">RU</button><button data-lt="uz">UZ</button><button data-lt="en">EN</button>
+              <button data-lt="ru" class="is-on">RU</button><button data-lt="uz">UZ</button><button data-lt="en">ENG</button>
             </div>
             <textarea class="ainput" id="f-desc-ru" rows="4" placeholder="Описание (русский)"></textarea>
             <textarea class="ainput" id="f-desc-uz" rows="4" placeholder="Tavsif (o‘zbekcha)" hidden></textarea>
@@ -133,7 +133,7 @@
             <div class="frow frow--3" style="margin-top:14px">
               <label>Ткань RU <input class="ainput" id="f-fab-ru" maxlength="300" placeholder="Шёлк малберри · бургунди"></label>
               <label>Ткань UZ <input class="ainput" id="f-fab-uz" maxlength="300" placeholder="Tut ipagi · burgundi"></label>
-              <label>Ткань EN <input class="ainput" id="f-fab-en" maxlength="300" placeholder="Mulberry silk · burgundy"></label>
+              <label>Ткань ENG <input class="ainput" id="f-fab-en" maxlength="300" placeholder="Mulberry silk · burgundy"></label>
             </div>
             <p class="hint" id="edit-ai-msg"></p>
           </div>
@@ -221,20 +221,20 @@
             <div class="frow">
               <label>RU <input class="ainput" id="s-address_ru"></label>
               <label>UZ <input class="ainput" id="s-address_uz"></label>
-              <label>EN <input class="ainput" id="s-address_en"></label>
+              <label>ENG <input class="ainput" id="s-address_en"></label>
             </div>
           </div>
           <div class="card">
             <h3>Валюта</h3>
             <div class="frow frow--2">
-              <label>Символ / код <input class="ainput" id="s-currency" placeholder="€ или so'm"></label>
+              <label>Символ / код <input class="ainput" id="s-currency" value="$" disabled></label>
               <label>Положение
-                <select class="ainput" id="s-currency_pos">
-                  <option value="before">Перед суммой (€189)</option>
-                  <option value="after">После суммы (189 000 so'm)</option>
+                <select class="ainput" id="s-currency_pos" disabled>
+                  <option value="before" selected>Перед суммой ($189)</option>
                 </select>
               </label>
             </div>
+            <p class="hint">Валюта сайта зафиксирована как USD.</p>
           </div>
           <div class="card">
             <h3>Доступ в админку</h3>
