@@ -57,7 +57,8 @@
     const grid = $(".product-grid");
     if (!grid) return;
     try {
-      const r = await fetch("/api/products?limit=4");
+      const localNikePreview = document.documentElement.classList.contains("nike-local");
+      const r = await fetch(`/api/products?limit=${localNikePreview ? 8 : 4}`);
       products = await r.json();
       grid.innerHTML = products.map(card).join("");
       window.MilanaState?.wireImages?.(grid);
