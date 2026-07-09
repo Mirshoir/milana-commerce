@@ -100,6 +100,53 @@
     setTimeout(() => el.classList.remove("is-on"), 2200);
   }
 
+  function phoneHref(phone) {
+    const raw = String(phone || "").trim();
+    return raw ? "tel:" + raw.replace(/[^\d+]/g, "") : "";
+  }
+
+  function whatsappHref(phone) {
+    let digits = String(phone || "").replace(/\D/g, "");
+    if (digits.length === 9) digits = "998" + digits;
+    return digits ? "https://wa.me/" + digits : "";
+  }
+
+  function parseOrderComment(comment) {
+    const parts = String(comment || "").split(";").map((part) => part.trim()).filter(Boolean);
+    const parsed = { postCode: "", note: "", extra: [] };
+    parts.forEach((part) => {
+      const postCode = part.match(/^post\s*code\s*:\s*(.+)$/i);
+      const note = part.match(/^note\s*:\s*(.+)$/i);
+      if (postCode) parsed.postCode = postCode[1].trim();
+      else if (note) parsed.note = note[1].trim();
+      else if (!/\/.+\/.+\/.+\((?:\d+\s*)?pcs\)/i.test(part)) parsed.extra.push(part);
+    });
+    return parsed;
+  }
+
+  function renderCustomerCell(customer = {}) {
+    const comment = parseOrderComment(customer.comment);
+    const address = [customer.city, customer.address].filter(Boolean).join(", ");
+    const delivery = [address, comment.postCode ? `Индекс: ${comment.postCode}` : ""].filter(Boolean).join(" · ");
+    const call = phoneHref(customer.phone);
+    const wa = whatsappHref(customer.phone);
+    const note = [comment.note, ...comment.extra].filter(Boolean).join(" · ");
+    return `
+      <div class="ocust__head">
+        <b>${esc(customer.name || "—")}</b>
+        ${customer.customer_tier && customer.customer_tier !== "regular" ? `<span>${esc(TIER_RU[customer.customer_tier] || customer.customer_tier)}</span>` : ""}
+      </div>
+      ${customer.phone ? `<a class="ocust__phone" href="${esc(call)}">${esc(customer.phone)}</a>` : `<small>Телефон не указан</small>`}
+      <div class="ocust__actions">
+        ${call ? `<a href="${esc(call)}">Позвонить</a>` : ""}
+        ${wa ? `<a href="${esc(wa)}" target="_blank" rel="noopener">WhatsApp</a>` : ""}
+      </div>
+      ${delivery ? `<div class="odelivery"><span>Доставка</span><small>${esc(delivery)}</small></div>` : ""}
+      ${note ? `<div class="odelivery odelivery--note"><span>Комментарий</span><small>${esc(note)}</small></div>` : ""}
+      ${customer.assigned_manager ? `<small>Менеджер: ${esc(customer.assigned_manager)}</small>` : ""}
+    `;
+  }
+
   /* ---------------- auth ---------------- */
   async function showApp() {
     await Promise.all([loadProducts(), loadCustomers(), loadOrders(), loadReviews(), loadChat(), loadSupport()]);
@@ -495,16 +542,12 @@
     $("#order-count").textContent = "· " + orders.length;
     $("#order-table tbody").innerHTML = orders.map((o) => {
       const pay = o.payment || {};
+      const customer = o.customer || {};
       return `
       <tr>
         <td class="onum">${esc(o.number)}</td>
         <td class="odate">${esc((o.created_at || "").slice(0, 16).replace("T", " "))}</td>
-        <td class="ocust">
-          ${esc(o.customer.name)}
-          <a href="tel:${esc(o.customer.phone)}">${esc(o.customer.phone)}</a>
-          <small>${esc([o.customer.city, o.customer.address].filter(Boolean).join(", "))}</small>
-          ${o.customer.comment ? `<small>💬 ${esc(o.customer.comment)}</small>` : ""}
-        </td>
+        <td class="ocust">${renderCustomerCell(customer)}</td>
         <td>${o.order_type === "retail" ? "Розница" : "Опт"}</td>
         <td class="oitems">${o.items.map((i) => {
           const bagSize = i.bag_size || 60;
@@ -533,12 +576,19 @@
   }
 
   $("#order-table").addEventListener("change", async (e) => {
-    const sel = e.target.closest("[data-order]");
-    if (!sel) return;
+    const orderSel = e.target.closest("[data-order]");
+    const paymentSel = e.target.closest("[data-payment]");
+    if (!orderSel && !paymentSel) return;
     try {
-      await api("/api/admin/orders/" + sel.dataset.order, { method: "PUT", body: { status: sel.value } });
-      sel.classList.toggle("osel--new", sel.value === "new");
-      toast("Статус обновлён");
+      if (orderSel) {
+        await api("/api/admin/orders/" + orderSel.dataset.order, { method: "PUT", body: { status: orderSel.value } });
+        orderSel.classList.toggle("osel--new", orderSel.value === "new");
+        toast("Статус обновлён");
+      }
+      if (paymentSel) {
+        await api("/api/admin/payments/" + paymentSel.dataset.payment, { method: "PUT", body: { status: paymentSel.value } });
+        toast("Оплата обновлена");
+      }
       loadOrders();
     } catch (ex) { toast("Ошибка: " + ex.message); }
   });
@@ -613,16 +663,6 @@
       await api("/api/admin/chat/" + sel.dataset.chat, { method: "PUT", body: { status: sel.value } });
       toast("Статус чата обновлён");
       loadChat();
-    } catch (ex) { toast("Ошибка: " + ex.message); }
-  });
-
-  $("#order-table").addEventListener("change", async (e) => {
-    const sel = e.target.closest("[data-payment]");
-    if (!sel) return;
-    try {
-      await api("/api/admin/payments/" + sel.dataset.payment, { method: "PUT", body: { status: sel.value } });
-      toast("Оплата обновлена");
-      loadOrders();
     } catch (ex) { toast("Ошибка: " + ex.message); }
   });
 

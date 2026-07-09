@@ -195,9 +195,20 @@ textarea.admin-searchbox{
 /* ---------- orders ---------- */
 .onum{font-weight:600;white-space:nowrap}
 .odate{white-space:nowrap;color:var(--soft);font-size:.8rem}
-.ocust{min-width:160px}
-.ocust a{color:var(--burgundy);font-weight:500}
+.ocust{min-width:220px;max-width:320px}
+.ocust__head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px}
+.ocust__head b{font-weight:700}
+.ocust__head span{border:1px solid rgba(92,31,45,.18);background:rgba(92,31,45,.08);color:var(--burgundy);border-radius:999px;padding:2px 7px;font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.ocust a{color:var(--burgundy);font-weight:600}
+.ocust__phone{display:inline-block;margin-bottom:4px}
 .ocust small{display:block;color:var(--soft);font-size:.76rem}
+.ocust__actions{display:flex;gap:6px;flex-wrap:wrap;margin:3px 0 7px}
+.ocust__actions a{border:1px solid var(--line);border-radius:999px;padding:3px 8px;background:#fff;font-size:.66rem;letter-spacing:.08em;text-transform:uppercase}
+.odelivery{border:1px solid rgba(92,31,45,.14);border-radius:8px;background:rgba(92,31,45,.035);padding:7px 9px;margin-top:6px}
+.odelivery span{display:block;color:var(--burgundy);font-size:.62rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;margin-bottom:2px}
+.odelivery small{color:var(--ink);line-height:1.35}
+.odelivery--note{background:rgba(216,163,95,.08);border-color:rgba(216,163,95,.28)}
+.odelivery--note span{color:#9b5847}
 .oitems{font-size:.8rem;color:var(--soft);max-width:320px}
 .oitems b{color:var(--ink);font-weight:500}
 .osel{padding:7px 9px;border:1px solid var(--line);border-radius:3px;background:#fff;font:inherit;font-size:.8rem;cursor:pointer}
