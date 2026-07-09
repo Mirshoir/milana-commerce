@@ -126,11 +126,15 @@
 
   function renderCustomerCell(customer = {}) {
     const comment = parseOrderComment(customer.comment);
-    const address = [customer.city, customer.address].filter(Boolean).join(", ");
-    const delivery = [address, comment.postCode ? `Индекс: ${comment.postCode}` : ""].filter(Boolean).join(" · ");
+    const rawAddress = String(customer.address || "");
+    const embeddedPostCode = rawAddress.match(/(?:^|[·,;])\s*post\s*code\s*:\s*([^·,;]+)/i);
+    const cleanAddress = rawAddress.replace(/\s*[·,;]?\s*post\s*code\s*:\s*[^·,;]+/i, "").trim();
+    const postCode = customer.postcode || comment.postCode || (embeddedPostCode ? embeddedPostCode[1].trim() : "");
+    const address = [customer.city, cleanAddress].filter(Boolean).join(", ");
+    const delivery = [address, postCode ? `Индекс: ${postCode}` : ""].filter(Boolean).join(" · ");
     const call = phoneHref(customer.phone);
     const wa = whatsappHref(customer.phone);
-    const note = [comment.note, ...comment.extra].filter(Boolean).join(" · ");
+    const note = [customer.delivery_note || "", comment.note, ...comment.extra].filter(Boolean).join(" · ");
     return `
       <div class="ocust__head">
         <b>${esc(customer.name || "—")}</b>

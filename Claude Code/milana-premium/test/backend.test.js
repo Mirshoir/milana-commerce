@@ -207,6 +207,8 @@ test("order placement sends Telegram notification when configured", async (t) =>
       phone: "+998 90 777 88 99",
       city: "Andijon",
       address: "Qoratut 605",
+      postcode: "170100",
+      delivery_note: "Entrance from the main road",
       comment: "Call before delivery",
     },
     payment: { method: "manager" },
@@ -225,6 +227,8 @@ test("order placement sends Telegram notification when configured", async (t) =>
   assert.match(msg.body.text, new RegExp("Yangi Milana buyurtmasi " + order.number));
   assert.match(msg.body.text, /Manba: flutter · Til: uz/);
   assert.match(msg.body.text, /Telegram Buyer/);
+  assert.match(msg.body.text, /Pochta indeksi: 170100/);
+  assert.match(msg.body.text, /Yetkazish izohi: Entrance from the main road/);
   assert.match(msg.body.text, /To'lov: menejer orqali · kutilmoqda\/qo'lda tasdiqlanadi/);
   assert.match(msg.body.text, /Umumiy summa:/);
 });
@@ -328,6 +332,15 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(pachkaOrderRes.status, 201);
   const pachkaOrder = await pachkaOrderRes.json();
   assert.equal(pachkaOrder.total, Math.round(product.price * 6 * 100) / 100);
+
+  const missingReactDelivery = await json(app.base + "/api/orders", {
+    source: "react_frontend",
+    customer: { name: "React Buyer", phone: "+998 90 222 44 66", city: "Tashkent" },
+    items: [{ id: product.id, qty: 1, unit_type: "pachka" }],
+    lang: "uz",
+  });
+  assert.equal(missingReactDelivery.status, 400);
+  assert.equal((await missingReactDelivery.json()).error, "address");
 
   const sub1 = await json(app.base + "/api/newsletter", { email: "CLIENT@example.com", lang: "ru" });
   assert.equal(sub1.status, 201);

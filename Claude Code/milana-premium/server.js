@@ -1127,6 +1127,8 @@ function formatTelegramOrder({ number, customer, items, total, orderType, paymen
   if (customer.assigned_manager) lines.push(`Biriktirilgan menejer: ${customer.assigned_manager}`);
   if (customer.email) lines.push(`Email: ${customer.email}`);
   if (customer.city || customer.address) lines.push(`Manzil: ${[customer.city, customer.address].filter(Boolean).join(", ")}`);
+  if (customer.postcode) lines.push(`Pochta indeksi: ${customer.postcode}`);
+  if (customer.delivery_note) lines.push(`Yetkazish izohi: ${customer.delivery_note}`);
   if (customer.comment) lines.push(`Izoh: ${customer.comment}`);
   lines.push("", "Mahsulotlar:");
   items.forEach((item, idx) => {
@@ -2467,8 +2469,14 @@ const api = {
     const requestedPayment = str(b.payment?.method || c.payment_method || "manager", 30);
     const paymentMethod = PAYMENT_METHODS.includes(requestedPayment) ? requestedPayment : "manager";
     const source = str(b.source || req.headers["x-client-name"] || "website", 40) || "website";
+    const customerCity = str(c.city, 80);
+    const customerAddress = str(c.address, 300);
+    const customerPostcode = str(c.postcode || c.post_code || c.zip || c.postal_code, 40);
+    const customerDeliveryNote = str(c.delivery_note || c.note, 500);
     if (name.length < 2) return fail(res, 400, "name");
     if (!/^[0-9+()\-\s]{5,25}$/.test(phone)) return fail(res, 400, "phone");
+    if (source === "react_frontend" && customerCity.length < 2) return fail(res, 400, "city");
+    if (source === "react_frontend" && customerAddress.length < 5) return fail(res, 400, "address");
     const signedInCustomer = customerFromRequest(req);
     const requestedOrderType = b.order_type === "retail" ? "retail" : b.order_type === "wholesale" ? "wholesale" : "";
     const orderType = signedInCustomer?.account_type === "individual" ? "retail" : (requestedOrderType || "wholesale");
@@ -2476,7 +2484,11 @@ const api = {
       customer_id: signedInCustomer?.id || null,
       name, phone,
       email: signedInCustomer?.email || normalizeEmail(c.email || ""),
-      city: str(c.city, 80), address: str(c.address, 300), comment: str(c.comment, 1000),
+      city: customerCity,
+      address: customerAddress,
+      postcode: customerPostcode,
+      delivery_note: customerDeliveryNote,
+      comment: str(c.comment, 1000),
       customer_tier: normalizeCustomerTier(signedInCustomer?.customer_tier),
       assigned_manager: signedInCustomer?.assigned_manager || "",
     };
