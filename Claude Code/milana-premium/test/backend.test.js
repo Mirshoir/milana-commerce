@@ -102,6 +102,35 @@ async function startOpenAIStub(t) {
   return { base: `http://127.0.0.1:${port}`, requests };
 }
 
+async function startCatalogStub(t) {
+  const port = await freePort();
+  let hits = 0;
+  const server = http.createServer((req, res) => {
+    hits += 1;
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify([{
+      id: 999999,
+      source_pdf: "external.pdf",
+      page: 1,
+      card_index: 1,
+      model_code: "EXT-999",
+      product_code: "OLD-CATALOG",
+      material_type: "External",
+      price: 99,
+      currency: "USD",
+      image_url: "/assets/external.jpg",
+      extraction_status: "ok",
+      combined_text: "External Catalog Product 44 46 48",
+    }]));
+  });
+  await new Promise((resolve, reject) => {
+    server.listen(port, "127.0.0.1", resolve);
+    server.on("error", reject);
+  });
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  return { base: `http://127.0.0.1:${port}`, hits: () => hits };
+}
+
 async function startSmtpStub(t) {
   const port = await freePort();
   const messages = [];
@@ -221,6 +250,20 @@ test("chat assistant uses OpenAI when configured", async (t) => {
   assert.equal(openai.requests[0].body.model, "test-model");
 });
 
+test("external catalog source stays disconnected", async (t) => {
+  const catalog = await startCatalogStub(t);
+  const app = await startServer(t, {
+    CATALOG_SOURCE_ENABLED: "1",
+    CATALOG_API_BASE: catalog.base,
+  });
+
+  const health = await (await fetch(app.base + "/api/health")).json();
+  assert.equal(health.catalog_source, "sqlite");
+  const products = await (await fetch(app.base + "/api/products?limit=1000")).json();
+  assert.equal(products.some((product) => product.name === "External Catalog Product" || product.model_no === "EXT-999"), false);
+  assert.equal(catalog.hits(), 0);
+});
+
 test("password recovery code can be sent through SMTP", async (t) => {
   const smtp = await startSmtpStub(t);
   const app = await startServer(t, {
@@ -265,7 +308,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const orderRes = await json(app.base + "/api/orders", {
     customer: { name: "Test Customer", phone: "+998 90 123 45 67", city: "Tashkent" },
     payment: { method: "bank" },
-    items: [{ id: product.id, qty: 2, size: product.sizes[0] || "" }],
+    items: [{ id: product.id, qty: 2, unit_type: "qop", size: product.sizes[0] || "" }],
     lang: "en",
   });
   assert.equal(orderRes.status, 201);
@@ -275,6 +318,16 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(order.payment.method, "bank");
   assert.equal(order.payment.status, "pending");
   assert.equal(order.payment.amount, order.total);
+
+  const pachkaOrderRes = await json(app.base + "/api/orders", {
+    customer: { name: "Pachka Buyer", phone: "+998 90 222 44 66", city: "Tashkent" },
+    payment: { method: "manager" },
+    items: [{ id: product.id, qty: 1, unit_type: "pachka", size: product.sizes[0] || "" }],
+    lang: "uz",
+  });
+  assert.equal(pachkaOrderRes.status, 201);
+  const pachkaOrder = await pachkaOrderRes.json();
+  assert.equal(pachkaOrder.total, Math.round(product.price * 6 * 100) / 100);
 
   const sub1 = await json(app.base + "/api/newsletter", { email: "CLIENT@example.com", lang: "ru" });
   assert.equal(sub1.status, 201);
@@ -498,7 +551,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const adminOrders = await fetch(app.base + "/api/admin/orders", { headers: { Cookie: cookie } });
   assert.equal(adminOrders.status, 200);
   const orders = await adminOrders.json();
-  assert.equal(orders.length, 3);
+  assert.equal(orders.length, 4);
   const adminOrder = orders.find((row) => row.number === order.number);
   assert.ok(adminOrder);
   assert.equal(adminOrder.order_type, "wholesale");
@@ -506,12 +559,19 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(adminOrder.payment.status, "pending");
   assert.equal(adminOrder.payment.amount, order.total);
   assert.equal(adminOrder.items[0].bag_size, 60);
+  assert.equal(adminOrder.items[0].unit_type, "qop");
   assert.equal(adminOrder.items[0].unit_price, product.price);
   assert.equal(adminOrder.items[0].price, Math.round(product.price * 60 * 100) / 100);
   const expectedSizes = [...product.sizes, "44", "46", "48", "50", "52", "54"]
     .filter((size, idx, arr) => arr.indexOf(size) === idx)
     .slice(0, 6);
   assert.deepEqual(adminOrder.items[0].size_mix, expectedSizes.map((size) => ({ size, qty: 10 })));
+  const adminPachkaOrder = orders.find((row) => row.number === pachkaOrder.number);
+  assert.ok(adminPachkaOrder);
+  assert.equal(adminPachkaOrder.items[0].unit_type, "pachka");
+  assert.equal(adminPachkaOrder.items[0].bag_size, 6);
+  assert.equal(adminPachkaOrder.items[0].price, Math.round(product.price * 6 * 100) / 100);
+  assert.equal(adminPachkaOrder.items[0].size_mix.reduce((sum, row) => sum + row.qty, 0), 6);
 
   const blocked = await json(
     app.base + "/api/admin/orders/" + adminOrder.id,

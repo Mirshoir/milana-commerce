@@ -28,7 +28,7 @@ loadEnvFile(path.join(DATA_DIR, "sms.env"));
 loadEnvFile(path.join(DATA_DIR, "email.env"));
 loadEnvFile(path.join(DATA_DIR, "openai.env"));
 loadEnvFile(path.join(DATA_DIR, "catalog.env"), { override: true });
-const CATALOG_SOURCE_ENABLED = process.env.CATALOG_SOURCE_ENABLED === "1";
+const CATALOG_SOURCE_ENABLED = false;
 const SEED_FALLBACK_CATALOG = process.env.SEED_FALLBACK_CATALOG === "1";
 const CATALOG_API_BASE = (process.env.CATALOG_API_BASE || "").replace(/\/+$/, "");
 const CATALOG_API_TOKEN = (process.env.CATALOG_API_TOKEN || "").trim();
@@ -576,6 +576,8 @@ for (const [k, v] of Object.entries(SETTINGS_DEFAULTS)) if (getSetting(k) == nul
 const ORDER_BAG_SIZE = 60;
 const ORDER_BAG_SIZE_COUNT = 6;
 const ORDER_SIZE_QTY = ORDER_BAG_SIZE / ORDER_BAG_SIZE_COUNT;
+const ORDER_PACHKA_SIZE = 6;
+const ORDER_PACKAGE_UNITS = new Set(["pachka", "qop"]);
 function defaultOrderSizes(gender, category) {
   if (gender === "kids" || category === "pajamas") return ["28", "30", "32", "34", "36", "38"];
   if (gender === "men") return ["46", "48", "50", "52", "54", "56"];
@@ -590,6 +592,17 @@ function orderSizeMix(sizes, gender, category) {
     .filter((s) => (seen.has(s) ? false : (seen.add(s), true)))
     .slice(0, ORDER_BAG_SIZE_COUNT);
   return merged.map((size) => ({ size, qty: ORDER_SIZE_QTY }));
+}
+
+function packageSizeMix(sizes, gender, category, packageSize) {
+  if (packageSize === ORDER_BAG_SIZE) return orderSizeMix(sizes, gender, category);
+  const seen = new Set();
+  const merged = [...(Array.isArray(sizes) ? sizes : []), ...defaultOrderSizes(gender, category)]
+    .map((s) => str(s, 8))
+    .filter(Boolean)
+    .filter((s) => (seen.has(s) ? false : (seen.add(s), true)))
+    .slice(0, packageSize);
+  return merged.map((size) => ({ size, qty: 1 }));
 }
 
 function paymentProvider(method) {
@@ -1118,8 +1131,8 @@ function formatTelegramOrder({ number, customer, items, total, orderType, paymen
   items.forEach((item, idx) => {
     const mix = (item.size_mix || []).map((m) => `${m.size}x${m.qty}`).join(", ");
     lines.push(`${idx + 1}. ${item.name}`);
-    const unit = item.unit_type === "piece" ? "dona" : "qop";
-    const packLabel = item.unit_type === "piece" ? "dona" : "qop";
+    const unit = item.unit_type === "piece" ? "dona" : item.unit_type === "pachka" ? "pachka" : "qop";
+    const packLabel = item.unit_type === "piece" ? "dona" : item.unit_type === "pachka" ? "pachka" : "qop";
     if (item.price_pending) {
       lines.push(`   ${item.qty} ${unit} · ${item.bag_size} dona/${packLabel} · narxni menejer tasdiqlaydi`);
     } else {
@@ -1513,6 +1526,10 @@ function publicProductCard(p, extra = {}) {
     images: (p.images || []).slice(0, 2),
     desc: undefined,
     fabric: p.fabric,
+    order_units: [
+      { unit_type: "pachka", label: "pachka", pieces: ORDER_PACHKA_SIZE, min_qty: 1 },
+      { unit_type: "qop", label: "qop", pieces: ORDER_BAG_SIZE, min_qty: 1 },
+    ],
     ...extra,
   };
 }
@@ -1756,7 +1773,7 @@ function validateProduct(b) {
   if (!(price > 0 && price < 1e9)) throw new Error("price");
   const wholesale_price = Number(b.wholesale_price || b.price);
   if (!(wholesale_price > 0 && wholesale_price < 1e9)) throw new Error("wholesale_price");
-  const wholesale_moq = Math.max(1, Math.min(10000, Math.round(Number(b.wholesale_moq) || ORDER_BAG_SIZE)));
+  const wholesale_moq = Math.max(ORDER_PACHKA_SIZE, Math.min(10000, Math.round(Number(b.wholesale_moq) || ORDER_PACHKA_SIZE)));
   const retail_enabled = b.retail_enabled === false ? 0 : 1;
   const retail_price = Number(b.retail_price || b.price);
   if (retail_enabled && !(retail_price > 0 && retail_price < 1e9)) throw new Error("retail_price");
@@ -2488,15 +2505,19 @@ const api = {
       const retailStock = Number(product ? product.retail_stock : row.retail_stock) || 0;
       const rawQty = Number(it.qty);
       if (!Number.isInteger(rawQty) || rawQty < 1) return fail(res, 400, "invalid_qty");
-      const maxQty = orderType === "retail" ? 99 : 20;
+      const requestedUnitType = str(it.unit_type || it.unit || "", 20).toLowerCase();
+      const wholesaleUnitType = ORDER_PACKAGE_UNITS.has(requestedUnitType) ? requestedUnitType : "qop";
+      const packagePieces = wholesaleUnitType === "pachka" ? ORDER_PACHKA_SIZE : ORDER_BAG_SIZE;
+      const maxQty = orderType === "retail" ? 99 : Math.max(1, Math.floor((20 * ORDER_BAG_SIZE) / packagePieces));
       if (rawQty > maxQty) return fail(res, 400, "qty_limit");
-      if (orderType === "wholesale" && availableQop != null && rawQty > Number(availableQop)) return fail(res, 400, "insufficient_stock");
+      const wholesalePieces = rawQty * packagePieces;
+      if (orderType === "wholesale" && availableQop != null && wholesalePieces > Number(availableQop) * ORDER_BAG_SIZE) return fail(res, 400, "insufficient_stock");
       if (orderType === "retail" && retailStock > 0 && rawQty > retailStock) return fail(res, 400, "insufficient_stock");
       let size_mix = [];
       let unit_price = pricing.unit;
-      let bag_size = ORDER_BAG_SIZE;
+      let bag_size = packagePieces;
       let price = Math.round(unit_price * bag_size * 100) / 100;
-      let unit_type = "qop";
+      let unit_type = wholesaleUnitType;
       const price_pending = !pricing.visible;
       const qty = rawQty;
       if (orderType === "retail") {
@@ -2507,8 +2528,10 @@ const api = {
         unit_type = "piece";
         if (row && retailStock > 0) stockAdjustments.push({ type: "retail", id: row.id, qty });
       } else {
-        size_mix = orderSizeMix(sizes, gender, category);
-        if (row && availableQop != null) stockAdjustments.push({ type: "wholesale", id: row.id, qty });
+        size_mix = packageSizeMix(sizes, gender, category, packagePieces);
+        if (row && availableQop != null) {
+          stockAdjustments.push({ type: "wholesale", id: row.id, qop: Math.ceil(wholesalePieces / ORDER_BAG_SIZE) });
+        }
       }
       items.push({
         id, slug, name, qty, unit_price, bag_size, unit_type, size_mix, price, image: images[0] || "",
@@ -2544,7 +2567,7 @@ const api = {
       if (adjustment.type === "retail") {
         db.prepare("UPDATE products SET retail_stock=MAX(0, retail_stock-?) WHERE id=?").run(adjustment.qty, adjustment.id);
       } else {
-        db.prepare("UPDATE products SET available_qop=MAX(0, available_qop-?) WHERE id=? AND available_qop IS NOT NULL").run(adjustment.qty, adjustment.id);
+        db.prepare("UPDATE products SET available_qop=MAX(0, available_qop-?) WHERE id=? AND available_qop IS NOT NULL").run(adjustment.qop, adjustment.id);
       }
     }
     notifyTelegramOrderLater({ id: r.lastInsertRowid, number, customer, items, total: amount, orderType, paymentMethod, source, lang });
