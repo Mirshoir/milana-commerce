@@ -295,7 +295,7 @@
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const isVid = /^video\//.test(f.type) || /\.(mp4|webm)$/i.test(f.name);
-      const cap = isVid ? 64 : 8;
+      const cap = 64;
       if (f.size > cap * 1024 * 1024) { status.textContent = `«${f.name}» больше ${cap} МБ — пропущен.`; continue; }
       status.textContent = `Загрузка ${i + 1} из ${files.length}… ${isVid ? "(видео может занять время)" : ""}`;
       try {
@@ -304,8 +304,8 @@
         editImages.push(res.url);
         renderPhotos();
       } catch (ex) {
-        const msg = ex.message === "image_too_large" ? "фото больше 8 МБ"
-          : ex.message === "format_not_allowed" ? "формат не поддерживается (нужно JPG/PNG/WebP/MP4/WebM)"
+        const msg = ex.message === "format_not_allowed" ? "формат не поддерживается (нужно JPG/PNG/WebP/MP4/WebM)"
+          : ex.message === "too_large" ? "файл больше 64 МБ"
           : ex.message;
         status.textContent = `Ошибка загрузки «${f.name}»: ${msg}`;
         return;
@@ -742,7 +742,7 @@
     const isVid = /^video\//.test(file.type) || /\.(mp4|webm)$/i.test(file.name);
     if (expect === "video" && !isVid) { toast("Нужен видеофайл (MP4/WebM)"); return null; }
     if (expect === "image" && isVid) { toast("Нужно фото (JPG/PNG/WebP)"); return null; }
-    const cap = isVid ? 64 : 8;
+    const cap = 64;
     if (file.size > cap * 1024 * 1024) { toast(`Файл больше ${cap} МБ`); return null; }
     toast("Загрузка…");
     try {

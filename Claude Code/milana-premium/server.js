@@ -2844,7 +2844,8 @@ const api = {
   },
 
   "POST /api/admin/upload": async (req, res) => {
-    const buf = await readBody(req, 64 * 1024 * 1024); // up to 64 MB (video)
+    const uploadLimitMb = 64;
+    const buf = await readBody(req, uploadLimitMb * 1024 * 1024);
     if (buf.length < 100) return fail(res, 400, "empty");
     let ext = null, kind = "image";
     // images
@@ -2855,7 +2856,6 @@ const api = {
     else if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) { ext = "webm"; kind = "video"; }
     else if (buf.slice(4, 8).toString("latin1") === "ftyp") { ext = "mp4"; kind = "video"; }
     if (!ext) return fail(res, 400, "format_not_allowed");
-    if (kind === "image" && buf.length > 8 * 1024 * 1024) return fail(res, 413, "image_too_large"); // 8 MB cap for images
     const name = (kind === "video" ? "v" : "p") + Date.now().toString(36) + "-" + crypto.randomBytes(4).toString("hex") + "." + ext;
     fs.writeFileSync(path.join(UPLOAD_DIR, name), buf);
     audit("admin", "media.uploaded", { name, kind, bytes: buf.length });
