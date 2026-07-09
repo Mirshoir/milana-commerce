@@ -240,7 +240,12 @@
   function wirePage() {
     const page = document.querySelector("[data-auth-page]");
     if (!page) return;
-    const initialMode = location.pathname.includes("signup") ? "signup" : "signin";
+    const requestedMode = new URLSearchParams(location.search).get("mode") || location.hash.replace("#", "");
+    const initialMode = location.pathname.includes("signup")
+      ? "signup"
+      : ["signin", "signup", "recover"].includes(requestedMode)
+        ? requestedMode
+        : "signin";
     switchTab(initialMode);
 
     page.addEventListener("click", async (e) => {

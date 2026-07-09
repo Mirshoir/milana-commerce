@@ -1,0 +1,259 @@
+/* Modern auth shell for /signin. Keeps existing auth.js data hooks intact. */
+body.auth-modern{
+  --auth-bg:#030819;
+  --auth-panel:#081026;
+  --auth-card:#0c132b;
+  --auth-line:rgba(239,244,255,.13);
+  --auth-muted:rgba(239,244,255,.54);
+  --auth-soft:rgba(239,244,255,.08);
+  --auth-red:#ff3131;
+  --auth-red-2:#d43c4c;
+  --auth-cream:#eff4ff;
+  color:var(--auth-cream);
+  background:
+    radial-gradient(circle at 78% 18%, rgba(255,49,49,.18), transparent 28%),
+    radial-gradient(circle at 14% 82%, rgba(197,168,128,.16), transparent 28%),
+    linear-gradient(135deg, #030819 0%, #070d24 48%, #11131f 100%);
+}
+
+body.auth-modern .grain{opacity:.18}
+body.auth-modern .header{
+  background:rgba(3,8,25,.86);
+  -webkit-backdrop-filter:blur(18px) saturate(1.2);
+  backdrop-filter:blur(18px) saturate(1.2);
+}
+body.auth-modern .header::after{opacity:1;background:rgba(239,244,255,.11)}
+body.auth-modern .brand__name,
+body.auth-modern .nav a,
+body.auth-modern .header__tel,
+body.auth-modern .auth-link,
+body.auth-modern .burger{color:var(--auth-cream)}
+body.auth-modern .brand__sup,
+body.auth-modern .nav a:not(:hover),
+body.auth-modern .header__tel{opacity:.72}
+body.auth-modern .auth-link.is-active{border-color:var(--auth-red);color:var(--auth-red)}
+body.auth-modern .cartbtn{color:var(--auth-cream);border-color:rgba(239,244,255,.14)}
+body.auth-modern .cartbtn__n{background:var(--auth-red);color:#fff}
+body.auth-modern .lang{border-color:rgba(239,244,255,.14);background:rgba(255,255,255,.04)}
+body.auth-modern .lang button{color:rgba(239,244,255,.62)}
+body.auth-modern .lang button.is-on{background:var(--auth-red);color:#fff}
+
+body.auth-modern .auth-page{
+  position:relative;
+  min-height:calc(100vh - 74px);
+  padding-top:clamp(118px,14vh,158px);
+  padding-bottom:clamp(56px,8vw,100px);
+  overflow:hidden;
+}
+body.auth-modern .auth-page::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background:
+    linear-gradient(90deg, rgba(239,244,255,.06) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(239,244,255,.05) 1px, transparent 1px);
+  background-size:88px 88px;
+  mask-image:linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+  opacity:.35;
+}
+body.auth-modern .auth-shell{
+  position:relative;
+  z-index:1;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(390px,520px);
+  align-items:center;
+  gap:clamp(28px,5vw,80px);
+}
+body.auth-modern .auth-panel{
+  padding:clamp(24px,4vw,48px) 0;
+}
+body.auth-modern .overline{
+  color:var(--auth-muted);
+  margin-bottom:clamp(20px,3vw,34px);
+}
+body.auth-modern .overline__num{
+  color:var(--auth-red);
+  font-family:var(--f-sans);
+  font-size:.8rem;
+  font-style:normal;
+  font-weight:700;
+  letter-spacing:.32em;
+}
+body.auth-modern .overline__rule{background:rgba(239,244,255,.22)}
+body.auth-modern .auth-panel h1{
+  max-width:760px;
+  font-family:var(--f-sans);
+  font-size:clamp(3.1rem,7vw,6.8rem);
+  font-weight:700;
+  line-height:.9;
+  letter-spacing:-.04em;
+  color:#fff;
+}
+body.auth-modern .auth-panel__lead{
+  max-width:520px;
+  color:rgba(239,244,255,.66);
+  font-size:clamp(1rem,1.4vw,1.18rem);
+}
+body.auth-modern .auth-benefits{
+  margin-top:clamp(30px,4vw,48px);
+  display:grid;
+  gap:12px;
+  max-width:620px;
+}
+body.auth-modern .auth-benefits p{
+  border:1px solid var(--auth-line);
+  border-radius:18px;
+  background:rgba(255,255,255,.045);
+  color:rgba(239,244,255,.76);
+  padding:16px 18px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+}
+
+body.auth-modern .auth-card{
+  position:relative;
+  overflow:hidden;
+  border:1px solid var(--auth-line);
+  border-radius:30px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.025)),
+    var(--auth-card);
+  padding:clamp(22px,3vw,34px);
+  box-shadow:0 28px 90px -42px rgba(0,0,0,.88), inset 0 1px 0 rgba(255,255,255,.07);
+}
+body.auth-modern .auth-card::before{
+  content:"";
+  position:absolute;
+  inset:-1px -1px auto;
+  height:1px;
+  background:linear-gradient(90deg, transparent, rgba(255,49,49,.9), transparent);
+}
+body.auth-modern .auth-tabs{
+  border:1px solid var(--auth-line);
+  border-radius:18px;
+  background:rgba(0,0,0,.18);
+  padding:5px;
+  margin-bottom:24px;
+}
+body.auth-modern .auth-tabs button{
+  min-height:54px;
+  border-radius:14px;
+  color:rgba(239,244,255,.52);
+  letter-spacing:.22em;
+}
+body.auth-modern .auth-tabs button.is-on{
+  color:#fff;
+  background:linear-gradient(135deg, #e3323c, #7e1732);
+  box-shadow:0 14px 34px -24px rgba(255,49,49,.9);
+}
+body.auth-modern .auth-form{gap:16px}
+body.auth-modern .auth-help{
+  color:rgba(239,244,255,.6);
+  font-size:.9rem;
+  line-height:1.6;
+}
+body.auth-modern .auth-form label span,
+body.auth-modern .auth-account__label,
+body.auth-modern .account-panel__kicker{
+  color:rgba(239,244,255,.52);
+  font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size:.68rem;
+  letter-spacing:.24em;
+}
+body.auth-modern .auth-form input{
+  min-height:58px;
+  border:1px solid var(--auth-line);
+  border-radius:17px;
+  background:rgba(255,255,255,.055);
+  color:#fff;
+  padding:15px 16px;
+  font-size:.98rem;
+}
+body.auth-modern .auth-form input::placeholder{color:rgba(239,244,255,.28)}
+body.auth-modern .auth-form input:focus{
+  border-color:rgba(255,49,49,.72);
+  background:rgba(255,255,255,.085);
+  box-shadow:0 0 0 4px rgba(255,49,49,.12);
+}
+body.auth-modern .btn{
+  border-radius:17px;
+  border-color:var(--auth-line);
+  color:var(--auth-cream);
+}
+body.auth-modern .btn--primary{
+  min-height:60px;
+  border-color:transparent;
+  background:linear-gradient(135deg, var(--auth-red), #7d1732);
+  color:#fff;
+  box-shadow:0 18px 48px -26px rgba(255,49,49,.9);
+}
+body.auth-modern .btn--primary::before{background:rgba(255,255,255,.12)}
+body.auth-modern .btn--ghost{
+  background:rgba(255,255,255,.045);
+  color:rgba(239,244,255,.8);
+}
+body.auth-modern .auth-alt{
+  color:rgba(239,244,255,.55);
+  border-color:rgba(239,244,255,.16);
+}
+body.auth-modern .auth-alt:hover{
+  color:var(--auth-red);
+  border-color:var(--auth-red);
+}
+body.auth-modern .account-type span{
+  border-color:var(--auth-line);
+  border-radius:18px;
+  background:rgba(255,255,255,.055);
+  color:#fff;
+}
+body.auth-modern .account-type i{color:rgba(239,244,255,.58)}
+body.auth-modern .account-type input:checked + span{
+  border-color:rgba(255,49,49,.72);
+  background:rgba(255,49,49,.16);
+  color:#fff;
+}
+body.auth-modern .auth-fields{
+  border-top-color:var(--auth-line);
+}
+body.auth-modern .terms-check a,
+body.auth-modern .auth-message.is-good{color:#86efac}
+body.auth-modern .auth-message{color:#ff9a9a}
+
+body.auth-modern .auth-account strong{color:#fff}
+body.auth-modern .auth-account > span{color:rgba(239,244,255,.58)}
+body.auth-modern .account-stats span,
+body.auth-modern .account-panel{
+  border-color:var(--auth-line);
+  background:rgba(255,255,255,.045);
+  border-radius:18px;
+}
+body.auth-modern .account-panel{padding:18px;margin-top:12px}
+body.auth-modern .account-profile p{border-bottom-color:rgba(239,244,255,.08)}
+body.auth-modern .account-profile span,
+body.auth-modern .account-stats i{color:rgba(239,244,255,.52)}
+body.auth-modern .account-profile strong,
+body.auth-modern .account-stats b{color:#fff}
+body.auth-modern .account-order,
+body.auth-modern .account-wish{
+  border-color:var(--auth-line);
+  background:rgba(255,255,255,.04);
+  color:#fff;
+}
+body.auth-modern .auth-logout{color:rgba(239,244,255,.64)}
+body.auth-modern .footer--slim{
+  background:#07050b;
+  border-top:1px solid rgba(239,244,255,.08);
+}
+
+@media (max-width:1023px){
+  body.auth-modern .auth-shell{grid-template-columns:1fr;align-items:start}
+  body.auth-modern .auth-panel{padding-bottom:0}
+  body.auth-modern .auth-panel h1{max-width:720px}
+}
+@media (max-width:639px){
+  body.auth-modern .auth-page{padding-top:96px}
+  body.auth-modern .auth-panel h1{font-size:clamp(2.55rem,15vw,4rem)}
+  body.auth-modern .auth-card{border-radius:24px}
+  body.auth-modern .auth-tabs button{letter-spacing:.12em}
+  body.auth-modern .otp-row{grid-template-columns:1fr}
+}
