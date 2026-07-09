@@ -578,6 +578,7 @@ const ORDER_BAG_SIZE_COUNT = 6;
 const ORDER_SIZE_QTY = ORDER_BAG_SIZE / ORDER_BAG_SIZE_COUNT;
 const ORDER_PACHKA_SIZE = 6;
 const ORDER_PACKAGE_UNITS = new Set(["pachka", "qop"]);
+const ORDER_PACKAGE_ALIASES = { qadoq: "pachka", pachka: "pachka", qop: "qop" };
 function defaultOrderSizes(gender, category) {
   if (gender === "kids" || category === "pajamas") return ["28", "30", "32", "34", "36", "38"];
   if (gender === "men") return ["46", "48", "50", "52", "54", "56"];
@@ -1131,8 +1132,8 @@ function formatTelegramOrder({ number, customer, items, total, orderType, paymen
   items.forEach((item, idx) => {
     const mix = (item.size_mix || []).map((m) => `${m.size}x${m.qty}`).join(", ");
     lines.push(`${idx + 1}. ${item.name}`);
-    const unit = item.unit_type === "piece" ? "dona" : item.unit_type === "pachka" ? "pachka" : "qop";
-    const packLabel = item.unit_type === "piece" ? "dona" : item.unit_type === "pachka" ? "pachka" : "qop";
+    const unit = item.unit_type === "piece" ? "dona" : item.unit_type === "pachka" ? "qadoq" : "qop";
+    const packLabel = item.unit_type === "piece" ? "dona" : item.unit_type === "pachka" ? "qadoq" : "qop";
     if (item.price_pending) {
       lines.push(`   ${item.qty} ${unit} · ${item.bag_size} dona/${packLabel} · narxni menejer tasdiqlaydi`);
     } else {
@@ -1527,8 +1528,8 @@ function publicProductCard(p, extra = {}) {
     desc: undefined,
     fabric: p.fabric,
     order_units: [
-      { unit_type: "pachka", label: "pachka", pieces: ORDER_PACHKA_SIZE, min_qty: 1 },
-      { unit_type: "qop", label: "qop", pieces: ORDER_BAG_SIZE, min_qty: 1 },
+      { unit_type: "pachka", label: "Qadoq", pieces: ORDER_PACHKA_SIZE, per_size: 1, min_qty: 1 },
+      { unit_type: "qop", label: "Qop", pieces: ORDER_BAG_SIZE, per_size: ORDER_SIZE_QTY, min_qty: 1 },
     ],
     ...extra,
   };
@@ -2506,7 +2507,7 @@ const api = {
       const rawQty = Number(it.qty);
       if (!Number.isInteger(rawQty) || rawQty < 1) return fail(res, 400, "invalid_qty");
       const requestedUnitType = str(it.unit_type || it.unit || "", 20).toLowerCase();
-      const wholesaleUnitType = ORDER_PACKAGE_UNITS.has(requestedUnitType) ? requestedUnitType : "qop";
+      const wholesaleUnitType = ORDER_PACKAGE_ALIASES[requestedUnitType] || (ORDER_PACKAGE_UNITS.has(requestedUnitType) ? requestedUnitType : "qop");
       const packagePieces = wholesaleUnitType === "pachka" ? ORDER_PACHKA_SIZE : ORDER_BAG_SIZE;
       const maxQty = orderType === "retail" ? 99 : Math.max(1, Math.floor((20 * ORDER_BAG_SIZE) / packagePieces));
       if (rawQty > maxQty) return fail(res, 400, "qty_limit");
