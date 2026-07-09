@@ -1523,7 +1523,7 @@ function smartProductScore(p, query) {
 function publicProductCard(p, extra = {}) {
   return {
     ...p,
-    images: (p.images || []).slice(0, 2),
+    images: (p.images || []).slice(0, 12),
     desc: undefined,
     fabric: p.fabric,
     order_units: [
