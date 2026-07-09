@@ -1527,7 +1527,6 @@ function publicProductCard(p, extra = {}) {
   return {
     ...p,
     images: (p.images || []).slice(0, 12),
-    desc: undefined,
     fabric: p.fabric,
     order_units: [
       { unit_type: "pachka", label: "Qadoq", pieces: ORDER_PACHKA_SIZE, per_size: 1, min_qty: 1 },

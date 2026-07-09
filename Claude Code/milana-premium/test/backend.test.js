@@ -561,6 +561,40 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const cookie = login.headers.get("set-cookie").split(";")[0];
   assert.match(cookie, /^sid=/);
 
+  const adminProductRes = await json(app.base + "/api/admin/products", {
+    name: "Gallery Product",
+    model_no: "GP-2026",
+    variant: "black-print",
+    gender: "women",
+    category: "loungewear",
+    price: 7,
+    wholesale_price: 7,
+    wholesale_moq: 6,
+    retail_enabled: true,
+    retail_price: 7,
+    retail_stock: 0,
+    available_qop: 10,
+    sizes: ["44", "46", "48", "50", "52", "54"],
+    images: ["/assets/img/hero.jpg", "/assets/img/about.jpg", "/assets/img/factory-1.jpg", "/assets/img/factory-2.jpg"],
+    colors: ["black + print"],
+    desc: {
+      en: "Admin-written product description.\nSecond customer-visible detail.",
+      ru: "Описание товара от администратора.",
+      uz: "Admin kiritgan mahsulot tavsifi.",
+    },
+    fabric: { en: "Cotton jersey", ru: "Хлопковый трикотаж", uz: "Paxta trikotaj" },
+    active: true,
+    sort: 2000,
+  }, { headers: { Cookie: cookie, Origin: app.base } });
+  assert.equal(adminProductRes.status, 201);
+  const adminProduct = await adminProductRes.json();
+  const publicProductsAfterCreate = await (await fetch(app.base + "/api/products?limit=1000")).json();
+  const publicAdminProduct = publicProductsAfterCreate.find((row) => row.id === adminProduct.id);
+  assert.ok(publicAdminProduct);
+  assert.deepEqual(publicAdminProduct.images, adminProduct.images);
+  assert.equal(publicAdminProduct.desc.en, "Admin-written product description.\nSecond customer-visible detail.");
+  assert.equal(publicAdminProduct.fabric.uz, "Paxta trikotaj");
+
   const adminOrders = await fetch(app.base + "/api/admin/orders", { headers: { Cookie: cookie } });
   assert.equal(adminOrders.status, 200);
   const orders = await adminOrders.json();
