@@ -1747,6 +1747,78 @@ function uniqueSlug(base, ignoreId = 0) {
   return slug;
 }
 
+const PRODUCT_COPY_LABELS = {
+  en: {
+    genders: { women: "women", men: "men", kids: "kids", unisex: "unisex" },
+    categories: { pajamas: "Pajamas", robes: "Robes", homewear: "Homewear", loungewear: "Loungewear" },
+    text: ({ name, category, gender, model, variant, sizes, price }) =>
+      `${name} — ${category} for ${gender}. Model ${model}${variant ? `, variant ${variant}` : ""}. Sizes: ${sizes}. Wholesale orders start from 1 Qadoq (6 pcs, 1 per size) or 1 Qop (60 pcs, 10 per size); availability and dispatch are confirmed by a manager.${price ? ` Unit price: ${price}.` : ""}`,
+  },
+  ru: {
+    genders: { women: "женский", men: "мужской", kids: "детский", unisex: "унисекс" },
+    categories: { pajamas: "Пижамы", robes: "Халаты", homewear: "Домашняя одежда", loungewear: "Лаунж-сеты" },
+    text: ({ name, category, gender, model, variant, sizes, price }) =>
+      `${name} — ${category.toLowerCase()}, ${gender}. Модель ${model}${variant ? `, вариант ${variant}` : ""}. Размеры: ${sizes}. Оптовый заказ от 1 Qadoq (6 шт., по 1 на размер) или 1 Qop (60 шт., по 10 на размер); финальную доступность и отправку подтверждает менеджер.${price ? ` Цена за 1 шт.: ${price}.` : ""}`,
+  },
+  uz: {
+    genders: { women: "ayollar", men: "erkaklar", kids: "bolalar", unisex: "uniseks" },
+    categories: { pajamas: "pijama", robes: "xalat", homewear: "uy kiyimi", loungewear: "lounge to'plam" },
+    text: ({ name, category, gender, model, variant, sizes, price }) =>
+      `${name} — ${gender} uchun ${category}. Model ${model}${variant ? `, variant ${variant}` : ""}. O'lchamlar: ${sizes}. Ulgurji buyurtma kamida 1 Qadoq (6 dona, har o'lchamdan 1 tadan) yoki 1 Qop (60 dona, har o'lchamdan 10 tadan); mavjudlik va jo'natishni menejer tasdiqlaydi.${price ? ` 1 dona narxi: ${price}.` : ""}`,
+  },
+};
+
+function productCopyPrice(p) {
+  const price = Number(p.wholesale_price || p.price || 0);
+  return price > 0 ? `$${price.toFixed(2)}` : "";
+}
+
+function compactModel(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9а-яё]+/gi, "");
+}
+
+function shouldRefreshGeneratedCopy(value, model) {
+  const text = String(value || "").trim();
+  if (!text) return true;
+  if (/\bpachka\b|\bqop\b/.test(text)) return true;
+  const modelKey = compactModel(model);
+  if (!modelKey) return false;
+  const generated = /Qadoq|Qop|Оптовый заказ|Wholesale orders|Ulgurji buyurtma/.test(text);
+  return generated && !compactModel(text).includes(modelKey);
+}
+
+function defaultProductDescription(p, lang) {
+  const labels = PRODUCT_COPY_LABELS[lang] || PRODUCT_COPY_LABELS.en;
+  const model = str(p.model_no || p.slug || p.name, 80) || "Milana";
+  const sizes = (Array.isArray(p.sizes) && p.sizes.length ? p.sizes : defaultOrderSizes(p.gender, p.category)).join(", ");
+  return labels.text({
+    name: p.name || "Milana product",
+    category: labels.categories[p.category] || p.category || "Catalog",
+    gender: labels.genders[p.gender] || p.gender || "unisex",
+    model,
+    variant: p.variant || "",
+    sizes,
+    price: productCopyPrice(p),
+  });
+}
+
+function normalizeProductLocalizedCopy(p) {
+  const desc = p.desc || {};
+  p.desc = {
+    en: shouldRefreshGeneratedCopy(desc.en, p.model_no) ? defaultProductDescription(p, "en") : String(desc.en).trim(),
+    ru: shouldRefreshGeneratedCopy(desc.ru, p.model_no) ? defaultProductDescription(p, "ru") : String(desc.ru).trim(),
+    uz: shouldRefreshGeneratedCopy(desc.uz, p.model_no) ? defaultProductDescription(p, "uz") : String(desc.uz).trim(),
+  };
+  const fabric = p.fabric || {};
+  const fallbackFabric = String(fabric.en || fabric.ru || fabric.uz || "").trim();
+  p.fabric = {
+    en: String(fabric.en || fallbackFabric || "Suprem · 100% cotton").trim(),
+    ru: String(fabric.ru || fallbackFabric || "Suprem · хлопок 100%").trim(),
+    uz: String(fabric.uz || fallbackFabric || "Suprem · 100% paxta").trim(),
+  };
+  return p;
+}
+
 function rowToProduct(r, lite = false) {
   const p = decorateProduct({
     id: r.id, slug: r.slug, name: r.name,
@@ -1770,7 +1842,7 @@ function rowToProduct(r, lite = false) {
   p.desc = { en: r.desc_en, ru: r.desc_ru, uz: r.desc_uz };
   p.fabric = { en: r.fabric_en, ru: r.fabric_ru, uz: r.fabric_uz };
   p.created_at = r.created_at;
-  return p;
+  return normalizeProductLocalizedCopy(p);
 }
 
 function validateProduct(b) {

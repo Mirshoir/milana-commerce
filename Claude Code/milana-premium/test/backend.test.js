@@ -579,9 +579,9 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     images: ["/assets/img/hero.jpg", "/assets/img/about.jpg", "/assets/img/factory-1.jpg", "/assets/img/factory-2.jpg"],
     colors: ["black + print"],
     desc: {
-      en: "Admin-written product description.\nSecond customer-visible detail.",
-      ru: "Описание товара от администратора.",
-      uz: "Admin kiritgan mahsulot tavsifi.",
+      en: "",
+      ru: "Gallery Product — лаунж-сеты, женский. Модель OLD-100. Размеры: 44, 46, 48, 50, 52, 54. Оптовый заказ от 1 Qadoq (6 шт., по 1 на размер) или 1 Qop (60 шт., по 10 на размер); финальную доступность и отправку подтверждает менеджер.",
+      uz: "",
     },
     fabric: { en: "Cotton jersey", ru: "Хлопковый трикотаж", uz: "Paxta trikotaj" },
     active: true,
@@ -600,7 +600,10 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   ]);
   assert.deepEqual(publicAdminProduct.images, adminProduct.images);
   assert.deepEqual(publicAdminProduct.colors, ["black-print"]);
-  assert.equal(publicAdminProduct.desc.en, "Admin-written product description.\nSecond customer-visible detail.");
+  assert.match(publicAdminProduct.desc.en, /Model GP-2026/);
+  assert.match(publicAdminProduct.desc.ru, /Модель GP-2026/);
+  assert.doesNotMatch(publicAdminProduct.desc.ru, /OLD-100/);
+  assert.match(publicAdminProduct.desc.uz, /Model GP-2026/);
   assert.equal(publicAdminProduct.fabric.uz, "Paxta trikotaj");
 
   const adminOrders = await fetch(app.base + "/api/admin/orders", { headers: { Cookie: cookie } });
