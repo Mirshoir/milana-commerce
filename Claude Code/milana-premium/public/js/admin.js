@@ -464,9 +464,9 @@
     if (!$("#f-fab-ru").value.trim()) $("#f-fab-ru").value = fabricRu;
     if (!$("#f-fab-uz").value.trim()) $("#f-fab-uz").value = fabricUz;
     if (!$("#f-fab-en").value.trim()) $("#f-fab-en").value = fabricEn;
-    const ru = `${name} — ${CLO_RU[category].toLowerCase()} для категории ${GENDER_RU[gender].toLowerCase()}. Модель ${model}${variant ? `, вариант ${variant}` : ""}. Размеры: ${sizes}. Оптовый заказ от 1 pachka (6 шт.) или 1 qop (60 шт.); финальную доступность и отправку подтверждает менеджер.${price ? ` Цена за 1 шт.: ${price}.` : ""}`;
-    const uz = `${name} — ${GENDER_UZ[gender]} uchun ${CLO_UZ[category]}. Model ${model}${variant ? `, variant ${variant}` : ""}. O'lchamlar: ${sizes}. Ulgurji buyurtma kamida 1 pachka (6 dona) yoki 1 qop (60 dona); mavjudlik va jo'natishni menejer tasdiqlaydi.${price ? ` 1 dona narxi: ${price}.` : ""}`;
-    const en = `${name} — ${CLO_EN[category]} for ${GENDER_EN[gender]}. Model ${model}${variant ? `, variant ${variant}` : ""}. Sizes: ${sizes}. Wholesale orders start from 1 pachka (6 pcs) or 1 qop (60 pcs); availability and dispatch are confirmed by a manager.${price ? ` Unit price: ${price}.` : ""}`;
+    const ru = `${name} — ${CLO_RU[category].toLowerCase()} для категории ${GENDER_RU[gender].toLowerCase()}. Модель ${model}${variant ? `, вариант ${variant}` : ""}. Размеры: ${sizes}. Оптовый заказ от 1 Qadoq (6 шт., по 1 на размер) или 1 Qop (60 шт., по 10 на размер); финальную доступность и отправку подтверждает менеджер.${price ? ` Цена за 1 шт.: ${price}.` : ""}`;
+    const uz = `${name} — ${GENDER_UZ[gender]} uchun ${CLO_UZ[category]}. Model ${model}${variant ? `, variant ${variant}` : ""}. O'lchamlar: ${sizes}. Ulgurji buyurtma kamida 1 Qadoq (6 dona, har o'lchamdan 1 tadan) yoki 1 Qop (60 dona, har o'lchamdan 10 tadan); mavjudlik va jo'natishni menejer tasdiqlaydi.${price ? ` 1 dona narxi: ${price}.` : ""}`;
+    const en = `${name} — ${CLO_EN[category]} for ${GENDER_EN[gender]}. Model ${model}${variant ? `, variant ${variant}` : ""}. Sizes: ${sizes}. Wholesale orders start from 1 Qadoq (6 pcs, 1 per size) or 1 Qop (60 pcs, 10 per size); availability and dispatch are confirmed by a manager.${price ? ` Unit price: ${price}.` : ""}`;
     if (!$("#f-desc-ru").value.trim()) $("#f-desc-ru").value = ru;
     if (!$("#f-desc-uz").value.trim()) $("#f-desc-uz").value = uz;
     if (!$("#f-desc-en").value.trim()) $("#f-desc-en").value = en;

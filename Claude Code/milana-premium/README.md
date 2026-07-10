@@ -4,8 +4,11 @@
 лендинг, каталог-маркетплейс, корзина с оформлением заказа и админ-панель
 для ручного управления товарами, заказами и контактами.
 
-Production database target: **PostgreSQL**. SQLite remains available as a local
-fallback while existing data is migrated.
+Current production database: **SQLite** at `data/milana.db`.
+
+The codebase also contains PostgreSQL migration tooling for a future move, but
+the live website/admin catalog is currently managed from the local SQLite
+database. The old external catalog integration is disabled in `server.js`.
 
 ---
 
@@ -37,22 +40,12 @@ npm run postgres:migrate:dry
 ## Источник каталога
 
 Публичный магазин (`/shop`, `/p/:slug`, корзина и оформление заказа) берёт товары
-из Supabase-каталога Milana Premium:
+из локальной SQLite-базы `data/milana.db`. Админ-панель создаёт и редактирует
+товары вручную в этой же базе.
 
-- URL проекта задаётся через `SUPABASE_URL`;
-- приватный серверный ключ — через `SUPABASE_SERVICE_KEY`;
-- таблица — `SUPABASE_PRODUCTS_TABLE` (по умолчанию `milana_products`);
-- bucket изображений — `SUPABASE_IMAGE_BUCKET` (по умолчанию `product-images`).
-
-Для локального запуска можно хранить эти значения в `data/supabase.env`. Этот файл
-добавлен в `.gitignore`, поэтому секреты не попадают в репозиторий. Если Supabase
-временно недоступен, сервер откатывается на локальные товары из SQLite.
-
-Отключить живой каталог можно так:
-
-```bash
-CATALOG_SOURCE_ENABLED=0 npm start
-```
+В коде остаются старые заготовки для внешнего Supabase/API-каталога, но сейчас
+они отключены: `server.js` выставляет `CATALOG_SOURCE_ENABLED = false`. Это
+сделано специально, чтобы сайт показывал только товары, добавленные админом.
 
 ## Клиентские аккаунты и Firebase
 
@@ -137,15 +130,15 @@ npm run postgres:migrate
 
 Файлы:
 
-- `postgres/schema.sql` — production schema для products, customers, orders,
+- `postgres/schema.sql` — future PostgreSQL schema для products, customers, orders,
   payments, support, audit, payment webhook idempotency и ERP events.
 - `tools/apply-postgres-schema.js` — применяет schema к `DATABASE_URL`.
 - `tools/migrate-sqlite-to-postgres.js` — переносит текущие данные из
   `data/milana.db` в PostgreSQL с сохранением ID.
 - `.env.postgres.example` — пример `DATABASE_URL`.
 
-Во время перехода текущий сервер ещё может читать SQLite, но целевая архитектура
-для сайта и приложения — один общий Postgres-backed API.
+Сейчас production читает SQLite. PostgreSQL-файлы нужны для будущей миграции,
+когда будет принято решение переносить сайт на общий Postgres-backed API.
 
 ## Как устроено хранение сейчас
 
