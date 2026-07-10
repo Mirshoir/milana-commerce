@@ -1291,6 +1291,11 @@ function likeCount(productId, slug) {
   `).get(Number(productId) || 0, str(slug, 120))?.count || 0);
 }
 
+function productColors(p) {
+  const raw = Array.isArray(p.colors) ? p.colors : String(p.variant || "").split(/[,;|]/);
+  return raw.map((color) => str(color, 80)).filter(Boolean).slice(0, 12);
+}
+
 function decorateProduct(p) {
   const summary = reviewSummary(p.id, p.slug);
   const storedReviews = Number(p.reviews) || 0;
@@ -1299,9 +1304,11 @@ function decorateProduct(p) {
   const rating = summary.count ? Math.round(summary.avg * 10) / 10 : (storedRating || 4.8);
   const wholesale = Number(p.wholesale_price || p.price || 0);
   const retail = Number(p.retail_price || p.price || wholesale || 0);
+  const colors = productColors(p);
   return {
     ...p,
     price: wholesale,
+    colors,
     wholesale_price: wholesale,
     wholesale_moq: Math.max(1, Math.round(Number(p.wholesale_moq) || ORDER_BAG_SIZE)),
     retail_enabled: p.retail_enabled !== false && Number(p.retail_enabled) !== 0,
@@ -1387,6 +1394,7 @@ function catalogRowToProduct(row) {
     sort: 1_000_000 - (Number(row.page) || 0) * 100 - (Number(row.card_index) || 0),
     desc: { en: text, ru: text, uz: text },
     fabric: { en: fabric, ru: fabric, uz: fabric },
+    colors: [],
     created_at: row.created_at || "",
     source: CATALOG_API_BASE ? "catalog_api" : "supabase_catalog",
     source_pdf: row.source_pdf,

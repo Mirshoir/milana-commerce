@@ -592,6 +592,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const publicAdminProduct = publicProductsAfterCreate.find((row) => row.id === adminProduct.id);
   assert.ok(publicAdminProduct);
   assert.deepEqual(publicAdminProduct.images, adminProduct.images);
+  assert.deepEqual(publicAdminProduct.colors, ["black-print"]);
   assert.equal(publicAdminProduct.desc.en, "Admin-written product description.\nSecond customer-visible detail.");
   assert.equal(publicAdminProduct.fabric.uz, "Paxta trikotaj");
 
