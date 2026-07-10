@@ -2559,6 +2559,7 @@ const api = {
     if (!/^[0-9+()\-\s]{5,25}$/.test(phone)) return fail(res, 400, "phone");
     if (source === "react_frontend" && customerCity.length < 2) return fail(res, 400, "city");
     if (source === "react_frontend" && customerAddress.length < 5) return fail(res, 400, "address");
+    if (source === "react_frontend" && customerPostcode.length < 3) return fail(res, 400, "postcode");
     const signedInCustomer = customerFromRequest(req);
     const requestedOrderType = b.order_type === "retail" ? "retail" : b.order_type === "wholesale" ? "wholesale" : "";
     const orderType = signedInCustomer?.account_type === "individual" ? "retail" : (requestedOrderType || "wholesale");

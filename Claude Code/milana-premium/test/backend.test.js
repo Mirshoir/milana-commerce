@@ -344,6 +344,15 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(missingReactDelivery.status, 400);
   assert.equal((await missingReactDelivery.json()).error, "address");
 
+  const missingReactPostcode = await json(app.base + "/api/orders", {
+    source: "react_frontend",
+    customer: { name: "React Buyer", phone: "+998 90 222 44 66", city: "Tashkent", address: "Amir Temur 12" },
+    items: [{ id: product.id, qty: 1, unit_type: "pachka" }],
+    lang: "uz",
+  });
+  assert.equal(missingReactPostcode.status, 400);
+  assert.equal((await missingReactPostcode.json()).error, "postcode");
+
   const sub1 = await json(app.base + "/api/newsletter", { email: "CLIENT@example.com", lang: "ru" });
   assert.equal(sub1.status, 201);
   const sub2 = await json(app.base + "/api/newsletter", { email: "client@example.com", lang: "ru" });
