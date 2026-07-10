@@ -338,7 +338,7 @@
     $("#f-price").value = p?.price ?? "";
     $("#f-old").value = p?.old_price ?? "";
     $("#f-wholesale-price").value = p?.wholesale_price ?? p?.price ?? "";
-    $("#f-wholesale-moq").value = p?.wholesale_moq ?? 6;
+    $("#f-wholesale-moq").value = 6;
     $("#f-available-qop").value = p?.available_qop ?? "";
     $("#f-retail-price").value = p?.retail_price ?? p?.price ?? "";
     $("#f-retail-stock").value = p?.retail_stock ?? 0;
@@ -490,7 +490,7 @@
       price: Number($("#f-price").value),
       old_price: $("#f-old").value === "" ? null : Number($("#f-old").value),
       wholesale_price: Number($("#f-wholesale-price").value || $("#f-price").value),
-      wholesale_moq: Number($("#f-wholesale-moq").value || 6),
+      wholesale_moq: 6,
       available_qop: $("#f-available-qop").value === "" ? null : Number($("#f-available-qop").value || 0),
       retail_enabled: $("#f-retail-enabled").checked,
       retail_price: Number($("#f-retail-price").value || $("#f-price").value),

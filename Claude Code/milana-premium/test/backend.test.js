@@ -570,7 +570,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     category: "loungewear",
     price: 7,
     wholesale_price: 7,
-    wholesale_moq: 6,
+    wholesale_moq: 8,
     retail_enabled: true,
     retail_price: 7,
     retail_stock: 0,
@@ -589,9 +589,15 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   }, { headers: { Cookie: cookie, Origin: app.base } });
   assert.equal(adminProductRes.status, 201);
   const adminProduct = await adminProductRes.json();
+  assert.equal(adminProduct.wholesale_moq, 6);
   const publicProductsAfterCreate = await (await fetch(app.base + "/api/products?limit=1000")).json();
   const publicAdminProduct = publicProductsAfterCreate.find((row) => row.id === adminProduct.id);
   assert.ok(publicAdminProduct);
+  assert.equal(publicAdminProduct.wholesale_moq, 6);
+  assert.deepEqual(publicAdminProduct.order_units.map((unit) => [unit.unit_type, unit.pieces, unit.per_size]), [
+    ["pachka", 6, 1],
+    ["qop", 60, 10],
+  ]);
   assert.deepEqual(publicAdminProduct.images, adminProduct.images);
   assert.deepEqual(publicAdminProduct.colors, ["black-print"]);
   assert.equal(publicAdminProduct.desc.en, "Admin-written product description.\nSecond customer-visible detail.");

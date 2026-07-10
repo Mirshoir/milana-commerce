@@ -1311,7 +1311,7 @@ function decorateProduct(p) {
     price: wholesale,
     colors,
     wholesale_price: wholesale,
-    wholesale_moq: Math.max(1, Math.round(Number(p.wholesale_moq) || ORDER_BAG_SIZE)),
+    wholesale_moq: ORDER_PACHKA_SIZE,
     retail_enabled: p.retail_enabled !== false && Number(p.retail_enabled) !== 0,
     retail_price: retail,
     retail_stock: Math.max(0, Math.round(Number(p.retail_stock) || 0)),
@@ -1784,7 +1784,7 @@ function validateProduct(b) {
   if (!(price > 0 && price < 1e9)) throw new Error("price");
   const wholesale_price = Number(b.wholesale_price || b.price);
   if (!(wholesale_price > 0 && wholesale_price < 1e9)) throw new Error("wholesale_price");
-  const wholesale_moq = Math.max(ORDER_PACHKA_SIZE, Math.min(10000, Math.round(Number(b.wholesale_moq) || ORDER_PACHKA_SIZE)));
+  const wholesale_moq = ORDER_PACHKA_SIZE;
   const retail_enabled = b.retail_enabled === false ? 0 : 1;
   const retail_price = Number(b.retail_price || b.price);
   if (retail_enabled && !(retail_price > 0 && retail_price < 1e9)) throw new Error("retail_price");
