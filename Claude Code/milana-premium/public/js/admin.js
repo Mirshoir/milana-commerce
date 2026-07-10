@@ -100,6 +100,40 @@
     setTimeout(() => el.classList.remove("is-on"), 2200);
   }
 
+  function confirmAction({ title, message, confirmText = "Подтвердить", cancelText = "Отмена", danger = false }) {
+    return new Promise((resolve) => {
+      const modal = document.createElement("div");
+      modal.className = "aconfirm";
+      modal.innerHTML = `
+        <div class="aconfirm__shade" data-confirm-cancel></div>
+        <section class="aconfirm__panel" role="dialog" aria-modal="true" aria-labelledby="aconfirm-title">
+          <div class="aconfirm__mark ${danger ? "aconfirm__mark--danger" : ""}">${danger ? "!" : "✓"}</div>
+          <h2 id="aconfirm-title">${esc(title)}</h2>
+          <p>${esc(message)}</p>
+          <div class="aconfirm__actions">
+            <button class="abtn" type="button" data-confirm-cancel>${esc(cancelText)}</button>
+            <button class="abtn ${danger ? "abtn--danger-fill" : "abtn--primary"}" type="button" data-confirm-ok>${esc(confirmText)}</button>
+          </div>
+        </section>`;
+      const done = (value) => {
+        document.removeEventListener("keydown", onKey);
+        modal.remove();
+        resolve(value);
+      };
+      const onKey = (e) => {
+        if (e.key === "Escape") done(false);
+        if (e.key === "Enter") done(true);
+      };
+      modal.addEventListener("click", (e) => {
+        if (e.target.closest("[data-confirm-ok]")) done(true);
+        if (e.target.closest("[data-confirm-cancel]")) done(false);
+      });
+      document.addEventListener("keydown", onKey);
+      document.body.appendChild(modal);
+      modal.querySelector("[data-confirm-cancel]")?.focus();
+    });
+  }
+
   function phoneHref(phone) {
     const raw = String(phone || "").trim();
     return raw ? "tel:" + raw.replace(/[^\d+]/g, "") : "";
@@ -247,7 +281,13 @@
       } catch (ex) { toast("Ошибка: " + ex.message); }
     }
     if (btn.dataset.act === "del") {
-      if (!confirm(`Удалить «${p.name}»? Это действие необратимо.`)) return;
+      const confirmed = await confirmAction({
+        title: "Удалить товар?",
+        message: `«${p.name}» будет удалён из админки и сайта. Это действие нельзя отменить.`,
+        confirmText: "Удалить товар",
+        danger: true,
+      });
+      if (!confirmed) return;
       try {
         await api("/api/admin/products/" + id, { method: "DELETE" });
         products = products.filter((x) => x.id !== id);
