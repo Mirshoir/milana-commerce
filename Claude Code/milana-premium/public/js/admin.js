@@ -185,6 +185,28 @@
     `;
   }
 
+  function renderOrderItem(i = {}) {
+    const bagSize = i.bag_size || 60;
+    const unit = i.unit_price ? `${esc(i.unit_price)} × ${bagSize}` : `${bagSize} dona`;
+    const mix = Array.isArray(i.size_mix) && i.size_mix.length
+      ? i.size_mix.map((m) => `${esc(m.size)}×${m.qty}`).join(", ")
+      : "";
+    const unitLabel = i.unit_type === "piece" ? "Dona" : i.unit_type === "pachka" ? "Qadoq" : "Qop";
+    const details = [
+      i.color ? `<span><b>Rang:</b> ${esc(i.color)}</span>` : "",
+      i.size ? `<span><b>O'lcham:</b> ${esc(i.size)}</span>` : "",
+      mix ? `<span><b>Mix:</b> ${mix}</span>` : "",
+      `<span><b>${unitLabel}:</b> ${unit}</span>`,
+    ].filter(Boolean).join("");
+    return `
+      <div class="oitem">
+        <b>${esc(i.name)}</b>
+        <span class="oitem__qty">× ${esc(i.qty)} ${unitLabel.toLowerCase()}</span>
+        <small>${details}</small>
+      </div>
+    `;
+  }
+
   /* ---------------- auth ---------------- */
   async function showApp() {
     await Promise.all([loadProducts(), loadCustomers(), loadOrders(), loadReviews(), loadChat(), loadSupport()]);
@@ -593,15 +615,7 @@
         <td class="odate">${esc((o.created_at || "").slice(0, 16).replace("T", " "))}</td>
         <td class="ocust">${renderCustomerCell(customer)}</td>
         <td>${o.order_type === "retail" ? "Розница" : "Опт"}</td>
-        <td class="oitems">${o.items.map((i) => {
-          const bagSize = i.bag_size || 60;
-          const unit = i.unit_price ? ` · ${i.unit_price} × ${bagSize}` : "";
-          const mix = Array.isArray(i.size_mix) && i.size_mix.length
-            ? " · " + i.size_mix.map((m) => `${esc(m.size)}×${m.qty}`).join(", ")
-            : "";
-          const unitLabel = i.unit_type === "piece" ? "pcs" : i.unit_type === "pachka" ? "pachka" : "qop";
-          return `<b>${esc(i.name)}</b> × ${i.qty} ${unitLabel}${unit}${mix}`;
-        }).join("<br>")}</td>
+        <td class="oitems">${o.items.map(renderOrderItem).join("")}</td>
         <td class="osum">${o.total}</td>
         <td class="opay">
           <b>${esc(PAYMENT_METHOD_RU[pay.method] || pay.method || "—")}</b>

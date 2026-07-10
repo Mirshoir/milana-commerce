@@ -211,8 +211,15 @@ textarea.admin-searchbox{
 .odelivery small{color:var(--ink);line-height:1.35}
 .odelivery--note{background:rgba(216,163,95,.08);border-color:rgba(216,163,95,.28)}
 .odelivery--note span{color:#9b5847}
-.oitems{font-size:.8rem;color:var(--soft);max-width:320px}
-.oitems b{color:var(--ink);font-weight:500}
+.oitems{font-size:.8rem;color:var(--soft);min-width:260px;max-width:360px}
+.oitem{padding:8px 0;border-bottom:1px solid var(--line)}
+.oitem:first-child{padding-top:0}
+.oitem:last-child{border-bottom:0;padding-bottom:0}
+.oitem>b{color:var(--ink);font-weight:650}
+.oitem__qty{color:var(--burgundy);font-weight:700;margin-left:5px;white-space:nowrap}
+.oitem small{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+.oitem small span{display:inline-flex;gap:3px;align-items:center;border:1px solid rgba(92,31,45,.12);border-radius:999px;background:rgba(255,255,255,.46);padding:3px 7px;line-height:1.2}
+.oitem small b{color:var(--ink);font-weight:700}
 .osel{padding:7px 9px;border:1px solid var(--line);border-radius:3px;background:#fff;font:inherit;font-size:.8rem;cursor:pointer}
 .osel--new{border-color:var(--burgundy);color:var(--burgundy);font-weight:600}
 .osum{font-weight:600;white-space:nowrap}
