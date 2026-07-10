@@ -2147,17 +2147,25 @@ const api = {
     if (phone && !/^[0-9+()\-\s]{5,25}$/.test(phone)) return fail(res, 400, "phone");
     if (!ACCOUNT_TYPES.includes(accountType)) return fail(res, 400, "account_type");
     if (!termsAccepted(b.terms_accepted || b.terms)) return fail(res, 400, "terms");
-    if (!phone) return fail(res, 400, "phone");
-    const normalizedPhone = normalizePhone(phone);
-    let otpRow = db.prepare("SELECT verified_at FROM phone_otps WHERE phone=? AND verified_at!=''").get(normalizedPhone);
-    if (!otpRow && /^\d{6}$/.test(str(b.otp_code, 12))) {
+    const normalizedPhone = phone ? normalizePhone(phone) : "";
+    const emailCode = str(b.email_code || b.code, 12);
+    let emailOtpRow = db.prepare("SELECT verified_at FROM email_otps WHERE email=? AND verified_at!=''").get(email);
+    if (!emailOtpRow && /^\d{6}$/.test(emailCode)) {
+      const row = db.prepare("SELECT * FROM email_otps WHERE email=?").get(email);
+      if (row && Date.now() <= Number(row.expires_at || 0) && row.code_hash === hashEmailOtp(email, emailCode)) {
+        db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
+        emailOtpRow = { verified_at: new Date().toISOString() };
+      }
+    }
+    let otpRow = normalizedPhone ? db.prepare("SELECT verified_at FROM phone_otps WHERE phone=? AND verified_at!=''").get(normalizedPhone) : null;
+    if (!otpRow && normalizedPhone && /^\d{6}$/.test(str(b.otp_code, 12))) {
       const row = db.prepare("SELECT * FROM phone_otps WHERE phone=?").get(normalizedPhone);
       if (row && Date.now() <= Number(row.expires_at || 0) && row.code_hash === hashOtp(normalizedPhone, str(b.otp_code, 12))) {
         db.prepare("UPDATE phone_otps SET verified_at=datetime('now') WHERE phone=?").run(normalizedPhone);
         otpRow = { verified_at: new Date().toISOString() };
       }
     }
-    if (!otpRow) return fail(res, 400, "phone_not_verified");
+    if (!emailOtpRow && !otpRow) return fail(res, 400, "email_not_verified");
     if (str(b.name, 80).length < 2) return fail(res, 400, "name");
     if (db.prepare("SELECT id FROM customers WHERE email=?").get(email)) return fail(res, 409, "email_exists");
     const customer = upsertCustomer({
@@ -2175,7 +2183,7 @@ const api = {
       expected_volume: str(b.expected_volume, 80),
       business_license_url: str(b.business_license_url, 300),
       terms_accepted_at: new Date().toISOString(),
-      phone_verified: 1,
+      phone_verified: otpRow ? 1 : 0,
       provider: "local",
       password_hash: hashPassword(password),
     });

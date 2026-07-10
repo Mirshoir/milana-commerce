@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/css/fonts.css">
   <link rel="stylesheet" href="/css/style.css?v=20260702-responsive1">
   <link rel="stylesheet" href="/css/shop.css?v=20260703-zoom1">
-  <link rel="stylesheet" href="/css/auth-modern.css?v=20260710-auth2">
+  <link rel="stylesheet" href="/css/auth-modern.css?v=20260710-auth3">
   <script>document.documentElement.classList.replace('no-js','js');</script>
 </head>
 <body class="auth-modern" data-keep-title="1">
@@ -73,8 +73,8 @@
     <div class="container auth-shell">
       <section class="auth-panel">
         <p class="overline"><span class="overline__num">MILANA</span><span class="overline__rule"></span><span data-i18n="auth.overline">Secure account</span></p>
-        <h1 data-i18n="auth.title">Account access</h1>
-        <p class="auth-panel__lead" data-i18n="auth.lead">Sign in, recover your password, or create a customer account for Milana orders.</p>
+        <h1 data-i18n="auth.title" data-auth-title>Account access</h1>
+        <p class="auth-panel__lead" data-i18n="auth.lead" data-auth-lead>Sign in, recover your password, or create a customer account for Milana orders.</p>
         <div class="auth-benefits">
           <p data-i18n="auth.b1">Qadoq and qop package rules are saved with every order.</p>
           <p data-i18n="auth.b2">Order history, delivery details, and saved models stay in one place.</p>
@@ -103,14 +103,15 @@
           </div>
           <div class="auth-fields">
             <label><span data-i18n="auth.name">Full name</span><input name="name" autocomplete="name" maxlength="80" required></label>
-            <label><span data-i18n="cart.address">Delivery address</span><input name="address" autocomplete="street-address" maxlength="300" placeholder="Optional"></label>
+            <label><span data-i18n="cart.city">City</span><input name="city" autocomplete="address-level2" maxlength="80" data-i18n-ph="auth.cityPh" placeholder="Example: Tashkent"></label>
+            <label><span data-i18n="cart.address">Delivery address</span><input name="address" autocomplete="street-address" maxlength="300" data-i18n-ph="auth.addressPh" placeholder="Street, building, landmark"></label>
           </div>
           <label><span data-i18n="auth.phone">Phone</span><input name="phone" autocomplete="tel" maxlength="25" placeholder="+998 90 123 45 67" required></label>
+          <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
           <div class="otp-row">
-            <label><span data-i18n="auth.phoneCode">Phone code</span><input name="otp_code" inputmode="numeric" maxlength="6" data-i18n-ph="auth.codePh" placeholder="6-digit code"></label>
+            <label><span data-i18n="auth.emailCode">Email code</span><input name="email_code" inputmode="numeric" maxlength="6" data-i18n-ph="auth.codePh" placeholder="6-digit code"></label>
             <button class="btn btn--ghost" type="button" data-auth-otp-send data-i18n="auth.sendCode">Send code</button>
           </div>
-          <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
           <label><span data-i18n="auth.password">Password</span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
           <label class="terms-check"><input name="terms" type="checkbox" required><span><span data-i18n="auth.acceptTerms">I accept the</span> <a href="/terms" target="_blank" data-i18n="auth.terms">Terms & Conditions</a>.</span></label>
           <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.createAccount">Create account</span><svg class="ic"><use href="#i-arrow"/></svg></button>
@@ -180,7 +181,7 @@
 
   <script src="/js/i18n.js" defer></script>
   <script src="/js/app-state.js?v=20260702-responsive1" defer></script>
-  <script src="/js/auth.js?v=20260710-auth2" defer></script>
+  <script src="/js/auth.js?v=20260710-auth3" defer></script>
   <script src="/js/cart.js" defer></script>
   <script src="/js/chat-widget.js?v=20260703-chatbot2" defer></script>
   <script src="/js/menu.js?v=20260702-responsive1" defer></script>

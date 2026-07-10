@@ -193,9 +193,9 @@
       if (!["business", "individual"].includes(data.account_type)) throw new Error("account_type");
       if (!data.terms) throw new Error("terms");
       if (!/^[0-9+()\-\s]{5,25}$/.test(String(data.phone || ""))) throw new Error("phone");
-      if (!/^\d{6}$/.test(String(data.otp_code || ""))) throw new Error("otp");
+      if (!/^\d{6}$/.test(String(data.email_code || ""))) throw new Error("otp");
       if (String(data.name || "").trim().length < 2) throw new Error("name");
-      await json("/api/auth/otp/verify", { phone: data.phone, code: data.otp_code });
+      await json("/api/auth/email-otp/verify", { email: data.email, code: data.email_code });
     }
     const res = await json(mode === "signup" ? "/api/auth/signup" : "/api/auth/signin", data);
     me = res.customer || null;
@@ -260,10 +260,10 @@
         const form = otp.closest("form");
         const data = formData(form);
         try {
-          if (!/^[0-9+()\-\s]{5,25}$/.test(String(data.phone || ""))) throw new Error("phone");
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(data.email || ""))) throw new Error("email");
           startCodeCooldown(otp);
-          const res = await json("/api/auth/otp/start", { phone: data.phone, lang: I18N.lang });
-          setMsg("signup", res.dev_code ? I18N.t("auth.localCode", { code: res.dev_code }) : I18N.t("auth.codeSent"), false);
+          const res = await json("/api/auth/email-otp/start", { email: data.email, lang: I18N.lang });
+          setMsg("signup", res.dev_code ? I18N.t("auth.localEmailCode", { code: res.dev_code }) : I18N.t("auth.emailCodeSent"), false);
         } catch (ex) {
           setMsg("signup", friendly(ex.message));
         }
@@ -345,6 +345,11 @@
 
   function switchTab(mode) {
     if (!["signin", "signup", "recover"].includes(mode)) mode = "signin";
+    const pageModeCopy = {
+      signin: { title: "auth.title", lead: "auth.lead" },
+      signup: { title: "auth.signupTitle", lead: "auth.signupLead" },
+      recover: { title: "auth.recoverTitle", lead: "auth.recoverLead" },
+    };
     document.querySelectorAll("[data-auth-message]").forEach((el) => {
       el.textContent = "";
       el.hidden = true;
@@ -355,6 +360,14 @@
     });
     document.querySelectorAll("[data-auth-tab]").forEach((b) => b.classList.toggle("is-on", b.dataset.authTab === mode));
     document.querySelectorAll("[data-auth-form]").forEach((f) => f.classList.toggle("is-on", f.dataset.authForm === mode));
+    document.querySelectorAll("[data-auth-title]").forEach((el) => {
+      el.dataset.i18n = pageModeCopy[mode].title;
+      el.textContent = t(pageModeCopy[mode].title);
+    });
+    document.querySelectorAll("[data-auth-lead]").forEach((el) => {
+      el.dataset.i18n = pageModeCopy[mode].lead;
+      el.textContent = t(pageModeCopy[mode].lead);
+    });
     const next = mode === "signin" ? "/signin" : `/signin?mode=${encodeURIComponent(mode)}`;
     if (location.pathname === "/signin" && location.search !== (mode === "signin" ? "" : `?mode=${mode}`)) {
       history.replaceState(null, "", next);
@@ -379,6 +392,7 @@
       sms_failed: t("auth.errSmsFailed"),
       email_not_configured: t("auth.errEmailConfig"),
       email_failed: t("auth.errEmailSend"),
+      email_not_verified: t("auth.errEmailVerify"),
       rate_limited: t("auth.errRateLimited"),
       phone_not_verified: t("auth.errPhoneVerify"),
       name: t("auth.errName"),

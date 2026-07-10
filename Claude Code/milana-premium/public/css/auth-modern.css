@@ -87,7 +87,7 @@ body.auth-modern .auth-panel h1{
   font-size:clamp(3.1rem,7vw,6.8rem);
   font-weight:700;
   line-height:.9;
-  letter-spacing:-.04em;
+  letter-spacing:0;
   color:#fff;
 }
 body.auth-modern .auth-panel__lead{
@@ -125,6 +125,9 @@ body.auth-modern .auth-card.is-recovering{
   max-width:520px;
   margin-left:auto;
 }
+body.auth-modern .auth-card.is-recovering .auth-tabs{
+  grid-template-columns:1fr;
+}
 body.auth-modern .auth-card::before{
   content:"";
   position:absolute;
@@ -141,6 +144,13 @@ body.auth-modern .auth-tabs{
 }
 body.auth-modern .auth-card.is-recovering .auth-tabs{
   opacity:.72;
+}
+body.auth-modern .auth-card.is-recovering [data-auth-tab="signup"]{
+  display:none;
+}
+body.auth-modern .auth-card.is-recovering [data-auth-tab="signin"]{
+  background:rgba(255,255,255,.045);
+  color:rgba(239,244,255,.72);
 }
 body.auth-modern .auth-tabs button{
   min-height:54px;
