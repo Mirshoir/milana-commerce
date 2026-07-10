@@ -109,7 +109,7 @@ db.exec(`
     rating REAL DEFAULT 0,
     reviews INTEGER DEFAULT 0,
     wholesale_price REAL DEFAULT 0,
-    wholesale_moq INTEGER DEFAULT 60,
+    wholesale_moq INTEGER DEFAULT 6,
     retail_enabled INTEGER DEFAULT 1,
     retail_price REAL DEFAULT 0,
     retail_stock INTEGER DEFAULT 0,
@@ -636,7 +636,7 @@ const seedMod = require("./seed.js");
   if (!cols.includes("variant")) db.exec("ALTER TABLE products ADD COLUMN variant TEXT DEFAULT ''");
   if (!cols.includes("gender")) db.exec("ALTER TABLE products ADD COLUMN gender TEXT DEFAULT ''");
   if (!cols.includes("wholesale_price")) db.exec("ALTER TABLE products ADD COLUMN wholesale_price REAL DEFAULT 0");
-  if (!cols.includes("wholesale_moq")) db.exec("ALTER TABLE products ADD COLUMN wholesale_moq INTEGER DEFAULT 60");
+  if (!cols.includes("wholesale_moq")) db.exec("ALTER TABLE products ADD COLUMN wholesale_moq INTEGER DEFAULT 6");
   if (!cols.includes("retail_enabled")) db.exec("ALTER TABLE products ADD COLUMN retail_enabled INTEGER DEFAULT 1");
   if (!cols.includes("retail_price")) db.exec("ALTER TABLE products ADD COLUMN retail_price REAL DEFAULT 0");
   if (!cols.includes("retail_stock")) db.exec("ALTER TABLE products ADD COLUMN retail_stock INTEGER DEFAULT 0");
@@ -644,7 +644,7 @@ const seedMod = require("./seed.js");
   if (!cols.includes("like_count")) db.exec("ALTER TABLE products ADD COLUMN like_count INTEGER DEFAULT 0");
   db.exec("UPDATE products SET wholesale_price=price WHERE COALESCE(wholesale_price,0)<=0");
   db.exec("UPDATE products SET retail_price=price WHERE COALESCE(retail_price,0)<=0");
-  db.exec("UPDATE products SET wholesale_moq=60 WHERE COALESCE(wholesale_moq,0)<=0");
+  db.exec("UPDATE products SET wholesale_moq=6 WHERE COALESCE(wholesale_moq,0)!=6");
 
   // backfill any row lacking a gender (old single-category data or imports)
   const stale = db.prepare("SELECT id, slug, category FROM products WHERE gender IS NULL OR gender=''").all();
@@ -1825,7 +1825,7 @@ function rowToProduct(r, lite = false) {
     model_no: r.model_no || "", variant: r.variant || "", gender: r.gender || "unisex", category: r.category,
     price: r.price, old_price: r.old_price,
     wholesale_price: r.wholesale_price || r.price,
-    wholesale_moq: r.wholesale_moq || ORDER_BAG_SIZE,
+    wholesale_moq: ORDER_PACHKA_SIZE,
     retail_enabled: r.retail_enabled,
     retail_price: r.retail_price || r.price,
     retail_stock: r.retail_stock || 0,

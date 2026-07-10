@@ -9,6 +9,7 @@ const os = require("node:os");
 const path = require("node:path");
 const net = require("node:net");
 const { spawn } = require("node:child_process");
+const { DatabaseSync } = require("node:sqlite");
 
 async function freePort() {
   return await new Promise((resolve, reject) => {
@@ -590,6 +591,9 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(adminProductRes.status, 201);
   const adminProduct = await adminProductRes.json();
   assert.equal(adminProduct.wholesale_moq, 6);
+  const sqlite = new DatabaseSync(path.join(app.dataDir, "milana.db"));
+  t.after(() => sqlite.close());
+  assert.equal(sqlite.prepare("SELECT wholesale_moq FROM products WHERE id=?").get(adminProduct.id).wholesale_moq, 6);
   const publicProductsAfterCreate = await (await fetch(app.base + "/api/products?limit=1000")).json();
   const publicAdminProduct = publicProductsAfterCreate.find((row) => row.id === adminProduct.id);
   assert.ok(publicAdminProduct);
