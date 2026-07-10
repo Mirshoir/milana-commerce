@@ -299,6 +299,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const products = await (await fetch(app.base + "/api/products?limit=1")).json();
   assert.equal(products.length, 1);
   const product = products[0];
+  const selectedColor = product.colors?.[0] || "catalog color";
   assert.equal(product.price_visible, true);
   assert.equal(product.price > 0, true);
 
@@ -312,7 +313,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const orderRes = await json(app.base + "/api/orders", {
     customer: { name: "Test Customer", phone: "+998 90 123 45 67", city: "Tashkent" },
     payment: { method: "bank" },
-    items: [{ id: product.id, qty: 2, unit_type: "qop", size: product.sizes[0] || "" }],
+    items: [{ id: product.id, qty: 2, unit_type: "qop", size: product.sizes[0] || "", color: selectedColor }],
     lang: "en",
   });
   assert.equal(orderRes.status, 201);
@@ -608,6 +609,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(adminOrder.payment.amount, order.total);
   assert.equal(adminOrder.items[0].bag_size, 60);
   assert.equal(adminOrder.items[0].unit_type, "qop");
+  assert.equal(adminOrder.items[0].color, selectedColor);
   assert.equal(adminOrder.items[0].unit_price, product.price);
   assert.equal(adminOrder.items[0].price, Math.round(product.price * 60 * 100) / 100);
   const expectedSizes = [...product.sizes, "44", "46", "48", "50", "52", "54"]

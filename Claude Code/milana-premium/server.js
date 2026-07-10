@@ -1136,6 +1136,7 @@ function formatTelegramOrder({ number, customer, items, total, orderType, paymen
     lines.push(`${idx + 1}. ${item.name}`);
     const unit = item.unit_type === "piece" ? "dona" : item.unit_type === "pachka" ? "qadoq" : "qop";
     const packLabel = item.unit_type === "piece" ? "dona" : item.unit_type === "pachka" ? "qadoq" : "qop";
+    if (item.color) lines.push(`   Rang: ${item.color}`);
     if (item.price_pending) {
       lines.push(`   ${item.qty} ${unit} · ${item.bag_size} dona/${packLabel} · narxni menejer tasdiqlaydi`);
     } else {
@@ -2018,6 +2019,8 @@ const api = {
           unit_price: item.unit_price,
           bag_size: item.bag_size,
           unit_type: item.unit_type,
+          size: item.size || "",
+          color: item.color || "",
           image: item.image || "",
           images: item.image ? [item.image] : [],
           price: item.price,
@@ -2519,6 +2522,10 @@ const api = {
       const gender = product ? product.gender : row.gender;
       const category = product ? product.category : row.category;
       const sourceProduct = product || rowToProduct(row);
+      const productColorOptions = productColors(sourceProduct);
+      const requestedColor = str(it.color || it.variant || "", 120);
+      const requestedSize = str(it.size || it.selected_size || "", 120);
+      const color = requestedColor || productColorOptions[0] || "";
       const pricing = priceForCustomer(sourceProduct, signedInCustomer, orderType);
       const retailEnabled = product ? product.retail_enabled !== false : Number(row.retail_enabled) !== 0;
       const availableQop = product ? product.available_qop : row.available_qop;
@@ -2554,7 +2561,7 @@ const api = {
         }
       }
       items.push({
-        id, slug, name, qty, unit_price, bag_size, unit_type, size_mix, price, image: images[0] || "",
+        id, slug, name, qty, unit_price, bag_size, unit_type, size: requestedSize, color, size_mix, price, image: images[0] || "",
         price_pending,
         price_source: pricing.source,
         price_label: pricing.label,
