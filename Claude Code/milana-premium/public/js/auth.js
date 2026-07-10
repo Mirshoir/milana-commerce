@@ -344,13 +344,21 @@
   }
 
   function switchTab(mode) {
+    if (!["signin", "signup", "recover"].includes(mode)) mode = "signin";
     document.querySelectorAll("[data-auth-message]").forEach((el) => {
       el.textContent = "";
       el.hidden = true;
       el.classList.remove("is-good");
     });
+    document.querySelectorAll("[data-auth-page]").forEach((page) => {
+      page.classList.toggle("is-recovering", mode === "recover");
+    });
     document.querySelectorAll("[data-auth-tab]").forEach((b) => b.classList.toggle("is-on", b.dataset.authTab === mode));
     document.querySelectorAll("[data-auth-form]").forEach((f) => f.classList.toggle("is-on", f.dataset.authForm === mode));
+    const next = mode === "signin" ? "/signin" : `/signin?mode=${encodeURIComponent(mode)}`;
+    if (location.pathname === "/signin" && location.search !== (mode === "signin" ? "" : `?mode=${mode}`)) {
+      history.replaceState(null, "", next);
+    }
   }
 
   function friendly(code) {

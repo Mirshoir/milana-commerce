@@ -41,7 +41,7 @@ body.auth-modern .lang button.is-on{background:var(--auth-red);color:#fff}
 body.auth-modern .auth-page{
   position:relative;
   min-height:calc(100vh - 74px);
-  padding-top:clamp(118px,14vh,158px);
+  padding-top:clamp(104px,12vh,140px);
   padding-bottom:clamp(56px,8vw,100px);
   overflow:hidden;
 }
@@ -61,7 +61,7 @@ body.auth-modern .auth-shell{
   position:relative;
   z-index:1;
   display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(390px,520px);
+  grid-template-columns:minmax(0,0.9fr) minmax(420px,560px);
   align-items:center;
   gap:clamp(28px,5vw,80px);
 }
@@ -121,6 +121,10 @@ body.auth-modern .auth-card{
   padding:clamp(22px,3vw,34px);
   box-shadow:0 28px 90px -42px rgba(0,0,0,.88), inset 0 1px 0 rgba(255,255,255,.07);
 }
+body.auth-modern .auth-card.is-recovering{
+  max-width:520px;
+  margin-left:auto;
+}
 body.auth-modern .auth-card::before{
   content:"";
   position:absolute;
@@ -134,6 +138,9 @@ body.auth-modern .auth-tabs{
   background:rgba(0,0,0,.18);
   padding:5px;
   margin-bottom:24px;
+}
+body.auth-modern .auth-card.is-recovering .auth-tabs{
+  opacity:.72;
 }
 body.auth-modern .auth-tabs button{
   min-height:54px;
@@ -196,6 +203,14 @@ body.auth-modern .auth-alt{
   color:rgba(239,244,255,.55);
   border-color:rgba(239,244,255,.16);
 }
+body.auth-modern .auth-card.is-recovering .auth-alt{
+  width:100%;
+  min-height:48px;
+  border:1px solid rgba(239,244,255,.16);
+  border-radius:14px;
+  display:grid;
+  place-items:center;
+}
 body.auth-modern .auth-alt:hover{
   color:var(--auth-red);
   border-color:var(--auth-red);
@@ -249,6 +264,7 @@ body.auth-modern .footer--slim{
   body.auth-modern .auth-shell{grid-template-columns:1fr;align-items:start}
   body.auth-modern .auth-panel{padding-bottom:0}
   body.auth-modern .auth-panel h1{max-width:720px}
+  body.auth-modern .auth-card.is-recovering{max-width:none;margin-left:0}
 }
 @media (max-width:639px){
   body.auth-modern .auth-page{padding-top:96px}
