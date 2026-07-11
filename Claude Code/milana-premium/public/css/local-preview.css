@@ -226,3 +226,21 @@ body{min-width:320px}
 .gallery video{height:100%;min-height:280px;object-fit:cover;background:var(--ink)}
 .gallery .media-tile--video:hover video{transform:none}
 @media(max-width:680px){.gallery video{min-height:100%}}
+
+.pdp-grid{grid-template-columns:minmax(0,1fr) minmax(360px,460px);gap:clamp(34px,4vw,64px)}
+.nike-gallery{display:grid;grid-template-columns:72px minmax(0,1fr);gap:14px;align-items:start}
+.nike-gallery .gallery-thumbs{position:sticky;top:112px;display:grid;gap:9px;max-height:calc(100svh - 135px);overflow:auto;scrollbar-width:none}
+.nike-gallery .gallery-thumbs::-webkit-scrollbar{display:none}
+.gallery-thumb{position:relative;width:72px;aspect-ratio:1/1.08;padding:0;border-radius:5px;background:#ecebea;overflow:hidden;border:1px solid transparent}
+.gallery-thumb.is-on{border-color:var(--ink)}
+.gallery-thumb img{width:100%;height:100%;object-fit:cover}
+.gallery-thumb span{position:absolute;inset:auto 6px 6px auto;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:rgba(1,8,40,.78);color:#fff;font-size:10px}
+.gallery-stage{position:relative;min-height:min(72svh,760px);border-radius:7px;background:#f2f2f0;overflow:hidden}
+.gallery-stage .media-tile{display:block;width:100%;height:min(72svh,760px);padding:0;background:#f2f2f0;overflow:hidden}
+.gallery-stage .media-tile:first-child{grid-row:auto}
+.gallery-stage img,.gallery-stage video{width:100%;height:100%;min-height:0;object-fit:contain;background:#f2f2f0}
+.gallery-stage .media-tile--video video{object-fit:contain}
+.media-nav{position:absolute;right:22px;bottom:22px;z-index:3;width:48px;height:48px;border-radius:50%;background:#fff;color:#111;box-shadow:0 10px 30px rgba(0,0,0,.13);font-size:34px;line-height:1}
+.media-nav--prev{right:82px}
+@media(max-width:980px){.nike-gallery{grid-template-columns:1fr}.nike-gallery .gallery-thumbs{position:static;display:flex;order:2;max-height:none;overflow:auto}.gallery-thumb{flex:0 0 64px}.gallery-stage,.gallery-stage .media-tile{height:82vw;min-height:360px}.media-nav{bottom:14px;right:14px}.media-nav--prev{right:70px}}
+@media(max-width:680px){.pdp-grid{grid-template-columns:1fr}.gallery-stage,.gallery-stage .media-tile{height:112vw;min-height:0}.nike-gallery .gallery-thumbs{padding-bottom:4px}.gallery-thumb{flex-basis:58px}.gallery-stage img,.gallery-stage video{object-fit:cover}}
