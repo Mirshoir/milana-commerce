@@ -222,3 +222,7 @@ body{min-width:320px}
   .site-head.is-menu .header-single>nav>a,.site-head.is-menu .header-single .mega-trigger>a{color:#fff;text-shadow:0 1px 14px rgba(0,0,0,.45);font-weight:700}
   .site-head.is-menu .header-single>nav>a:after,.site-head.is-menu .header-single .mega-trigger>a:after{background:var(--wine)}
 }
+
+.gallery video{height:100%;min-height:280px;object-fit:cover;background:var(--ink)}
+.gallery .media-tile--video:hover video{transform:none}
+@media(max-width:680px){.gallery video{min-height:100%}}
