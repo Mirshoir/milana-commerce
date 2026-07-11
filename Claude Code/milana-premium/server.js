@@ -28,8 +28,10 @@ loadEnvFile(path.join(DATA_DIR, "sms.env"));
 loadEnvFile(path.join(DATA_DIR, "email.env"));
 loadEnvFile(path.join(DATA_DIR, "openai.env"));
 loadEnvFile(path.join(DATA_DIR, "catalog.env"), { override: true });
+loadEnvFile(path.join(DATA_DIR, "local-store.env"), { override: true });
 const CATALOG_SOURCE_ENABLED = false;
 const SEED_FALLBACK_CATALOG = process.env.SEED_FALLBACK_CATALOG === "1";
+const LOCAL_STORE_API_BASE = (process.env.LOCAL_STORE_API_BASE || "").replace(/\/+$/, "");
 const CATALOG_API_BASE = (process.env.CATALOG_API_BASE || "").replace(/\/+$/, "");
 const CATALOG_API_TOKEN = (process.env.CATALOG_API_TOKEN || "").trim();
 const CATALOG_SUPABASE_URL = (process.env.SUPABASE_URL || "https://qldfdpatlpxikdrheasw.supabase.co").replace(/\/+$/, "");
@@ -724,9 +726,9 @@ const SECURITY_HEADERS = {
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' https://www.gstatic.com",
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: ${CATALOG_ASSET_ORIGIN} https://lh3.googleusercontent.com`,
+    `img-src 'self' data: ${CATALOG_ASSET_ORIGIN} https://milanapremium.uz https://lh3.googleusercontent.com`,
     "font-src 'self'",
-    `media-src 'self' ${CATALOG_ASSET_ORIGIN}`,
+    `media-src 'self' ${CATALOG_ASSET_ORIGIN} https://d8j0ntlcm91z4.cloudfront.net`,
     `connect-src 'self' ${CATALOG_ASSET_ORIGIN} https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://www.googleapis.com https://firestore.googleapis.com`,
     "base-uri 'self'",
     "form-action 'self'",
@@ -771,6 +773,48 @@ function send(res, code, body, headers = {}) {
   res.end(body);
 }
 const fail = (res, code, error) => send(res, code, { error });
+
+function localStoreReadProxyAllowed(method, pathname) {
+  if (!LOCAL_STORE_API_BASE || !["GET", "HEAD"].includes(method)) return false;
+  return pathname === "/api/health"
+    || pathname === "/api/settings"
+    || pathname === "/api/search/smart"
+    || pathname === "/api/recommendations"
+    || pathname === "/api/products"
+    || /^\/api\/products\/[a-z0-9-]+(?:\/reviews)?$/.test(pathname);
+}
+
+async function proxyLocalStoreRead(req, res) {
+  const target = new URL(req.url, LOCAL_STORE_API_BASE);
+  const upstream = await fetch(target, {
+    method: req.method === "HEAD" ? "GET" : "GET",
+    headers: { accept: "application/json" },
+  });
+  const responseHeaders = {
+    ...SECURITY_HEADERS,
+    ...corsHeaders(req),
+    "Cache-Control": "no-store",
+    "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
+  };
+  const body = req.method === "HEAD" ? Buffer.alloc(0) : Buffer.from(await upstream.arrayBuffer());
+  if (req.method !== "HEAD") responseHeaders["Content-Length"] = body.length;
+  res.writeHead(upstream.status, responseHeaders);
+  res.end(req.method === "HEAD" ? undefined : body);
+  return true;
+}
+
+let localStoreProductCache = { at: 0, products: [] };
+async function localStoreProductById(id) {
+  if (!LOCAL_STORE_API_BASE || !id) return null;
+  const now = Date.now();
+  if (!localStoreProductCache.products.length || now - localStoreProductCache.at > 30_000) {
+    const upstream = await fetch(LOCAL_STORE_API_BASE + "/api/products?limit=1000", { headers: { accept: "application/json" } });
+    if (!upstream.ok) return null;
+    const products = await upstream.json();
+    localStoreProductCache = { at: now, products: Array.isArray(products) ? products : [] };
+  }
+  return localStoreProductCache.products.find((p) => Number(p.id) === Number(id)) || null;
+}
 
 function readBody(req, limit) {
   return new Promise((resolve, reject) => {
@@ -2207,6 +2251,27 @@ const api = {
     authResponse(req, res, 200, row, token);
   },
 
+  "POST /api/auth/passwordless": async (req, res) => {
+    if (!rateLimit("customer-passwordless:" + ipOf(req), 12, 15 * 60e3)) return fail(res, 429, "rate_limited");
+    const b = await readJson(req, 8e3);
+    const email = normalizeEmail(b.email);
+    const code = str(b.code || b.email_code, 12);
+    if (!emailOk(email) || !/^\d{6}$/.test(code)) return fail(res, 400, "otp");
+    const customer = db.prepare("SELECT * FROM customers WHERE email=?").get(email);
+    const otp = db.prepare("SELECT * FROM email_otps WHERE email=?").get(email);
+    if (!customer) return fail(res, 401, "account_not_found");
+    if (!otp || Date.now() > Number(otp.expires_at || 0)) return fail(res, 401, "otp_expired");
+    if (Number(otp.attempts || 0) >= 6) return fail(res, 429, "otp_locked");
+    if (otp.code_hash !== hashEmailOtp(email, code)) {
+      db.prepare("UPDATE email_otps SET attempts=attempts+1 WHERE email=?").run(email);
+      return fail(res, 401, "otp_wrong");
+    }
+    db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
+    const token = createCustomerSession(customer.id);
+    audit("customer", "auth.passwordless", { id: customer.id, provider: customer.provider || "local" });
+    authResponse(req, res, 200, customer, token);
+  },
+
   "POST /api/auth/recover": async (req, res) => {
     if (!rateLimit("customer-recover:" + ipOf(req), 8, 3600e3)) return fail(res, 429, "rate_limited");
     const b = await readJson(req, 12e3);
@@ -2591,6 +2656,9 @@ const api = {
       let product = null;
       if (CATALOG_SOURCE_ENABLED) {
         try { product = await catalogProductById(Number(it.id)); } catch (e) { catalogCache.error = e.message; }
+      }
+      if (!product) {
+        try { product = await localStoreProductById(Number(it.id)); } catch (e) { console.error("Local upstream product lookup failed:", e.message); }
       }
       if (product && product.active === false) product = null;
       const row = product ? null : db.prepare("SELECT * FROM products WHERE id=? AND active=1").get(Number(it.id));
@@ -3175,7 +3243,47 @@ async function proxyCatalogStorage(req, res, pathname) {
   return true;
 }
 
-const PAGE_ALIASES = { "/": "index.html", "/shop": "shop.html", "/support": "support.html", "/signin": "signin.html", "/signup": "signin.html", "/account": "signin.html", "/checkout": "shop.html", "/terms": "terms.html", "/ordering": "ordering.html" };
+async function proxyLocalStoreUpload(req, res, pathname) {
+  if (!LOCAL_STORE_API_BASE || !["GET", "HEAD"].includes(req.method)) return false;
+  if (!pathname.startsWith("/uploads/") || pathname.includes("..") || pathname.includes("\\")) return false;
+  const target = new URL(pathname, LOCAL_STORE_API_BASE);
+  const headers = {};
+  if (req.headers.range) headers.Range = req.headers.range;
+  const upstream = await fetch(target, { method: "GET", headers });
+  if (!upstream.ok) return false;
+  const responseHeaders = {
+    ...SECURITY_HEADERS,
+    ...corsHeaders(req),
+    "Access-Control-Allow-Origin": "*",
+    "Cache-Control": "public, max-age=604800",
+    "Content-Type": upstream.headers.get("content-type") || "application/octet-stream",
+    "Accept-Ranges": upstream.headers.get("accept-ranges") || "bytes",
+  };
+  const length = upstream.headers.get("content-length");
+  if (length) responseHeaders["Content-Length"] = length;
+  const range = upstream.headers.get("content-range");
+  if (range) responseHeaders["Content-Range"] = range;
+  res.writeHead(upstream.status, responseHeaders);
+  if (req.method === "HEAD") { res.end(); return true; }
+  if (!upstream.body) { res.end(); return true; }
+  for await (const chunk of upstream.body) res.write(chunk);
+  res.end();
+  return true;
+}
+
+const NEXT_STOREFRONT_ENABLED = process.env.NEXT_STOREFRONT_ENABLED !== "0";
+const PAGE_ALIASES = {
+  "/": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "index.html",
+  "/preview": "local-preview.html",
+  "/shop": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "shop.html",
+  "/support": "support.html",
+  "/signin": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "signin.html",
+  "/signup": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "signin.html",
+  "/account": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "signin.html",
+  "/checkout": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "shop.html",
+  "/terms": "terms.html",
+  "/ordering": "ordering.html",
+};
 const VIEWS_DIR = path.join(ROOT, "views");
 
 const server = http.createServer(async (req, res) => {
@@ -3187,6 +3295,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === "/health") {
       Object.entries(corsHeaders(req)).forEach(([key, value]) => res.setHeader(key, value));
       if (req.method === "OPTIONS") return send(res, 204, "");
+      if (localStoreReadProxyAllowed(req.method, "/api/health")) return await proxyLocalStoreRead({ method: req.method, headers: req.headers, url: "/api/health" }, res);
       if (req.method !== "GET" && req.method !== "HEAD") return fail(res, 405, "method_not_allowed");
       return healthResponse(req, res);
     }
@@ -3195,6 +3304,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname.startsWith("/api/")) {
       Object.entries(corsHeaders(req)).forEach(([key, value]) => res.setHeader(key, value));
       if (req.method === "OPTIONS") return send(res, 204, "");
+      if (localStoreReadProxyAllowed(req.method, pathname)) return await proxyLocalStoreRead(req, res);
       const route = matchRoute(req.method, pathname);
       if (!route) return fail(res, 404, "not_found");
       const unsafe = !["GET", "HEAD", "OPTIONS"].includes(req.method);
@@ -3210,6 +3320,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname.startsWith("/uploads/")) {
       const name = path.basename(pathname); // flat dir – kills any traversal
       if (serveUpload(req, res, path.join(UPLOAD_DIR, name))) return;
+      if (await proxyLocalStoreUpload(req, res, pathname)) return;
       return fail(res, 404, "not_found");
     }
 
@@ -3228,7 +3339,7 @@ const server = http.createServer(async (req, res) => {
 
     /* pretty product url /p/:slug */
     if (/^\/p\/[a-z0-9-]+$/.test(pathname)) {
-      return serveFile(res, path.join(PUBLIC_DIR, "product.html"), "no-store") || fail(res, 404, "not_found");
+      return serveFile(res, path.join(PUBLIC_DIR, NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "product.html"), "no-store") || fail(res, 404, "not_found");
     }
 
     /* pages + static */
@@ -3272,6 +3383,7 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 server.listen(PORT, HOST, () => {
   console.log("\n  MILANA PREMIUM");
   console.log("  Site:  http://localhost:" + PORT);
+  console.log("  Preview: http://localhost:" + PORT + "/preview");
   console.log("  Shop:  http://localhost:" + PORT + "/shop");
   console.log("  Admin: http://localhost:" + PORT + "/admin\n");
 });
