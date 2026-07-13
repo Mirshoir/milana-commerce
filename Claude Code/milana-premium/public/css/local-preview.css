@@ -391,6 +391,26 @@ button,a,input,select,summary{-webkit-tap-highlight-color:rgba(255,49,49,.16)}
   .zoom img,.zoom video{border-radius:0!important}
 }
 
+/* Product videos need fit-to-frame on mobile; photo tiles can stay cropped. */
+@media(max-width:680px){
+  .pdp .nike-gallery.is-video-selected .gallery-stage,
+  .pdp .nike-gallery .gallery-stage:has(.media-tile--video){
+    height:min(160vw,720px)!important;
+    background:#f2f2f0!important;
+  }
+  .pdp .nike-gallery .media-tile--video .media-backdrop{
+    opacity:.28!important;
+    filter:blur(26px) saturate(.8)!important;
+  }
+  .pdp .nike-gallery .media-tile--video .media-foreground{
+    width:100%!important;
+    height:100%!important;
+    object-fit:contain!important;
+    object-position:center center!important;
+    background:#f2f2f0!important;
+  }
+}
+
 @media(max-width:380px){
   .header-single>.wordmark{font-size:12px!important;max-width:130px!important}
   .header-single>.head-actions>a,.header-single>.head-actions>button{width:32px!important;min-width:32px!important}
