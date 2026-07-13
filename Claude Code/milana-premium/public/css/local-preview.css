@@ -416,3 +416,55 @@ button,a,input,select,summary{-webkit-tap-highlight-color:rgba(255,49,49,.16)}
   .header-single>.head-actions>a,.header-single>.head-actions>button{width:32px!important;min-width:32px!important}
   .shop-grid{gap:22px 7px!important;padding-inline:10px!important}
 }
+
+/* Tablet performance + product-fit pass. Keep the full garment visible and avoid heavy layers. */
+@media(min-width:681px) and (max-width:1180px){
+  .pdp{padding:24px 18px 72px!important}
+  .pdp-grid{grid-template-columns:minmax(0,1fr)!important;gap:30px!important;width:100%!important;max-width:100%!important}
+  .pdp .nike-gallery{display:flex!important;flex-direction:column!important;width:100%!important;max-width:100%!important;gap:12px!important;overflow:hidden!important}
+  .pdp .nike-gallery .gallery-stage{
+    width:100%!important;
+    max-width:100%!important;
+    height:clamp(500px,68svh,680px)!important;
+    min-height:0!important;
+    border-radius:10px!important;
+    background:#f2f2f0!important;
+  }
+  .pdp .nike-gallery .media-tile{width:100%!important;height:100%!important;min-height:0!important;background:#f2f2f0!important}
+  .pdp .nike-gallery .media-foreground{
+    width:100%!important;
+    height:100%!important;
+    min-height:0!important;
+    object-fit:contain!important;
+    object-position:center center!important;
+    background:#f2f2f0!important;
+  }
+  .pdp .nike-gallery .media-backdrop,
+  .pdp .nike-gallery .media-tile::after{display:none!important}
+  .pdp .nike-gallery .gallery-thumbs{
+    position:static!important;
+    order:2!important;
+    display:flex!important;
+    flex-direction:row!important;
+    gap:10px!important;
+    width:100%!important;
+    max-width:100%!important;
+    max-height:none!important;
+    overflow-x:auto!important;
+    overflow-y:hidden!important;
+    -webkit-overflow-scrolling:touch!important;
+    padding:0 2px 8px!important;
+    scroll-snap-type:x mandatory!important;
+  }
+  .pdp .nike-gallery .gallery-thumb{
+    flex:0 0 72px!important;
+    width:72px!important;
+    max-width:72px!important;
+    height:78px!important;
+    border-radius:8px!important;
+    scroll-snap-align:start!important;
+  }
+  .pdp-info{position:static!important;max-width:720px!important;padding-inline:4px!important}
+  .media-nav{width:46px!important;height:46px!important;right:18px!important;bottom:18px!important}
+  .media-nav--prev{right:76px!important}
+}
