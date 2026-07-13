@@ -298,3 +298,101 @@ body{min-width:320px}
   .media-nav{right:16px!important;bottom:16px!important;width:44px!important;height:44px!important}
   .media-nav--prev{right:68px!important}
 }
+
+/* Mobile Safari polish pass: safer viewport, cleaner touch targets, no horizontal drift. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;-webkit-tap-highlight-color:rgba(255,49,49,.16)}
+button,a,input,select,summary{-webkit-tap-highlight-color:rgba(255,49,49,.16)}
+@supports (-webkit-touch-callout:none){html,body{min-height:-webkit-fill-available}}
+
+@media(max-width:680px){
+  :root{--pad:16px}
+  html,body{width:100%;max-width:100%;overflow-x:hidden;background:var(--paper)}
+  body{min-width:0}
+  #view{max-width:100%;overflow:hidden;padding-bottom:calc(16px + env(safe-area-inset-bottom,0px))}
+  button,a{touch-action:manipulation}
+
+  .preview-ribbon{height:calc(28px + env(safe-area-inset-top,0px));padding-top:env(safe-area-inset-top,0px);font-size:10px}
+  .site-head,
+  body.view-home .site-head,
+  .site-head.is-scrolled,
+  body.view-home .site-head.is-scrolled{
+    position:sticky!important;
+    top:max(8px,env(safe-area-inset-top,0px))!important;
+    left:10px!important;
+    right:10px!important;
+    width:calc(100% - 20px)!important;
+    height:58px!important;
+    margin:10px auto 0!important;
+    border-radius:999px!important;
+    overflow:visible!important;
+    box-shadow:0 16px 34px rgba(1,8,40,.18)!important;
+  }
+  .header-single{height:100%!important;grid-template-columns:40px minmax(0,1fr) auto!important;gap:8px!important;padding:0 10px 0 12px!important}
+  .header-single>.menu-button{width:38px!important;height:38px!important;min-width:38px!important}
+  .header-single>.wordmark{position:static!important;transform:none!important;justify-self:center!important;max-width:152px!important;font-size:14px!important;letter-spacing:.34em!important;text-align:center!important;white-space:nowrap!important;overflow:hidden!important}
+  .header-single>.wordmark small{font-size:5px!important;letter-spacing:.28em!important;margin-top:6px!important}
+  .header-single>.head-actions{gap:0!important}
+  .header-single>.head-actions>a,.header-single>.head-actions>button{width:36px!important;height:36px!important;min-width:36px!important}
+  .header-single>.head-actions svg{width:20px!important;height:20px!important}
+
+  .site-head.is-menu .header-single>nav{
+    position:fixed!important;
+    top:calc(76px + env(safe-area-inset-top,0px))!important;
+    left:12px!important;
+    right:12px!important;
+    max-height:calc(100dvh - 92px - env(safe-area-inset-top,0px))!important;
+    overflow:auto!important;
+    -webkit-overflow-scrolling:touch!important;
+    grid-template-columns:1fr 1fr!important;
+    padding:18px 18px 22px!important;
+    border-radius:24px!important;
+  }
+  .site-head.is-menu .header-single>nav>a,
+  .site-head.is-menu .header-single .mega-trigger{min-height:46px!important}
+
+  .shop-hero{padding:34px 16px 22px!important}
+  .shop-hero .eyebrow{font-size:9px!important;letter-spacing:.14em!important}
+  .shop-hero h1{font-size:clamp(42px,15.5vw,62px)!important;line-height:.88!important;letter-spacing:-.065em!important;margin:10px 0 14px!important;max-width:100%!important}
+  .shop-hero p{font-size:14px!important;line-height:1.45!important;max-width:95%!important}
+  .filterbar{top:76px!important;z-index:25!important;padding:8px 14px!important;gap:8px!important;scrollbar-width:none}
+  .filterbar::-webkit-scrollbar{display:none}
+  .filterbar button,.filterbar select{height:38px!important;padding:0 14px!important;font-size:11px!important;border-radius:999px!important;background:rgba(255,255,255,.46)}
+  .filterbar button.is-on{background:var(--ink)!important;color:#fff!important}
+  .shop-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;padding:18px 12px calc(82px + env(safe-area-inset-bottom,0px))!important;gap:24px 8px!important}
+  .product-media{aspect-ratio:4/5!important;border-radius:2px!important}
+  .product-info{padding:10px 1px 0!important}
+  .product-info h3,.product-info p{font-size:12px!important;line-height:1.25!important}
+  .product-info small{font-size:10px!important;line-height:1.35!important}
+  .badge{left:8px!important;top:8px!important;padding:6px 8px!important;font-size:9px!important}
+  .wish{right:8px!important;top:8px!important;width:34px!important;height:34px!important}
+
+  .pdp-info h1{font-size:clamp(38px,13vw,52px)!important;line-height:.9!important;margin:10px 0 12px!important}
+  .price{font-size:18px!important}
+  .pdp-copy{font-size:14px!important;line-height:1.55!important}
+  .size-head{margin-top:22px!important}
+  .sizes{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:8px!important}
+  .sizes button{height:48px!important;border-radius:10px!important}
+  .pdp-add{position:sticky!important;bottom:calc(12px + env(safe-area-inset-bottom,0px))!important;z-index:18!important;height:54px!important;border-radius:999px!important;box-shadow:0 16px 36px rgba(1,8,40,.26)!important}
+  .fit-card{border-radius:14px!important;padding:16px!important}
+  .accordions details{padding:15px 0!important}
+
+  .bag__panel{width:100%!important;border-radius:24px 24px 0 0!important;top:auto!important;max-height:92dvh!important}
+  .bag__panel>header{padding:18px!important}
+  .bag__body{padding:16px!important}
+  .bag-item{grid-template-columns:74px 1fr auto!important;gap:12px!important}
+  .bag-item img{width:74px!important;height:96px!important}
+
+  .search-box{min-height:100dvh!important;padding:calc(18px + env(safe-area-inset-top,0px)) 16px 28px!important}
+  .search-field input{height:56px!important;font-size:22px!important}
+  .search-results{grid-template-columns:1fr!important}
+
+  .zoom{padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)!important}
+  .zoom-frame{width:100vw!important;height:82dvh!important}
+  .zoom img,.zoom video{border-radius:0!important}
+}
+
+@media(max-width:380px){
+  .header-single>.wordmark{font-size:12px!important;max-width:130px!important}
+  .header-single>.head-actions>a,.header-single>.head-actions>button{width:32px!important;min-width:32px!important}
+  .shop-grid{gap:22px 7px!important;padding-inline:10px!important}
+}
