@@ -274,3 +274,27 @@ body{min-width:320px}
 .zoom button{z-index:2;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.35)}
 @media(max-width:980px){.gallery-stage .media-foreground{object-fit:cover}.zoom-frame{width:94vw;height:82svh}}
 @media(max-width:680px){.gallery-stage .media-foreground{object-fit:cover}.media-open{display:none}.zoom-frame{width:100vw;height:82svh}.zoom button{right:14px;top:12px}}
+
+#view:focus,#view:focus-visible{outline:0}
+
+@media(max-width:980px){
+  .pdp .nike-gallery{display:flex!important;flex-direction:column!important;width:100%!important;max-width:100%!important;gap:12px!important;overflow:hidden!important}
+  .pdp .nike-gallery .gallery-stage{order:1;width:100%!important;max-width:100%!important;border-radius:10px!important}
+  .pdp .nike-gallery .gallery-thumbs{order:2;position:static!important;display:flex!important;flex-direction:row!important;gap:9px!important;width:100%!important;max-width:100%!important;max-height:none!important;overflow-x:auto!important;overflow-y:hidden!important;padding:0 2px 6px!important;scroll-snap-type:x mandatory}
+  .pdp .nike-gallery .gallery-thumb{flex:0 0 68px!important;width:68px!important;min-width:0!important;max-width:68px!important;height:74px!important;aspect-ratio:auto!important;scroll-snap-align:start}
+}
+
+@media(max-width:680px){
+  .pdp{max-width:100%!important;padding:18px 0 56px!important;overflow:hidden!important}
+  .pdp .breadcrumbs{padding:0 18px!important;margin-bottom:14px!important}
+  .pdp-grid{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:28px!important;width:100%!important;max-width:100%!important}
+  .pdp .nike-gallery{border-radius:0!important}
+  .pdp .nike-gallery .gallery-stage{height:min(126vw,640px)!important;min-height:0!important;border-radius:0!important;background:#ece9e3!important}
+  .pdp .nike-gallery .media-tile{width:100%!important;height:100%!important;min-height:0!important;border-radius:0!important}
+  .pdp .nike-gallery .media-foreground{width:100%!important;height:100%!important;object-fit:cover!important;object-position:center center!important}
+  .pdp .nike-gallery .gallery-thumbs{padding:0 18px 6px!important}
+  .pdp .nike-gallery .gallery-thumb{flex-basis:62px!important;width:62px!important;min-width:0!important;max-width:62px!important;height:68px!important;border-radius:8px!important}
+  .pdp-info{position:static!important;padding:0 18px!important}
+  .media-nav{right:16px!important;bottom:16px!important;width:44px!important;height:44px!important}
+  .media-nav--prev{right:68px!important}
+}
