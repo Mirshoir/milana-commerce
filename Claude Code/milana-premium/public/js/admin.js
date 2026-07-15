@@ -401,18 +401,47 @@
     renderPhotos();
   });
 
-  $("#f-upload").addEventListener("change", async (e) => {
-    const files = [...e.target.files];
-    e.target.value = "";
+  async function optimizeImageUpload(file) {
+    if (!file || !/^image\//.test(file.type) || (file.size < 1.5 * 1024 * 1024 && !/\.png$/i.test(file.name))) return file;
+    if (typeof createImageBitmap !== "function") return file;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const maxSide = 1800;
+      const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+      const width = Math.max(1, Math.round(bitmap.width * scale));
+      const height = Math.max(1, Math.round(bitmap.height * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      canvas.getContext("2d", { alpha: true }).drawImage(bitmap, 0, 0, width, height);
+      bitmap.close?.();
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", .82));
+      if (!blob || blob.size >= file.size * .92) return file;
+      return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".webp", { type: "image/webp", lastModified: Date.now() });
+    } catch { return file; }
+  }
+
+  async function uploadProductFiles(files, source = "picker") {
+    files = [...(files || [])].filter(Boolean);
+    if (!files.length) return;
     const status = $("#upload-status");
+    const zone = $("#f-upload-zone");
+    zone?.classList.add("is-uploading");
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const isVid = /^video\//.test(f.type) || /\.(mp4|webm)$/i.test(f.name);
+      const allowed = /^(image\/(jpeg|png|webp)|video\/(mp4|webm))$/.test(f.type)
+        || /\.(jpe?g|png|webp|mp4|webm)$/i.test(f.name);
+      if (!allowed) {
+        status.textContent = `«${f.name}» не поддерживается — нужен JPG, PNG, WebP, MP4 или WebM.`;
+        zone?.classList.remove("is-uploading");
+        return;
+      }
       const cap = 64;
       if (f.size > cap * 1024 * 1024) { status.textContent = `«${f.name}» больше ${cap} МБ — пропущен.`; continue; }
-      status.textContent = `Загрузка ${i + 1} из ${files.length}… ${isVid ? "(видео может занять время)" : ""}`;
+      status.textContent = `${source === "drop" ? "Перетаскивание" : "Загрузка"} ${i + 1} из ${files.length}… ${isVid ? "(видео может занять время)" : ""}`;
       try {
-        const buf = await f.arrayBuffer();
+        const uploadFile = isVid ? f : await optimizeImageUpload(f);
+        const buf = await uploadFile.arrayBuffer();
         const res = await api("/api/admin/upload", { method: "POST", body: buf });
         editImages.push(res.url);
         renderPhotos();
@@ -421,12 +450,44 @@
           : ex.message === "too_large" ? "файл больше 64 МБ"
           : ex.message;
         status.textContent = `Ошибка загрузки «${f.name}»: ${msg}`;
+        zone?.classList.remove("is-uploading");
         return;
       }
     }
+    zone?.classList.remove("is-uploading");
     status.textContent = "Готово ✓";
     setTimeout(() => (status.textContent = ""), 2000);
+  }
+
+  $("#f-upload").addEventListener("change", async (e) => {
+    const files = [...e.target.files];
+    e.target.value = "";
+    await uploadProductFiles(files);
   });
+
+  const uploadZone = $("#f-upload-zone");
+  if (uploadZone) {
+    ["dragenter", "dragover"].forEach((type) => {
+      uploadZone.addEventListener(type, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadZone.classList.add("is-dragover");
+      });
+    });
+    ["dragleave", "dragend"].forEach((type) => {
+      uploadZone.addEventListener(type, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadZone.classList.remove("is-dragover");
+      });
+    });
+    uploadZone.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      uploadZone.classList.remove("is-dragover");
+      await uploadProductFiles([...(e.dataTransfer?.files || [])], "drop");
+    });
+  }
 
   /* language tabs for description */
   $("#desc-tabs").addEventListener("click", (e) => {
@@ -844,7 +905,8 @@
     if (file.size > cap * 1024 * 1024) { toast(`Файл больше ${cap} МБ`); return null; }
     toast("Загрузка…");
     try {
-      const res = await api("/api/admin/upload", { method: "POST", body: await file.arrayBuffer() });
+      const uploadFile = isVid ? file : await optimizeImageUpload(file);
+      const res = await api("/api/admin/upload", { method: "POST", body: await uploadFile.arrayBuffer() });
       return res.url;
     } catch (ex) { toast("Ошибка загрузки: " + ex.message); return null; }
   }

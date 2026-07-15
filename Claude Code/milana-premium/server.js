@@ -10,14 +10,22 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const zlib = require("node:zlib");
 const net = require("node:net");
 const tls = require("node:tls");
 const { DatabaseSync } = require("node:sqlite");
+
+/* Image optimization is optional at runtime, but is included in the local
+   install so normal catalog thumbnails never need to download the original
+   multi-megabyte upload. Originals remain available for zoom/admin use. */
+let sharp = null;
+try { sharp = require("sharp"); } catch {}
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT, "data"));
 const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
+const IMAGE_CACHE_DIR = path.join(DATA_DIR, "image-cache");
 const PORT = Number(process.env.PORT) || 4173;
 const HOST = process.env.HOST || "0.0.0.0";
 const NODE_ENV = process.env.NODE_ENV || "development";
@@ -48,6 +56,7 @@ const FIREBASE_CONFIG = {
   messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
 };
 const FIREBASE_ENABLED = Boolean(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.authDomain && FIREBASE_CONFIG.projectId && FIREBASE_CONFIG.appId);
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID || "").trim();
 const SMS_WEBHOOK_URL = (process.env.SMS_WEBHOOK_URL || "").trim();
 const SMS_WEBHOOK_TOKEN = (process.env.SMS_WEBHOOK_TOKEN || "").trim();
 const SMS_SEND_IN_DEV = process.env.SMS_SEND_IN_DEV === "1";
@@ -69,6 +78,7 @@ const OPENAI_MODEL = (process.env.OPENAI_MODEL || "gpt-5.5").trim();
 const OPENAI_ASSISTANT_ENABLED = process.env.OPENAI_ASSISTANT_ENABLED !== "0" && Boolean(OPENAI_API_KEY);
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(IMAGE_CACHE_DIR, { recursive: true });
 
 function loadEnvFile(file, options = {}) {
   try {
@@ -183,6 +193,42 @@ db.exec(`
     created_at INTEGER NOT NULL,
     FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
   );
+  CREATE TABLE IF NOT EXISTS promo_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    discount_type TEXT DEFAULT 'percent',
+    value REAL DEFAULT 0,
+    min_total REAL DEFAULT 0,
+    usage_limit INTEGER DEFAULT 0,
+    per_customer_limit INTEGER DEFAULT 1,
+    starts_at TEXT DEFAULT '',
+    expires_at TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS customer_coupons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL,
+    promo_id INTEGER,
+    code TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    discount_type TEXT DEFAULT 'percent',
+    value REAL DEFAULT 0,
+    min_total REAL DEFAULT 0,
+    status TEXT DEFAULT 'active',
+    source TEXT DEFAULT 'promo',
+    assigned_at TEXT DEFAULT (datetime('now')),
+    redeemed_at TEXT DEFAULT '',
+    expires_at TEXT DEFAULT '',
+    metadata TEXT DEFAULT '{}',
+    UNIQUE(customer_id, code),
+    FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY(promo_id) REFERENCES promo_codes(id) ON DELETE SET NULL
+  );
   CREATE TABLE IF NOT EXISTS phone_otps (
     phone TEXT PRIMARY KEY,
     code_hash TEXT NOT NULL,
@@ -289,6 +335,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_support_status_created ON support_requests(status, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_customers_provider ON customers(provider, provider_uid);
   CREATE INDEX IF NOT EXISTS idx_customer_sessions_created ON customer_sessions(created_at);
+  CREATE INDEX IF NOT EXISTS idx_promo_codes_active ON promo_codes(active, code);
+  CREATE INDEX IF NOT EXISTS idx_customer_coupons_customer ON customer_coupons(customer_id, status, expires_at);
   CREATE INDEX IF NOT EXISTS idx_phone_otps_expires ON phone_otps(expires_at);
   CREATE INDEX IF NOT EXISTS idx_email_otps_expires ON email_otps(expires_at);
   CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id, product_slug, status, created_at DESC);
@@ -763,11 +811,47 @@ function corsHeaders(req) {
   };
 }
 
+const COMPRESSIBLE_TYPES = new Set([
+  "application/json", "application/javascript", "text/javascript", "text/css",
+  "text/html", "text/plain", "image/svg+xml",
+]);
+
+function acceptedEncoding(req) {
+  const value = String(req?.headers?.["accept-encoding"] || "").toLowerCase();
+  if (value.includes("br")) return "br";
+  if (value.includes("gzip")) return "gzip";
+  return "";
+}
+
+function compressBuffer(buffer, req, contentType) {
+  const type = String(contentType || "").split(";", 1)[0].toLowerCase();
+  const encoding = buffer.length >= 512 && COMPRESSIBLE_TYPES.has(type) ? acceptedEncoding(req) : "";
+  if (!encoding) return { body: buffer, encoding: "" };
+  try {
+    return {
+      body: encoding === "br"
+        ? zlib.brotliCompressSync(buffer, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } })
+        : zlib.gzipSync(buffer, { level: 6 }),
+      encoding,
+    };
+  } catch { return { body: buffer, encoding: "" }; }
+}
+
 function send(res, code, body, headers = {}) {
   const h = { ...SECURITY_HEADERS, "Cache-Control": "no-store", ...headers };
   if (body && typeof body === "object" && !Buffer.isBuffer(body)) {
     body = JSON.stringify(body);
     h["Content-Type"] = "application/json; charset=utf-8";
+  }
+  if (body != null && !Buffer.isBuffer(body)) body = Buffer.from(String(body));
+  if (Buffer.isBuffer(body)) {
+    const compressed = compressBuffer(body, res._milanaReq || res.req, h["Content-Type"]);
+    body = compressed.body;
+    if (compressed.encoding) {
+      h["Content-Encoding"] = compressed.encoding;
+      h.Vary = "Accept-Encoding";
+    }
+    h["Content-Length"] = body.length;
   }
   res.writeHead(code, h);
   res.end(body);
@@ -796,8 +880,16 @@ async function proxyLocalStoreRead(req, res) {
     "Cache-Control": "no-store",
     "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
   };
-  const body = req.method === "HEAD" ? Buffer.alloc(0) : Buffer.from(await upstream.arrayBuffer());
-  if (req.method !== "HEAD") responseHeaders["Content-Length"] = body.length;
+  let body = req.method === "HEAD" ? Buffer.alloc(0) : Buffer.from(await upstream.arrayBuffer());
+  if (req.method !== "HEAD") {
+    const compressed = compressBuffer(body, req, responseHeaders["Content-Type"]);
+    body = compressed.body;
+    if (compressed.encoding) {
+      responseHeaders["Content-Encoding"] = compressed.encoding;
+      responseHeaders.Vary = "Accept-Encoding";
+    }
+    responseHeaders["Content-Length"] = body.length;
+  }
   res.writeHead(upstream.status, responseHeaders);
   res.end(req.method === "HEAD" ? undefined : body);
   return true;
@@ -1010,6 +1102,25 @@ async function verifyFirebaseIdToken(idToken) {
   return payload;
 }
 
+async function verifyGoogleAccessToken(accessToken) {
+  if (!GOOGLE_CLIENT_ID) throw new Error("google_not_configured");
+  const token = String(accessToken || "").trim();
+  if (!token) throw new Error("bad_google_token");
+  const tokenInfo = await fetch("https://oauth2.googleapis.com/tokeninfo?access_token=" + encodeURIComponent(token));
+  if (!tokenInfo.ok) throw new Error("bad_google_token");
+  const info = await tokenInfo.json();
+  if (info.aud !== GOOGLE_CLIENT_ID) throw new Error("bad_google_audience");
+  if (!String(info.scope || "").split(/\s+/).includes("email")) throw new Error("bad_google_scope");
+  const profileRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!profileRes.ok) throw new Error("bad_google_profile");
+  const profile = await profileRes.json();
+  if (!profile.sub || !emailOk(normalizeEmail(profile.email))) throw new Error("bad_google_profile");
+  if (profile.email_verified !== true && profile.email_verified !== "true") throw new Error("google_email_not_verified");
+  return profile;
+}
+
 function normalizeAccountType(v) {
   return v === "individual" ? "individual" : v === "business" ? "business" : "";
 }
@@ -1146,6 +1257,117 @@ const normalizePhone = (v) => str(v, 25).replace(/\D/g, "");
 const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) && !/[<>"']/.test(v);
 const htmlText = (v) => str(v, 5000).replace(/\s+/g, " ").trim();
 const money = (n, currency = "USD") => `${Math.round((Number(n) || 0) * 100) / 100} ${currency}`;
+
+function normalizePromoCode(v) {
+  return str(v, 40).toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+}
+
+function publicCoupon(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    code: row.code,
+    title: row.title || row.code,
+    description: row.description || "",
+    discount_type: row.discount_type || "percent",
+    value: Math.max(0, Number(row.value) || 0),
+    min_total: Math.max(0, Number(row.min_total) || 0),
+    status: row.status || "active",
+    source: row.source || "promo",
+    assigned_at: row.assigned_at || "",
+    redeemed_at: row.redeemed_at || "",
+    expires_at: row.expires_at || "",
+  };
+}
+
+function ensureDefaultPromoCodes() {
+  db.prepare(`
+    INSERT OR IGNORE INTO promo_codes
+      (code, title, description, discount_type, value, min_total, usage_limit, per_customer_limit, starts_at, expires_at, active)
+    VALUES
+      ('WELCOME10', 'Welcome coupon', '10% off your next Milana order.', 'percent', 10, 0, 0, 1, datetime('now'), datetime('now', '+365 days'), 1)
+  `).run();
+}
+
+function promoIsUsable(promo) {
+  if (!promo || !Number(promo.active)) return false;
+  const now = Date.now();
+  if (promo.starts_at && Date.parse(promo.starts_at) > now) return false;
+  if (promo.expires_at && Date.parse(promo.expires_at) < now) return false;
+  return true;
+}
+
+function couponsForCustomer(customerId) {
+  return db.prepare(`
+    SELECT *
+    FROM customer_coupons
+    WHERE customer_id=?
+    ORDER BY
+      CASE status WHEN 'active' THEN 0 WHEN 'reserved' THEN 1 WHEN 'used' THEN 2 ELSE 3 END,
+      COALESCE(NULLIF(expires_at,''), '9999-12-31') ASC,
+      id DESC
+  `).all(customerId).map(publicCoupon);
+}
+
+function assignCouponToCustomer(customer, promo, source = "promo") {
+  const code = normalizePromoCode(promo.code);
+  const existing = db.prepare("SELECT * FROM customer_coupons WHERE customer_id=? AND code=?").get(customer.id, code);
+  if (existing) return existing;
+  const r = db.prepare(`
+    INSERT INTO customer_coupons
+      (customer_id, promo_id, code, title, description, discount_type, value, min_total, status, source, expires_at, metadata)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+  `).run(
+    customer.id,
+    promo.id || null,
+    code,
+    promo.title || code,
+    promo.description || "",
+    promo.discount_type || "percent",
+    Math.max(0, Number(promo.value) || 0),
+    Math.max(0, Number(promo.min_total) || 0),
+    "active",
+    source,
+    promo.expires_at || "",
+    JSON.stringify({ assigned_by: source })
+  );
+  return db.prepare("SELECT * FROM customer_coupons WHERE id=?").get(r.lastInsertRowid);
+}
+
+function ensureCustomerWelcomeCoupon(customer) {
+  if (!customer) return null;
+  const promo = db.prepare("SELECT * FROM promo_codes WHERE code='WELCOME10'").get();
+  if (!promo || !promoIsUsable(promo)) return null;
+  return assignCouponToCustomer(customer, promo, "welcome");
+}
+
+function customerOrderSummary(customerId, limit = 6) {
+  const rows = db.prepare(`
+    SELECT id, number, status, order_type, tracking_number, items, total, lang, created_at, updated_at
+    FROM orders
+    WHERE customer_id=?
+    ORDER BY id DESC
+    LIMIT ?
+  `).all(customerId, limit);
+  return rows.map((row) => {
+    let items = [];
+    try { items = JSON.parse(row.items || "[]"); } catch {}
+    return {
+      id: row.id,
+      number: row.number,
+      status: row.status,
+      order_type: row.order_type || "wholesale",
+      tracking_number: row.tracking_number || "",
+      total: Number(row.total) || 0,
+      lang: row.lang || "en",
+      created_at: row.created_at || "",
+      updated_at: row.updated_at || "",
+      item_count: Array.isArray(items) ? items.reduce((n, item) => n + (Number(item.qty) || 0), 0) : 0,
+    };
+  });
+}
+
+ensureDefaultPromoCodes();
 
 const TELEGRAM_BOT_TOKEN = str(process.env.TELEGRAM_BOT_TOKEN || "", 200);
 const TELEGRAM_ORDER_CHAT_ID = str(process.env.TELEGRAM_ORDER_CHAT_ID || "", 80);
@@ -1983,11 +2205,60 @@ const api = {
   "GET /api/auth/config": (req, res) => send(res, 200, {
     provider: FIREBASE_ENABLED ? "firebase" : "local",
     firebase: firebasePublicConfig(),
+    googleClientId: GOOGLE_CLIENT_ID || "",
   }),
 
   "GET /api/auth/me": (req, res) => send(res, 200, {
     customer: publicCustomer(customerFromRequest(req)),
   }),
+
+  "GET /api/auth/profile-dashboard": (req, res) => {
+    const customer = customerFromRequest(req);
+    if (!customer) return fail(res, 401, "unauthorized");
+    ensureCustomerWelcomeCoupon(customer);
+    const orders = customerOrderSummary(customer.id, 6);
+    const coupons = couponsForCustomer(customer.id);
+    const totals = db.prepare(`
+      SELECT COUNT(*) orders_count, COALESCE(SUM(total),0) lifetime_spend
+      FROM orders
+      WHERE customer_id=? AND status!='cancelled'
+    `).get(customer.id) || {};
+    send(res, 200, {
+      customer: publicCustomer(customer),
+      stats: {
+        orders_count: Number(totals.orders_count) || 0,
+        lifetime_spend: Math.round((Number(totals.lifetime_spend) || 0) * 100) / 100,
+        active_coupons: coupons.filter((coupon) => coupon.status === "active").length,
+        price_discount: Math.max(0, Math.min(90, Number(customer.price_discount) || 0)),
+      },
+      coupons,
+      orders,
+    });
+  },
+
+  "POST /api/auth/promo/redeem": async (req, res) => {
+    const customer = customerFromRequest(req);
+    if (!customer) return fail(res, 401, "unauthorized");
+    if (!rateLimit("customer-promo:" + customer.id, 20, 3600e3)) return fail(res, 429, "rate_limited");
+    const b = await readJson(req, 4e3);
+    const code = normalizePromoCode(b.code);
+    if (!code || code.length < 3) return fail(res, 400, "promo_code");
+    const promo = db.prepare("SELECT * FROM promo_codes WHERE code=?").get(code);
+    if (!promo || !promoIsUsable(promo)) return fail(res, 404, "promo_not_found");
+    const existing = db.prepare("SELECT * FROM customer_coupons WHERE customer_id=? AND code=?").get(customer.id, code);
+    if (existing) return send(res, 200, { coupon: publicCoupon(existing), status: "already_added" });
+    const usageLimit = Number(promo.usage_limit) || 0;
+    if (usageLimit > 0) {
+      const used = db.prepare("SELECT COUNT(*) c FROM customer_coupons WHERE promo_id=?").get(promo.id).c;
+      if (Number(used) >= usageLimit) return fail(res, 409, "promo_limit_reached");
+    }
+    const perCustomer = Math.max(1, Number(promo.per_customer_limit) || 1);
+    const customerUses = db.prepare("SELECT COUNT(*) c FROM customer_coupons WHERE customer_id=? AND promo_id=?").get(customer.id, promo.id).c;
+    if (Number(customerUses) >= perCustomer) return fail(res, 409, "promo_already_used");
+    const coupon = assignCouponToCustomer(customer, promo, "redeemed");
+    audit("customer", "promo.redeemed", { id: customer.id, code });
+    send(res, 201, { coupon: publicCoupon(coupon), status: "added" });
+  },
 
   "POST /api/auth/otp/start": async (req, res) => {
     if (!rateLimit("customer-otp:" + ipOf(req), 8, 3600e3)) return fail(res, 429, "rate_limited");
@@ -2319,6 +2590,27 @@ const api = {
     });
     const token = createCustomerSession(customer.id);
     audit("customer", "auth.firebase", { id: customer.id, uid: payload.sub });
+    authResponse(req, res, 200, customer, token);
+  },
+
+  "POST /api/auth/google": async (req, res) => {
+    if (!rateLimit("customer-google:" + ipOf(req), 30, 15 * 60e3)) return fail(res, 429, "rate_limited");
+    const b = await readJson(req, 32e3);
+    let payload;
+    try { payload = await verifyGoogleAccessToken(b.accessToken); }
+    catch (e) { return fail(res, 401, e.message); }
+    const email = normalizeEmail(payload.email);
+    if (!emailOk(email)) return fail(res, 400, "email");
+    const customer = upsertCustomer({
+      email,
+      name: str(payload.name, 80),
+      phone: "",
+      provider: "google",
+      provider_uid: String(payload.sub || ""),
+      approval_status: "active",
+    });
+    const token = createCustomerSession(customer.id);
+    audit("customer", "auth.google", { id: customer.id, uid: payload.sub });
     authResponse(req, res, 200, customer, token);
   },
 
@@ -3164,16 +3456,91 @@ function serveFile(res, absPath, cache, req) {
     res.end();
     return true;
   }
+  const contentType = MIME[ext] || "application/octet-stream";
+  const type = contentType.split(";", 1)[0].toLowerCase();
+  if (req?.method !== "HEAD" && COMPRESSIBLE_TYPES.has(type)) {
+    const compressed = compressBuffer(fs.readFileSync(absPath), req, contentType);
+    const headers = {
+      ...SECURITY_HEADERS,
+      "Content-Type": contentType,
+      "Content-Length": compressed.body.length,
+      "Cache-Control": cache,
+      "Last-Modified": lastMod,
+    };
+    if (compressed.encoding) {
+      headers["Content-Encoding"] = compressed.encoding;
+      headers.Vary = "Accept-Encoding";
+    }
+    res.writeHead(200, headers);
+    res.end(compressed.body);
+    return true;
+  }
   const stream = fs.createReadStream(absPath);
   res.writeHead(200, {
     ...SECURITY_HEADERS,
-    "Content-Type": MIME[ext] || "application/octet-stream",
+    "Content-Type": contentType,
     "Content-Length": st.size,
     "Cache-Control": cache,
     "Last-Modified": lastMod,
   });
+  if (req?.method === "HEAD") { res.end(); return true; }
   stream.pipe(res);
   return true;
+}
+
+const optimizedImageJobs = new Map();
+
+function imageVariant(req, pathname) {
+  if (!sharp || !/^\/uploads\/[\w.-]+$/i.test(pathname)) return null;
+  const ext = path.extname(pathname).toLowerCase();
+  if (!new Set([".jpg", ".jpeg", ".png", ".webp"]).has(ext)) return null;
+  const width = Math.min(1800, Math.max(320, Number(req.url && new URL(req.url, "http://x").searchParams.get("w")) || 0));
+  if (!width) return null;
+  const quality = Math.min(90, Math.max(55, Number(req.url && new URL(req.url, "http://x").searchParams.get("q")) || 78));
+  return { width, quality, name: path.basename(pathname) };
+}
+
+async function optimizeImageBuffer(source, width, quality) {
+  return sharp(source, { failOn: "none" })
+    .rotate()
+    .resize({ width, height: width, fit: "inside", withoutEnlargement: true })
+    .webp({ quality, effort: 3 })
+    .toBuffer();
+}
+
+async function serveOptimizedUpload(req, res, pathname) {
+  const variant = imageVariant(req, pathname);
+  if (!variant) return false;
+  const cacheName = `${variant.name.replace(/[^a-z0-9._-]/gi, "_")}-w${variant.width}-q${variant.quality}.webp`;
+  const cachePath = path.join(IMAGE_CACHE_DIR, cacheName);
+  try {
+    if (!fs.existsSync(cachePath)) {
+      const jobKey = cachePath;
+      let job = optimizedImageJobs.get(jobKey);
+      if (!job) {
+        job = (async () => {
+          const sourcePath = path.join(UPLOAD_DIR, variant.name);
+          let source;
+          if (fs.existsSync(sourcePath)) source = fs.readFileSync(sourcePath);
+          else if (LOCAL_STORE_API_BASE) {
+            const upstream = await fetch(new URL(pathname, LOCAL_STORE_API_BASE), { signal: AbortSignal.timeout(25_000) });
+            if (!upstream.ok) throw new Error(`upload_${upstream.status}`);
+            source = Buffer.from(await upstream.arrayBuffer());
+          } else throw new Error("upload_not_found");
+          const output = await optimizeImageBuffer(source, variant.width, variant.quality);
+          const temp = `${cachePath}.${process.pid}.${Date.now()}.tmp`;
+          fs.writeFileSync(temp, output);
+          fs.renameSync(temp, cachePath);
+        })().finally(() => optimizedImageJobs.delete(jobKey));
+        optimizedImageJobs.set(jobKey, job);
+      }
+      await job;
+    }
+    if (serveFile(res, cachePath, "public, max-age=31536000, immutable", req)) return true;
+  } catch (error) {
+    console.warn("Image optimization fallback:", pathname, error.message);
+  }
+  return false;
 }
 
 /* serve an uploaded file, honoring HTTP Range (needed for <video> seeking) */
@@ -3287,6 +3654,7 @@ const PAGE_ALIASES = {
 const VIEWS_DIR = path.join(ROOT, "views");
 
 const server = http.createServer(async (req, res) => {
+  res._milanaReq = req;
   let u;
   try { u = new URL(req.url, "http://x"); } catch { return fail(res, 400, "bad_url"); }
   const pathname = u.pathname;
@@ -3319,6 +3687,7 @@ const server = http.createServer(async (req, res) => {
     /* uploads (Range-aware so video can stream / seek) */
     if (pathname.startsWith("/uploads/")) {
       const name = path.basename(pathname); // flat dir – kills any traversal
+      if (await serveOptimizedUpload(req, res, pathname)) return;
       if (serveUpload(req, res, path.join(UPLOAD_DIR, name))) return;
       if (await proxyLocalStoreUpload(req, res, pathname)) return;
       return fail(res, 404, "not_found");
@@ -3348,10 +3717,11 @@ const server = http.createServer(async (req, res) => {
     const abs = path.normalize(path.join(PUBLIC_DIR, rel));
     if (!abs.startsWith(PUBLIC_DIR + path.sep) && abs !== PUBLIC_DIR) return fail(res, 403, "forbidden");
     const ext = path.extname(abs).toLowerCase();
-    /* html/css/js/json always revalidate so admin edits and updates land
-       immediately; images and fonts can cache for a day */
+    /* HTML stays no-store so deploys land immediately. Versioned CSS/JS and
+       media can cache longer, which keeps repeat mobile/tablet visits snappy. */
     const cache = ext === ".html" || ext === "" ? "no-store"
-      : [".css", ".js", ".json"].includes(ext) ? "no-cache"
+      : ext === ".json" ? "no-cache"
+      : [".css", ".js", ".woff2", ".woff", ".svg", ".ico", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm"].includes(ext) ? "public, max-age=604800, stale-while-revalidate=86400"
       : "public, max-age=86400";
     if (serveFile(res, abs, cache, req)) return;
 
