@@ -1,0 +1,32 @@
+{
+  "name": "milana-premium-mobile-app",
+  "version": "1.0.0",
+  "description": "Milana Premium customer mobile app for Android, iOS, and local web QA.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "prepare:mobile": "rm -rf www && mkdir -p www && cp index.html app.js styles.css manifest.json www/ && rsync -a --exclude 'hero-fashion-video-source.mp4' --exclude 'hero-tennis.png' --exclude 'hero-garden.png' assets/ www/assets/",
+    "prepare:android": "npm run prepare:mobile",
+    "android:sync": "npm run prepare:mobile && npx cap sync android",
+    "android:debug": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "ios:sync": "npm run prepare:mobile && npx cap sync ios",
+    "mobile:sync": "npm run prepare:mobile && npx cap sync",
+    "check:production": "node scripts/production-check.js",
+    "test": "node --test && npm run check:production"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "@capacitor-firebase/authentication": "7.5.0",
+    "@capacitor/android": "7.6.8",
+    "@capacitor/app": "7.1.2",
+    "@capacitor/cli": "7.6.8",
+    "@capacitor/core": "7.6.8",
+    "@capacitor/ios": "7.6.8",
+    "@capacitor/network": "7.0.4",
+    "firebase": "11.10.0"
+  }
+}

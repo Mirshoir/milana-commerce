@@ -1,0 +1,12 @@
+data/
+node_modules/
+www/
+.DS_Store
+android/.gradle/
+android/app/build/
+android/local.properties
+ios/App/build/
+*.apk
+*.aab
+android/app/google-services.json
+ios/App/App/GoogleService-Info.plist
