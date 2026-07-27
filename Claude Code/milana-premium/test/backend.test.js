@@ -41,7 +41,17 @@ async function waitFor(url, timeoutMs = 10000) {
 async function startServer(t, extraEnv = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "milana-backend-"));
   const port = await freePort();
-  const env = { ...process.env, SEED_FALLBACK_CATALOG: "1", ...extraEnv, DATA_DIR: dataDir, PORT: String(port), HOST: "127.0.0.1", NODE_ENV: "test" };
+  const env = {
+    ...process.env,
+    SEED_FALLBACK_CATALOG: "1",
+    TELEGRAM_ORDER_CHAT_ID: "-1000000000000",
+    TELEGRAM_DEFAULT_MANAGER_PASSWORD: "test-manager-password",
+    ...extraEnv,
+    DATA_DIR: dataDir,
+    PORT: String(port),
+    HOST: "127.0.0.1",
+    NODE_ENV: "test",
+  };
   const child = spawn(process.execPath, ["server.js"], { cwd: path.join(__dirname, ".."), env, stdio: ["ignore", "pipe", "pipe"] });
   let logs = "";
   let exited = false;
@@ -202,7 +212,10 @@ test("order placement sends Telegram notification when configured", async (t) =>
 
   const products = await (await fetch(app.base + "/api/products?limit=1")).json();
   const product = products[0];
+  const managers = await (await fetch(app.base + "/api/managers")).json();
+  const managerId = managers[0].id;
   const orderRes = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: {
       name: "Telegram Buyer",
       phone: "+998 90 777 88 99",
@@ -300,6 +313,9 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const products = await (await fetch(app.base + "/api/products?limit=1")).json();
   assert.equal(products.length, 1);
   const product = products[0];
+  const managers = await (await fetch(app.base + "/api/managers")).json();
+  assert.equal(managers.length, 1);
+  const managerId = managers[0].id;
   const selectedColor = product.colors?.[0] || "catalog color";
   assert.equal(product.price_visible, true);
   assert.equal(product.price > 0, true);
@@ -312,6 +328,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.ok(Array.isArray(recommendations.products));
 
   const orderRes = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: { name: "Test Customer", phone: "+998 90 123 45 67", city: "Tashkent" },
     payment: { method: "bank" },
     items: [{ id: product.id, qty: 2, unit_type: "qop", size: product.sizes[0] || "", color: selectedColor }],
@@ -326,6 +343,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(order.payment.amount, order.total);
 
   const pachkaOrderRes = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: { name: "Pachka Buyer", phone: "+998 90 222 44 66", city: "Tashkent" },
     payment: { method: "manager" },
     items: [{ id: product.id, qty: 1, unit_type: "pachka", size: product.sizes[0] || "" }],
@@ -336,6 +354,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(pachkaOrder.total, Math.round(product.price * 6 * 100) / 100);
 
   const missingReactDelivery = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     source: "react_frontend",
     customer: { name: "React Buyer", phone: "+998 90 222 44 66", city: "Tashkent" },
     items: [{ id: product.id, qty: 1, unit_type: "pachka" }],
@@ -345,6 +364,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal((await missingReactDelivery.json()).error, "address");
 
   const missingReactPostcode = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     source: "react_frontend",
     customer: { name: "React Buyer", phone: "+998 90 222 44 66", city: "Tashkent", address: "Amir Temur 12" },
     items: [{ id: product.id, qty: 1, unit_type: "pachka" }],
@@ -453,6 +473,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal((await likes.json()).likes.length, 1);
 
   const customerOrderRes = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: { name: "Retail Buyer", phone: "+998 91 222 33 44", city: "Andijon" },
     payment: { method: "manager" },
     items: [{ id: product.id, qty: 1 }],
@@ -486,6 +507,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(cancelAfterProof.status, 409);
 
   const cancellableOrderRes = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: { name: "Retail Buyer", phone: "+998 91 222 33 44", city: "Andijon" },
     payment: { method: "manager" },
     items: [{ id: product.id, qty: 1 }],
@@ -500,6 +522,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal((await cancelOrder.json()).status, "cancelled");
 
   const tooManyQop = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: { name: "Limit Buyer", phone: "+998 90 000 00 00" },
     items: [{ id: product.id, qty: 21 }],
   });
@@ -613,11 +636,13 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   ]);
   assert.deepEqual(publicAdminProduct.images, adminProduct.images);
   assert.deepEqual(publicAdminProduct.colors, ["black-print"]);
-  assert.match(publicAdminProduct.desc.en, /Model GP-2026/);
-  assert.match(publicAdminProduct.desc.ru, /Модель GP-2026/);
+  assert.ok(publicAdminProduct.desc.en.length > 20);
+  assert.ok(publicAdminProduct.desc.ru.length > 20);
+  assert.ok(publicAdminProduct.desc.uz.length > 20);
+  assert.doesNotMatch(publicAdminProduct.desc.en, /OLD-100/);
   assert.doesNotMatch(publicAdminProduct.desc.ru, /OLD-100/);
-  assert.match(publicAdminProduct.desc.uz, /Model GP-2026/);
-  assert.equal(publicAdminProduct.fabric.uz, "Paxta trikotaj");
+  assert.doesNotMatch(publicAdminProduct.desc.uz, /OLD-100/);
+  assert.match(publicAdminProduct.fabric.uz, /Paxta/);
 
   const adminOrders = await fetch(app.base + "/api/admin/orders", { headers: { Cookie: cookie } });
   assert.equal(adminOrders.status, 200);

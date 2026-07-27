@@ -22,6 +22,7 @@
     if (prod.tag === "bestseller") return `<span class="product__tag pd__tagchip">${I18N.t("best.tagBest")}</span>`;
     if (prod.tag === "new") return `<span class="product__tag product__tag--new pd__tagchip">${I18N.t("best.tagNew")}</span>`;
     if (prod.price_visible !== false && prod.tag === "sale" && prod.old_price) return `<span class="product__tag product__tag--sale pd__tagchip">−${Math.round((1 - prod.price / prod.old_price) * 100)}%</span>`;
+    if (prod.tag === "sale") return `<span class="product__tag product__tag--sale pd__tagchip">${I18N.t("shop.tagSale")}</span>`;
     return "";
   }
 
@@ -30,13 +31,83 @@
     return `<strong>${I18N.fmtPrice(prod.price)}</strong>${prod.old_price ? `<s>${I18N.fmtPrice(prod.old_price)}</s>` : ""}<small>${I18N.t("cart.unitPrice")}</small>`;
   }
 
+  function setMeta(attribute, key, content) {
+    let node = document.head.querySelector(`meta[${attribute}="${key}"]`);
+    if (!node) {
+      node = document.createElement("meta");
+      node.setAttribute(attribute, key);
+      document.head.appendChild(node);
+    }
+    node.setAttribute("content", content || "");
+  }
+
+  function updateSeoMetadata(lang) {
+    const displayName = I18N.productName(p);
+    const title = displayName + " — MILANA PREMIUM";
+    const description = I18N.packageText(p.desc?.[lang] || p.desc?.uz || p.desc?.en || p.desc?.ru || p.name)
+      .replace(/\s+/g, " ").trim().slice(0, 160);
+    const url = new URL("/p/" + encodeURIComponent(p.slug), location.origin).href;
+    const images = (p.images || []).filter(Boolean).map((image) => new URL(image, location.origin).href);
+    const image = images[0] || new URL("/assets/hero-poster.jpg", location.origin).href;
+    const currency = String(p.currency || "USD").toUpperCase();
+    const price = Number(p.wholesale_price || p.price || 0);
+    const canonical = document.head.querySelector('link[rel="canonical"]') || document.head.appendChild(document.createElement("link"));
+    canonical.setAttribute("rel", "canonical");
+    canonical.setAttribute("href", url);
+    document.title = title;
+    setMeta("name", "description", description);
+    setMeta("property", "og:locale", ({ uz: "uz_UZ", ru: "ru_RU", en: "en_US" })[lang] || "uz_UZ");
+    setMeta("property", "og:type", "product");
+    setMeta("property", "og:title", title);
+    setMeta("property", "og:description", description);
+    setMeta("property", "og:url", url);
+    setMeta("property", "og:image", image);
+    setMeta("name", "twitter:card", "summary_large_image");
+    setMeta("name", "twitter:title", title);
+    setMeta("name", "twitter:description", description);
+    setMeta("name", "twitter:image", image);
+    const schema = {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "@id": url + "#product",
+      name: displayName,
+      description,
+      image: images.length ? images : [image],
+      sku: p.model_no || p.variant || String(p.id),
+      category: displayName,
+      brand: { "@type": "Brand", name: "MILANA PREMIUM" },
+      url,
+    };
+    if (price > 0 && p.price_visible !== false) {
+      schema.offers = {
+        "@type": "Offer", url, price, priceCurrency: currency,
+        availability: Number(p.available_qop) === 0 ? "https://schema.org/OutOfStock" : "https://schema.org/InStock",
+        itemCondition: "https://schema.org/NewCondition",
+        seller: { "@type": "Organization", name: "MILANA PREMIUM" },
+      };
+    }
+    if (Number(p.reviews) > 0 && Number(p.rating) > 0) {
+      schema.aggregateRating = { "@type": "AggregateRating", ratingValue: Number(p.rating), reviewCount: Number(p.reviews) };
+    }
+    let jsonLd = document.getElementById("product-jsonld");
+    if (!jsonLd) {
+      jsonLd = document.createElement("script");
+      jsonLd.id = "product-jsonld";
+      jsonLd.type = "application/ld+json";
+      document.head.appendChild(jsonLd);
+    }
+    jsonLd.textContent = JSON.stringify(schema);
+  }
+
   function renderGallery() {
+    const displayName = I18N.productName(p);
     const cur = p.images[imgIdx] || "";
     const poster = p.images.find((u) => !isVideo(u)) || "";
     const main = isVideo(cur)
       ? `<video src="${esc(cur)}" controls autoplay muted loop playsinline preload="metadata"${poster ? ` poster="${esc(poster)}"` : ""}></video>`
-      : `<img src="${esc(cur)}" alt="${esc(p.name)}" decoding="async" fetchpriority="high" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`;
-    $("#pd-main").innerHTML = tagChip(p) + main;
+      : `<img src="${esc(cur)}" alt="${esc(displayName)}" decoding="async" fetchpriority="high" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`;
+    const expand = isVideo(cur) ? "" : `<button class="pd__expand" type="button" aria-label="${esc(I18N.t("prod.zoom"))}"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>`;
+    $("#pd-main").innerHTML = tagChip(p) + main + expand;
     $("#pd-thumbs").innerHTML = p.images.map((u, i) => {
       const vid = isVideo(u);
       const thumb = vid ? (poster ? `<img src="${esc(poster)}" alt="" loading="lazy" decoding="async" onerror="this.classList.add('is-broken');this.removeAttribute('src')">` : "") : `<img src="${esc(u)}" alt="" loading="lazy" decoding="async" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`;
@@ -47,21 +118,43 @@
 
   function render() {
     const lang = I18N.lang;
-    document.title = p.name + " — MILANA PREMIUM";
-    $("#crumb-name").textContent = p.name;
-    $("#pd-cat").textContent = I18N.catName(p.category);
-    $("#pd-name").textContent = p.name;
-    $("#pd-rating").innerHTML = `<svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} ${I18N.t("best.reviews")})</span>`;
+    const displayName = I18N.productName(p);
+    const catalogName = p.catalog_panel ? I18N.panelName(p.catalog_panel) : I18N.catName(p.category);
+    updateSeoMetadata(lang);
+    $("#crumb-name").textContent = displayName;
+    const cg = document.getElementById("crumb-gender");
+    if (cg && p.gender) {
+      cg.hidden = false; cg.textContent = I18N.catName(p.gender);
+      cg.href = "/shop?gender=" + encodeURIComponent(p.gender);
+      const sep = document.getElementById("crumb-gender-sep"); if (sep) sep.hidden = false;
+    }
+    const cc = document.getElementById("crumb-cat");
+    if (cc && (p.catalog_panel || p.category)) {
+      cc.hidden = false; cc.textContent = catalogName;
+      cc.href = p.catalog_panel
+        ? "/shop?panel=" + encodeURIComponent(p.catalog_panel)
+        : "/shop?" + (p.gender ? "gender=" + encodeURIComponent(p.gender) + "&" : "") + "category=" + encodeURIComponent(p.category);
+      const sep = document.getElementById("crumb-cat-sep"); if (sep) sep.hidden = false;
+    }
+    $("#pd-cat").textContent = displayName;
+    $("#pd-name").textContent = displayName;
+    const rating = $("#pd-rating");
+    const hasRating = Number(p.reviews) > 0 && Number(p.rating) > 0;
+    rating.hidden = !hasRating;
+    rating.innerHTML = hasRating ? `<svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} ${I18N.t("best.reviews")})</span>` : "";
     $("#pd-price").classList.toggle("pd__price--pending", p.price_visible === false);
     $("#pd-price").innerHTML = priceHtml(p);
-    $("#pd-fabric").textContent = (p.fabric[lang] || p.fabric.en || "");
+    $("#pd-fabric").textContent = (window.MilanaFab || ((x) => x))(p.fabric[lang] || p.fabric.en || "");
     $("#pd-meta").innerHTML = [
       [I18N.t("prod.model"), p.model_no || p.variant || p.id],
-      [I18N.t("prod.category"), I18N.catName(p.category)],
+      [I18N.t("prod.category"), displayName],
       [I18N.t("prod.wholesaleBag"), I18N.t("cart.defaultMix")],
     ].map(([k, v]) => `<span><i>${esc(k)}</i><b>${esc(v)}</b></span>`).join("");
-    $("#pd-desc").textContent = (p.desc[lang] || p.desc.en || "");
-    $("#pd-care").textContent = (p.fabric[lang] || p.fabric.en || "") + "\n" + careLine();
+    $("#pd-desc").textContent = I18N.packageText(p.desc[lang] || p.desc.en || "");
+    $("#pd-care").textContent = [
+      p.fabric[lang] || p.fabric.en || "",
+      p.care?.[lang] || p.care?.en || "",
+    ].filter(Boolean).join("\n");
     $("#pd").classList.remove("is-loading", "is-error");
     renderQty();
     renderGallery();
@@ -82,17 +175,20 @@
     /* related */
     if (p.related && p.related.length) {
       $("#related").hidden = false;
-      $("#related-grid").innerHTML = p.related.map((r) => `
+      $("#related-grid").innerHTML = p.related.map((r) => {
+        const relatedName = I18N.productName(r);
+        return `
         <article class="product">
-          <div class="product__media">
-            <a class="product__go" href="/p/${r.slug}"><figure>${isVideo(r.images[0]) ? `<video src="${esc(r.images[0])}" muted loop playsinline autoplay preload="metadata"></video>` : `<img src="${esc(r.images[0] || "")}" alt="${esc(r.name)}" loading="lazy" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`}</figure></a>
+          <div class="product__media" data-imgs="${esc((r.images || []).slice(0, 6).join('|'))}">
+            <a class="product__go" href="/p/${r.slug}"><figure>${isVideo(r.images[0]) ? `<video src="${esc(r.images[0])}" muted loop playsinline autoplay preload="metadata"></video>` : `<img src="${esc(r.images[0] || "")}" alt="${esc(relatedName)}" loading="lazy" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`}</figure></a>
           </div>
           <div class="product__info">
-            <div class="product__row"><h3><a href="/p/${r.slug}">${esc(r.name)}</a></h3>
+            <div class="product__row"><h3><a href="/p/${r.slug}">${esc(relatedName)}</a></h3>
               <p class="product__price${r.price_visible === false ? " product__price--pending" : ""}">${r.price_visible === false ? I18N.t("price.manager") : I18N.fmtPrice(r.price)}</p></div>
-            <p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${r.rating} <span>(${r.reviews})</span></p>
+            ${Number(r.reviews) > 0 && Number(r.rating) > 0 ? `<p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${r.rating} <span>(${r.reviews})</span></p>` : ""}
           </div>
-        </article>`).join("");
+        </article>`;
+      }).join("");
       window.MilanaState?.wireImages?.($("#related"));
     }
   }
@@ -115,19 +211,15 @@
     $("#pd-cat").textContent = "";
   }
 
-  function careLine() {
-    const lines = {
-      en: "Care: gentle wash at 30°, no tumble dry, low-heat iron from the reverse side.",
-      ru: "Уход: деликатная стирка при 30°, без машинной сушки, утюг на низкой температуре с изнанки.",
-      uz: "Parvarish: 30° da nozik yuvish, quritgichsiz, teskari tomondan past haroratda dazmollash.",
-    };
-    return lines[I18N.lang] || lines.en;
-  }
-
   /* ---------------- events ---------------- */
   document.addEventListener("click", (e) => {
     const th = e.target.closest("[data-img]");
     if (th) { imgIdx = +th.dataset.img; renderGallery(); return; }
+    /* полноэкранный просмотр: клик по основному фото или кнопке «увеличить» */
+    if (p && (e.target.closest(".pd__expand") || (e.target.tagName === "IMG" && e.target.closest("#pd-main")))) {
+      window.MilanaLightbox?.open(p.images, imgIdx);
+      return;
+    }
 
     const wish = e.target.closest("#pd-wish");
     if (wish && p) {
@@ -164,7 +256,7 @@
 
   $("#pd-add").addEventListener("click", () => {
     if (!p) return;
-    Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, retail_price: p.retail_price || p.price, price_visible: p.price_visible, price_label: p.price_label, sizes: p.sizes, qty });
+    Cart.add({ id: p.id, slug: p.slug, name: window.MilanaName ? MilanaName(p) : p.name, image: p.images[0] || "", price: p.price, retail_price: p.retail_price || p.price, price_visible: p.price_visible, price_label: p.price_label, sizes: p.sizes, qty });
     Cart.open();
   });
 
@@ -174,7 +266,7 @@
     const form = $("#reviews-form");
     if (!summary || !list || !p) return;
     summary.textContent = reviewState.summary.count
-      ? I18N.t("reviews.summary", { rating: Math.round(reviewState.summary.avg * 10) / 10, count: reviewState.summary.count })
+      ? I18N.t("reviews.summary", { rating: Math.round(Number(reviewState.summary.rating ?? reviewState.summary.avg) * 10) / 10, count: reviewState.summary.count })
       : I18N.t("reviews.none");
     list.innerHTML = reviewState.reviews.length ? reviewState.reviews.map((r) => `
       <article class="review">
@@ -269,17 +361,6 @@
     render();
     openFirstAcc();
     await loadReviews();
-
-    /* Product JSON-LD */
-    const ld = document.createElement("script");
-    ld.type = "application/ld+json";
-    ld.textContent = JSON.stringify({
-      "@context": "https://schema.org", "@type": "Product",
-      name: p.name, image: p.images, description: p.desc.en,
-      offers: p.price_visible === false ? undefined : { "@type": "Offer", price: p.price, priceCurrency: p.currency || "USD", availability: "https://schema.org/InStock" },
-      aggregateRating: p.reviews ? { "@type": "AggregateRating", ratingValue: p.rating, reviewCount: p.reviews } : undefined,
-    });
-    document.head.appendChild(ld);
   }
   boot();
 

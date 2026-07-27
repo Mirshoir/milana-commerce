@@ -10,28 +10,56 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const zlib = require("node:zlib");
 const net = require("node:net");
 const tls = require("node:tls");
+const { spawn, spawnSync } = require("node:child_process");
 const { DatabaseSync } = require("node:sqlite");
+const { PostgresCatalog } = require("./lib/postgres-catalog");
+const { PostgresCommerce } = require("./lib/postgres-commerce");
+const {
+  visibleFacts,
+  descriptionFromFacts,
+  localizedMaterial,
+  localizedCare,
+} = require("./lib/product-content");
 
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, "public");
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT, "data"));
 const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
+const UPLOAD_ORIGINAL_DIR = path.join(UPLOAD_DIR, "originals");
+const UPLOAD_THUMB_DIR = path.join(UPLOAD_DIR, "thumbs");
+const UPLOAD_WORK_DIR = path.join(DATA_DIR, "upload-work");
 const PORT = Number(process.env.PORT) || 4173;
 const HOST = process.env.HOST || "0.0.0.0";
 const NODE_ENV = process.env.NODE_ENV || "development";
+const SITE_ORIGIN = String(process.env.SITE_ORIGIN || "https://milanapremium.uz").replace(/\/+$/, "");
 loadEnvFile(path.join(DATA_DIR, "supabase.env"));
 loadEnvFile(path.join(DATA_DIR, "firebase.env"));
 loadEnvFile(path.join(DATA_DIR, "telegram.env"));
 loadEnvFile(path.join(DATA_DIR, "sms.env"));
 loadEnvFile(path.join(DATA_DIR, "email.env"));
 loadEnvFile(path.join(DATA_DIR, "openai.env"));
+loadEnvFile(path.join(DATA_DIR, "postgres.env"));
 loadEnvFile(path.join(DATA_DIR, "catalog.env"), { override: true });
 loadEnvFile(path.join(DATA_DIR, "local-store.env"), { override: true });
 const CATALOG_SOURCE_ENABLED = false;
+const CATALOG_DB_DRIVER = String(process.env.CATALOG_DB_DRIVER || "sqlite").toLowerCase();
+const POSTGRES_CATALOG_ENABLED = CATALOG_DB_DRIVER === "postgres";
+const COMMERCE_DB_DRIVER = String(process.env.COMMERCE_DB_DRIVER || "sqlite").toLowerCase();
+const POSTGRES_COMMERCE_ENABLED = COMMERCE_DB_DRIVER === "postgres";
+if (POSTGRES_CATALOG_ENABLED && !process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is required when CATALOG_DB_DRIVER=postgres");
+}
+if (POSTGRES_COMMERCE_ENABLED && !POSTGRES_CATALOG_ENABLED) {
+  throw new Error("COMMERCE_DB_DRIVER=postgres requires CATALOG_DB_DRIVER=postgres so checkout and stock share one transaction.");
+}
 const SEED_FALLBACK_CATALOG = process.env.SEED_FALLBACK_CATALOG === "1";
-const LOCAL_STORE_API_BASE = (process.env.LOCAL_STORE_API_BASE || "").replace(/\/+$/, "");
+const LOCAL_STORE_UPLOAD_BASE = (process.env.LOCAL_STORE_API_BASE || "").replace(/\/+$/, "");
+const LOCAL_STORE_API_BASE = process.env.LOCAL_STORE_PROXY_ENABLED === "0"
+  ? ""
+  : LOCAL_STORE_UPLOAD_BASE;
 const CATALOG_API_BASE = (process.env.CATALOG_API_BASE || "").replace(/\/+$/, "");
 const CATALOG_API_TOKEN = (process.env.CATALOG_API_TOKEN || "").trim();
 const CATALOG_SUPABASE_URL = (process.env.SUPABASE_URL || "https://qldfdpatlpxikdrheasw.supabase.co").replace(/\/+$/, "");
@@ -48,6 +76,8 @@ const FIREBASE_CONFIG = {
   messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "",
 };
 const FIREBASE_ENABLED = Boolean(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.authDomain && FIREBASE_CONFIG.projectId && FIREBASE_CONFIG.appId);
+const FIREBASE_APPLE_ENABLED = FIREBASE_ENABLED && process.env.FIREBASE_APPLE_ENABLED === "1";
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_OAUTH_CLIENT_ID || "").trim();
 const SMS_WEBHOOK_URL = (process.env.SMS_WEBHOOK_URL || "").trim();
 const SMS_WEBHOOK_TOKEN = (process.env.SMS_WEBHOOK_TOKEN || "").trim();
 const SMS_SEND_IN_DEV = process.env.SMS_SEND_IN_DEV === "1";
@@ -67,8 +97,50 @@ const OPENAI_API_KEY = (process.env.OPENAI_API_KEY || "").trim();
 const OPENAI_API_BASE = (process.env.OPENAI_API_BASE || "https://api.openai.com/v1").replace(/\/+$/, "");
 const OPENAI_MODEL = (process.env.OPENAI_MODEL || "gpt-5.5").trim();
 const OPENAI_ASSISTANT_ENABLED = process.env.OPENAI_ASSISTANT_ENABLED !== "0" && Boolean(OPENAI_API_KEY);
+const CATALOG_PANEL_IDS = [
+  "pajamas", "robes", "men", "tunics", "trousers",
+  "nightgowns", "sets", "tshirts", "kids",
+];
+const PRODUCT_TYPE_IDS = [
+  "tunic", "sarochka", "robe", "pajamas", "set", "tracksuit",
+  "hoodie", "dress", "shirt", "polo", "trousers", "tshirt",
+  "shorts", "top",
+];
+const PRODUCT_PHOTO_TYPES = (() => {
+  try {
+    const review = JSON.parse(fs.readFileSync(path.join(ROOT, "config", "product-photo-types.json"), "utf8"));
+    return Object.fromEntries(
+      Object.entries(review?.types || {})
+        .filter(([id, type]) => /^\d+$/.test(id) && PRODUCT_TYPE_IDS.includes(type))
+    );
+  } catch {
+    return {};
+  }
+})();
+const MEDIA_OPTIMIZE_ENABLED = process.env.MEDIA_OPTIMIZE_ENABLED !== "0";
+const MEDIA_IMAGE_MAX_EDGE = Math.max(1800, Math.min(5000, Number(process.env.MEDIA_IMAGE_MAX_EDGE) || 3200));
+const MEDIA_IMAGE_QUALITY = Math.max(82, Math.min(98, Number(process.env.MEDIA_IMAGE_QUALITY) || 92));
+const MEDIA_THUMB_WIDTH = Math.max(320, Math.min(1280, Number(process.env.MEDIA_THUMB_WIDTH) || 640));
+const MEDIA_THUMB_QUALITY = Math.max(50, Math.min(90, Number(process.env.MEDIA_THUMB_QUALITY) || 72));
+const MEDIA_VIDEO_MAX_EDGE = Math.max(1080, Math.min(2160, Number(process.env.MEDIA_VIDEO_MAX_EDGE) || 1920));
+const MEDIA_VIDEO_CRF = Math.max(18, Math.min(28, Number(process.env.MEDIA_VIDEO_CRF) || 22));
+const FFMPEG_BIN = process.env.FFMPEG_BIN || "ffmpeg";
+const FFPROBE_BIN = process.env.FFPROBE_BIN || "ffprobe";
+const CWEBP_BIN = process.env.CWEBP_BIN || "cwebp";
+const FFMPEG_AVAILABLE = (() => {
+  try { return spawnSync(FFMPEG_BIN, ["-version"], { stdio: "ignore" }).status === 0; } catch { return false; }
+})();
+const FFPROBE_AVAILABLE = (() => {
+  try { return spawnSync(FFPROBE_BIN, ["-version"], { stdio: "ignore" }).status === 0; } catch { return false; }
+})();
+const CWEBP_AVAILABLE = (() => {
+  try { return spawnSync(CWEBP_BIN, ["-version"], { stdio: "ignore" }).status === 0; } catch { return false; }
+})();
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(UPLOAD_ORIGINAL_DIR, { recursive: true });
+fs.mkdirSync(UPLOAD_WORK_DIR, { recursive: true });
+fs.mkdirSync(UPLOAD_THUMB_DIR, { recursive: true });
 
 function loadEnvFile(file, options = {}) {
   try {
@@ -88,6 +160,18 @@ function loadEnvFile(file, options = {}) {
 /* ============================ DB ============================ */
 
 const db = new DatabaseSync(path.join(DATA_DIR, "milana.db"));
+const postgresCatalog = POSTGRES_CATALOG_ENABLED
+  ? new PostgresCatalog({
+      connectionString: process.env.DATABASE_URL,
+      max: process.env.POSTGRES_POOL_MAX,
+      min: process.env.POSTGRES_POOL_MIN,
+      statementTimeoutMillis: process.env.POSTGRES_STATEMENT_TIMEOUT_MS,
+      applicationName: `milana-${NODE_ENV}`,
+    })
+  : null;
+const postgresCommerce = POSTGRES_COMMERCE_ENABLED
+  ? new PostgresCommerce({ pool: postgresCatalog.pool })
+  : null;
 db.exec(`
   PRAGMA busy_timeout = 5000;
   PRAGMA foreign_keys = ON;
@@ -100,6 +184,8 @@ db.exec(`
     variant TEXT DEFAULT '',
     gender TEXT DEFAULT 'unisex',
     category TEXT NOT NULL,
+    catalog_panel TEXT NOT NULL DEFAULT '',
+    product_type TEXT NOT NULL DEFAULT '',
     name TEXT NOT NULL,
     desc_en TEXT DEFAULT '', desc_ru TEXT DEFAULT '', desc_uz TEXT DEFAULT '',
     fabric_en TEXT DEFAULT '', fabric_ru TEXT DEFAULT '', fabric_uz TEXT DEFAULT '',
@@ -129,6 +215,8 @@ db.exec(`
     items TEXT NOT NULL,
     total REAL NOT NULL,
     order_type TEXT DEFAULT 'wholesale',
+    manager_id INTEGER,
+    manager_name TEXT DEFAULT '',
     tracking_number TEXT DEFAULT '',
     status TEXT DEFAULT 'new',
     lang TEXT DEFAULT 'en',
@@ -182,6 +270,42 @@ db.exec(`
     customer_id INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
     FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS promo_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    discount_type TEXT DEFAULT 'percent',
+    value REAL DEFAULT 0,
+    min_total REAL DEFAULT 0,
+    usage_limit INTEGER DEFAULT 0,
+    per_customer_limit INTEGER DEFAULT 1,
+    starts_at TEXT DEFAULT '',
+    expires_at TEXT DEFAULT '',
+    active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS customer_coupons (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL,
+    promo_id INTEGER,
+    code TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    discount_type TEXT DEFAULT 'percent',
+    value REAL DEFAULT 0,
+    min_total REAL DEFAULT 0,
+    status TEXT DEFAULT 'active',
+    source TEXT DEFAULT 'promo',
+    assigned_at TEXT DEFAULT (datetime('now')),
+    redeemed_at TEXT DEFAULT '',
+    expires_at TEXT DEFAULT '',
+    metadata TEXT DEFAULT '{}',
+    UNIQUE(customer_id, code),
+    FOREIGN KEY(customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+    FOREIGN KEY(promo_id) REFERENCES promo_codes(id) ON DELETE SET NULL
   );
   CREATE TABLE IF NOT EXISTS phone_otps (
     phone TEXT PRIMARY KEY,
@@ -269,6 +393,23 @@ db.exec(`
   );
   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
   CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, created_at INTEGER);
+  CREATE TABLE IF NOT EXISTS managers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    login TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    telegram_chat_id TEXT NOT NULL DEFAULT '',
+    telegram_thread_id TEXT NOT NULL DEFAULT '',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS manager_sessions (
+    token TEXT PRIMARY KEY,
+    manager_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY(manager_id) REFERENCES managers(id) ON DELETE CASCADE
+  );
   CREATE TABLE IF NOT EXISTS audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     actor TEXT DEFAULT 'system',
@@ -289,6 +430,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_support_status_created ON support_requests(status, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_customers_provider ON customers(provider, provider_uid);
   CREATE INDEX IF NOT EXISTS idx_customer_sessions_created ON customer_sessions(created_at);
+  CREATE INDEX IF NOT EXISTS idx_promo_codes_active ON promo_codes(active, code);
+  CREATE INDEX IF NOT EXISTS idx_customer_coupons_customer ON customer_coupons(customer_id, status, expires_at);
   CREATE INDEX IF NOT EXISTS idx_phone_otps_expires ON phone_otps(expires_at);
   CREATE INDEX IF NOT EXISTS idx_email_otps_expires ON email_otps(expires_at);
   CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id, product_slug, status, created_at DESC);
@@ -297,6 +440,8 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_chat_status_created ON chat_sessions(status, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id ASC);
   CREATE INDEX IF NOT EXISTS idx_sessions_created ON sessions(created_at);
+  CREATE INDEX IF NOT EXISTS idx_managers_active ON managers(active, name);
+  CREATE INDEX IF NOT EXISTS idx_manager_sessions_created ON manager_sessions(created_at);
   CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_events(created_at DESC);
 `);
 
@@ -631,12 +776,64 @@ for (const [k, [legacy, next]] of Object.entries(SETTINGS_LEGACY_REFRESH)) {
 
 const seedMod = require("./seed.js");
 
+function inferCatalogPanel(product = {}) {
+  if (product.gender === "men") return "men";
+  if (product.gender === "kids") return "kids";
+  const text = String([
+    product.model_no, product.variant, product.name,
+    product.desc_en, product.desc_ru, product.desc_uz,
+  ].filter(Boolean).join(" ")).toLowerCase();
+  if (/(?:^|\s)(?:xj|x)-?\d|халат|xalat|\brobe\b/.test(text) || product.category === "robes") return "robes";
+  if (/(?:^|\s)tj-?\d|туник|tunika|\btunic\b/.test(text)) return "tunics";
+  if (/(?:^|\s)bj-?\d|иштон|ishton|штаны|брюки|\btrousers?\b|\bpants?\b/.test(text)) return "trousers";
+  if (/(?:^|\s)sj-?\d|сорочк|sarochka|nightgown|nightdress|кормяшк/.test(text)) return "nightgowns";
+  if (/двойк|двойн|тройк|комплект|dvojka|dvoyka|\bset\b|футболк.{0,24}(?:шорт|бридж|штан)|(?:майка|лямка).{0,24}(?:шорт|бридж|штан)/.test(text)) return "sets";
+  if (/(?:^|\s)f-?\d|футболк|futbolka|t-?shirt/.test(text)) return "tshirts";
+  if (/пижам|pijama|pajama|(?:^|\s)pj-?\d/.test(text) || product.category === "pajamas") return "pajamas";
+  if (product.category === "homewear" || product.category === "loungewear") return "sets";
+  return "pajamas";
+}
+
+function inferProductType(product = {}) {
+  const reviewed = PRODUCT_PHOTO_TYPES[String(product.id || "")];
+  if (PRODUCT_TYPE_IDS.includes(reviewed)) return reviewed;
+  const text = String([
+    product.name, product.model_no, product.variant,
+  ].filter(Boolean).join(" ")).toLowerCase();
+  const patterns = [
+    ["sarochka", /сорочк|sarochka|nightdress|nightgown|анжелик/],
+    ["robe", /халат|robe|xalat/],
+    ["tunic", /туник|tunic|tunika/],
+    ["pajamas", /пижам|pajama|pijama/],
+    ["tracksuit", /спортивк|tracksuit/],
+    ["hoodie", /худи|hoodie/],
+    ["dress", /плать|dress/],
+    ["shirt", /рубашк|shirt/],
+    ["set", /тройк|двойк|комплект|футболк.*(?:шорт|бридж|штан)|(?:майка|лямка).*(?:шорт|бридж|штан)|\bset\b/],
+    ["trousers", /штаны|брюки|trouser|pants/],
+    ["tshirt", /футболк|t-shirt|tshirt/],
+    ["shorts", /шорт|shorts/],
+    ["top", /майка|top|tank/],
+  ];
+  const matched = patterns.find(([, pattern]) => pattern.test(text))?.[0];
+  if (matched) return matched;
+  if (PRODUCT_TYPE_IDS.includes(product.product_type)) return product.product_type;
+  const panelType = {
+    pajamas: "pajamas", robes: "robe", tunics: "tunic", trousers: "trousers",
+    nightgowns: "sarochka", sets: "set", tshirts: "tshirt",
+  }[product.catalog_panel];
+  if (panelType) return panelType;
+  return { robes: "robe", pajamas: "pajamas", homewear: "set", loungewear: "set" }[product.category] || "set";
+}
+
 /* ---------- schema migration: add model_no / variant / gender, split category ---------- */
 (() => {
   const cols = db.prepare("PRAGMA table_info(products)").all().map((c) => c.name);
   if (!cols.includes("model_no")) db.exec("ALTER TABLE products ADD COLUMN model_no TEXT DEFAULT ''");
   if (!cols.includes("variant")) db.exec("ALTER TABLE products ADD COLUMN variant TEXT DEFAULT ''");
   if (!cols.includes("gender")) db.exec("ALTER TABLE products ADD COLUMN gender TEXT DEFAULT ''");
+  if (!cols.includes("catalog_panel")) db.exec("ALTER TABLE products ADD COLUMN catalog_panel TEXT NOT NULL DEFAULT ''");
+  if (!cols.includes("product_type")) db.exec("ALTER TABLE products ADD COLUMN product_type TEXT NOT NULL DEFAULT ''");
   if (!cols.includes("wholesale_price")) db.exec("ALTER TABLE products ADD COLUMN wholesale_price REAL DEFAULT 0");
   if (!cols.includes("wholesale_moq")) db.exec("ALTER TABLE products ADD COLUMN wholesale_moq INTEGER DEFAULT 6");
   if (!cols.includes("retail_enabled")) db.exec("ALTER TABLE products ADD COLUMN retail_enabled INTEGER DEFAULT 1");
@@ -644,6 +841,7 @@ const seedMod = require("./seed.js");
   if (!cols.includes("retail_stock")) db.exec("ALTER TABLE products ADD COLUMN retail_stock INTEGER DEFAULT 0");
   if (!cols.includes("available_qop")) db.exec("ALTER TABLE products ADD COLUMN available_qop INTEGER");
   if (!cols.includes("like_count")) db.exec("ALTER TABLE products ADD COLUMN like_count INTEGER DEFAULT 0");
+  if (!cols.includes("collection")) db.exec("ALTER TABLE products ADD COLUMN collection TEXT DEFAULT ''");
   db.exec("UPDATE products SET wholesale_price=price WHERE COALESCE(wholesale_price,0)<=0");
   db.exec("UPDATE products SET retail_price=price WHERE COALESCE(retail_price,0)<=0");
   db.exec("UPDATE products SET wholesale_moq=6 WHERE COALESCE(wholesale_moq,0)!=6");
@@ -667,11 +865,88 @@ const seedMod = require("./seed.js");
     });
     console.log("  Migrated " + stale.length + " product(s) to gender + clothing schema.");
   }
+  const ungrouped = db.prepare(`
+    SELECT id, model_no, variant, gender, category, catalog_panel, name, desc_en, desc_ru, desc_uz
+    FROM products
+    WHERE catalog_panel IS NULL OR catalog_panel='' OR catalog_panel NOT IN (${CATALOG_PANEL_IDS.map(() => "?").join(",")})
+  `).all(...CATALOG_PANEL_IDS);
+  if (ungrouped.length) {
+    const updatePanel = db.prepare("UPDATE products SET catalog_panel=? WHERE id=?");
+    ungrouped.forEach((product) => updatePanel.run(inferCatalogPanel(product), product.id));
+    console.log("  Grouped " + ungrouped.length + " product(s) into catalog panels.");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_products_catalog_panel ON products(active, catalog_panel, sort DESC, id DESC)");
+  const applyReviewedType = db.prepare(`
+    UPDATE products
+    SET product_type=?
+    WHERE id=? AND COALESCE(product_type,'')<>?
+  `);
+  let reviewedTypeCount = 0;
+  db.exec("BEGIN");
+  try {
+    Object.entries(PRODUCT_PHOTO_TYPES).forEach(([id, type]) => {
+      reviewedTypeCount += Number(applyReviewedType.run(type, Number(id), type).changes || 0);
+    });
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  if (reviewedTypeCount) {
+    console.log("  Applied photo-reviewed names to " + reviewedTypeCount + " product(s).");
+  }
+  const untypedProducts = db.prepare(`
+    SELECT id, model_no, variant, gender, category, name, desc_en, desc_ru, desc_uz
+    FROM products
+    WHERE product_type IS NULL OR product_type=''
+  `).all();
+  const saveInferredType = db.prepare("UPDATE products SET product_type=? WHERE id=?");
+  let inferredTypeCount = 0;
+  db.exec("BEGIN");
+  try {
+    untypedProducts.forEach((product) => {
+      const type = inferProductType(product);
+      if (type) inferredTypeCount += Number(saveInferredType.run(type, product.id).changes || 0);
+    });
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  if (inferredTypeCount) {
+    console.log("  Inferred concise product names for " + inferredTypeCount + " product(s).");
+  }
+  const typedProducts = db.prepare(`
+    SELECT id, model_no, variant, gender, category, catalog_panel, product_type,
+           name, desc_en, desc_ru, desc_uz
+    FROM products
+  `).all();
+  const reconcileType = db.prepare("UPDATE products SET product_type=? WHERE id=?");
+  let reconciledTypeCount = 0;
+  db.exec("BEGIN");
+  try {
+    typedProducts.forEach((product) => {
+      const type = inferProductType(product);
+      if (type && type !== product.product_type) {
+        reconciledTypeCount += Number(reconcileType.run(type, product.id).changes || 0);
+      }
+    });
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  if (reconciledTypeCount) {
+    console.log("  Corrected concise product names for " + reconciledTypeCount + " product(s).");
+  }
 
   const orderCols = db.prepare("PRAGMA table_info(orders)").all().map((c) => c.name);
   if (!orderCols.includes("customer_id")) db.exec("ALTER TABLE orders ADD COLUMN customer_id INTEGER");
   if (!orderCols.includes("order_type")) db.exec("ALTER TABLE orders ADD COLUMN order_type TEXT DEFAULT 'wholesale'");
   if (!orderCols.includes("tracking_number")) db.exec("ALTER TABLE orders ADD COLUMN tracking_number TEXT DEFAULT ''");
+  if (!orderCols.includes("manager_id")) db.exec("ALTER TABLE orders ADD COLUMN manager_id INTEGER");
+  if (!orderCols.includes("manager_name")) db.exec("ALTER TABLE orders ADD COLUMN manager_name TEXT DEFAULT ''");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_orders_manager_created ON orders(manager_id, created_at DESC)");
   if (!orderCols.includes("updated_at")) {
     db.exec("ALTER TABLE orders ADD COLUMN updated_at TEXT DEFAULT ''");
     db.exec("UPDATE orders SET updated_at=COALESCE(NULLIF(created_at,''), datetime('now')) WHERE updated_at=''");
@@ -692,6 +967,29 @@ const seedMod = require("./seed.js");
   if (!customerCols.includes("customer_tier")) db.exec("ALTER TABLE customers ADD COLUMN customer_tier TEXT DEFAULT 'regular'");
   if (!customerCols.includes("assigned_manager")) db.exec("ALTER TABLE customers ADD COLUMN assigned_manager TEXT DEFAULT ''");
   if (!customerCols.includes("price_discount")) db.exec("ALTER TABLE customers ADD COLUMN price_discount REAL DEFAULT 0");
+
+  if (!db.prepare("SELECT COUNT(*) count FROM managers").get().count && process.env.TELEGRAM_ORDER_CHAT_ID) {
+    const password = String(process.env.TELEGRAM_DEFAULT_MANAGER_PASSWORD || crypto.randomBytes(7).toString("base64url"));
+    const name = String(process.env.TELEGRAM_DEFAULT_MANAGER_NAME || "Milana Manager").trim().slice(0, 80);
+    const login = String(process.env.TELEGRAM_DEFAULT_MANAGER_LOGIN || "manager").trim().slice(0, 60).toLowerCase();
+    db.prepare(`
+      INSERT INTO managers (name, login, password_hash, telegram_chat_id, telegram_thread_id)
+      VALUES (?,?,?,?,?)
+    `).run(
+      name,
+      login,
+      hashPassword(password),
+      String(process.env.TELEGRAM_ORDER_CHAT_ID).trim().slice(0, 80),
+      String(process.env.TELEGRAM_ORDER_THREAD_ID || "").trim().slice(0, 30)
+    );
+    if (!process.env.TELEGRAM_DEFAULT_MANAGER_PASSWORD) {
+      fs.writeFileSync(
+        path.join(DATA_DIR, "MANAGER-PASSWORD.txt"),
+        `MILANA PREMIUM manager panel\r\nURL: http://localhost:${PORT}/admin\r\nLogin: ${login}\r\nPassword: ${password}\r\n`
+      );
+    }
+    console.log("  Created the default Telegram manager account.");
+  }
 })();
 
 if (SEED_FALLBACK_CATALOG && !db.prepare("SELECT COUNT(*) c FROM products").get().c) {
@@ -699,6 +997,14 @@ if (SEED_FALLBACK_CATALOG && !db.prepare("SELECT COUNT(*) c FROM products").get(
     seedMod.seed(db);
     console.log("  Seeded fallback Milana catalog (" + db.prepare("SELECT COUNT(*) c FROM products").get().c + " products).");
   } catch (e) { console.error("Seed failed:", e.message); }
+}
+const seededUngrouped = db.prepare(`
+  SELECT id, model_no, variant, gender, category, name, desc_en, desc_ru, desc_uz
+  FROM products WHERE catalog_panel IS NULL OR catalog_panel=''
+`).all();
+if (seededUngrouped.length) {
+  const updatePanel = db.prepare("UPDATE products SET catalog_panel=? WHERE id=?");
+  seededUngrouped.forEach((product) => updatePanel.run(inferCatalogPanel(product), product.id));
 }
 
 /* ========================= helpers ========================= */
@@ -763,16 +1069,107 @@ function corsHeaders(req) {
   };
 }
 
+const COMPRESSIBLE_TYPES = new Set([
+  "application/json", "application/javascript", "text/javascript", "text/css",
+  "text/html", "text/plain", "image/svg+xml",
+]);
+
+function acceptedEncoding(req) {
+  const value = String(req?.headers?.["accept-encoding"] || "").toLowerCase();
+  if (value.includes("br")) return "br";
+  if (value.includes("gzip")) return "gzip";
+  return "";
+}
+
+function compressBuffer(buffer, req, contentType) {
+  const type = String(contentType || "").split(";", 1)[0].toLowerCase();
+  const encoding = buffer.length >= 512 && COMPRESSIBLE_TYPES.has(type) ? acceptedEncoding(req) : "";
+  if (!encoding) return { body: buffer, encoding: "" };
+  try {
+    return {
+      body: encoding === "br"
+        ? zlib.brotliCompressSync(buffer, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } })
+        : zlib.gzipSync(buffer, { level: 6 }),
+      encoding,
+    };
+  } catch { return { body: buffer, encoding: "" }; }
+}
+
 function send(res, code, body, headers = {}) {
   const h = { ...SECURITY_HEADERS, "Cache-Control": "no-store", ...headers };
   if (body && typeof body === "object" && !Buffer.isBuffer(body)) {
     body = JSON.stringify(body);
     h["Content-Type"] = "application/json; charset=utf-8";
   }
+  if (body != null && !Buffer.isBuffer(body)) body = Buffer.from(String(body));
+  if (Buffer.isBuffer(body)) {
+    const compressed = compressBuffer(body, res._milanaReq || res.req, h["Content-Type"]);
+    body = compressed.body;
+    if (compressed.encoding) {
+      h["Content-Encoding"] = compressed.encoding;
+      h.Vary = "Accept-Encoding";
+    }
+    h["Content-Length"] = body.length;
+  }
   res.writeHead(code, h);
   res.end(body);
 }
+
+function sendText(req, res, code, text, contentType, cache = "no-store") {
+  const source = Buffer.from(String(text));
+  const compressed = compressBuffer(source, req, contentType);
+  const headers = {
+    ...SECURITY_HEADERS,
+    "Content-Type": contentType,
+    "Content-Length": compressed.body.length,
+    "Cache-Control": cache,
+  };
+  if (compressed.encoding) {
+    headers["Content-Encoding"] = compressed.encoding;
+    headers.Vary = "Accept-Encoding";
+  }
+  res.writeHead(code, headers);
+  if (req.method === "HEAD") return res.end();
+  res.end(compressed.body);
+}
 const fail = (res, code, error) => send(res, code, { error });
+
+function paginationFrom(searchParams, { defaultLimit = 48, maxLimit = 250 } = {}) {
+  const requestedLimit = Number(searchParams.get("limit"));
+  const limit = Math.min(maxLimit, Math.max(1, Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.floor(requestedLimit) : defaultLimit));
+  const requestedPage = Number(searchParams.get("page"));
+  const page = Math.max(1, Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1);
+  const offsetParam = searchParams.get("offset");
+  const requestedOffset = offsetParam === null ? Number.NaN : Number(offsetParam);
+  const offset = Number.isFinite(requestedOffset) && requestedOffset >= 0
+    ? Math.floor(requestedOffset)
+    : (page - 1) * limit;
+  return { limit, offset, page: Math.floor(offset / limit) + 1 };
+}
+
+function sendPage(res, items, { total, limit, offset, page }, searchParams) {
+  const safeTotal = Math.max(0, Number(total) || 0);
+  const hasMore = offset + items.length < safeTotal;
+  const meta = {
+    total: safeTotal,
+    limit,
+    offset,
+    page,
+    pages: Math.max(1, Math.ceil(safeTotal / limit)),
+    has_more: hasMore,
+    next_offset: hasMore ? offset + items.length : null,
+  };
+  const headers = {
+    "X-Total-Count": String(meta.total),
+    "X-Page": String(meta.page),
+    "X-Page-Size": String(meta.limit),
+    "X-Has-More": String(meta.has_more),
+  };
+  // `meta=1` is the scalable contract. The default remains an array so the
+  // existing website and mobile app continue to work during migration.
+  if (searchParams.get("meta") === "1") return send(res, 200, { items, meta }, headers);
+  return send(res, 200, items, headers);
+}
 
 function localStoreReadProxyAllowed(method, pathname) {
   if (!LOCAL_STORE_API_BASE || !["GET", "HEAD"].includes(method)) return false;
@@ -796,11 +1193,58 @@ async function proxyLocalStoreRead(req, res) {
     "Cache-Control": "no-store",
     "Content-Type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
   };
-  const body = req.method === "HEAD" ? Buffer.alloc(0) : Buffer.from(await upstream.arrayBuffer());
-  if (req.method !== "HEAD") responseHeaders["Content-Length"] = body.length;
+  let body = req.method === "HEAD" ? Buffer.alloc(0) : Buffer.from(await upstream.arrayBuffer());
+  // The local storefront reads the production catalog, but site-builder
+  // settings belong to this safe local snapshot until deployment is approved.
+  if (req.method !== "HEAD" && target.pathname === "/api/settings") {
+    try {
+      const settings = JSON.parse(body.toString("utf8"));
+      settings.site_config = getSetting("site_config") ?? "";
+      body = Buffer.from(JSON.stringify(settings));
+    } catch { /* Preserve the upstream response if it is not valid JSON. */ }
+  }
+  if (req.method !== "HEAD") {
+    const compressed = compressBuffer(body, req, responseHeaders["Content-Type"]);
+    body = compressed.body;
+    if (compressed.encoding) {
+      responseHeaders["Content-Encoding"] = compressed.encoding;
+      responseHeaders.Vary = "Accept-Encoding";
+    }
+    responseHeaders["Content-Length"] = body.length;
+  }
   res.writeHead(upstream.status, responseHeaders);
   res.end(req.method === "HEAD" ? undefined : body);
   return true;
+}
+
+/* Same-origin map tiles keep Leaflet compatible with the site's CSP and are
+   cached on disk so repeat visits do not depend on a third-party round trip. */
+const MAP_TILE_DIR = path.join(DATA_DIR, "map-tiles");
+const MAP_TILE_UPSTREAMS = [
+  (z, x, y) => `https://${"abcd"[(x + y) % 4]}.basemaps.cartocdn.com/light_all/${z}/${x}/${y}.png`,
+  (z, x, y) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+];
+async function serveMapTile(req, res, z, x, y) {
+  const max = 2 ** z;
+  if (z < 3 || z > 19 || x < 0 || y < 0 || x >= max || y >= max) return fail(res, 404, "not_found");
+  const file = path.join(MAP_TILE_DIR, String(z), String(x), y + ".png");
+  const headers = { "Content-Type": "image/png", "Cache-Control": "public, max-age=2592000, stale-while-revalidate=86400" };
+  try {
+    const buf = await fs.promises.readFile(file);
+    return send(res, 200, buf, headers);
+  } catch { /* not cached yet */ }
+  for (const upstream of MAP_TILE_UPSTREAMS) {
+    try {
+      const response = await fetch(upstream(z, x, y), { headers: { "user-agent": "MilanaPremium-Site/1.0 (map tile cache)" } });
+      if (!response.ok) continue;
+      const buf = Buffer.from(await response.arrayBuffer());
+      fs.promises.mkdir(path.dirname(file), { recursive: true })
+        .then(() => fs.promises.writeFile(file, buf))
+        .catch(() => {});
+      return send(res, 200, buf, headers);
+    } catch { /* try the fallback tile source */ }
+  }
+  return fail(res, 502, "tiles_unavailable");
 }
 
 let localStoreProductCache = { at: 0, products: [] };
@@ -829,6 +1273,193 @@ function readBody(req, limit) {
     req.on("error", reject);
   });
 }
+
+function detectUploadMedia(buf) {
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { ext: "jpg", kind: "image" };
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return { ext: "png", kind: "image" };
+  if (buf.slice(0, 4).toString("latin1") === "RIFF" && buf.slice(8, 12).toString("latin1") === "WEBP") return { ext: "webp", kind: "image" };
+  if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return { ext: "webm", kind: "video" };
+  if (buf.slice(4, 8).toString("latin1") === "ftyp") return { ext: "mp4", kind: "video" };
+  return null;
+}
+
+function runMediaTool(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(FFMPEG_BIN, args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim().split(/\r?\n/).slice(-3).join(" ") || "media_optimizer_failed"));
+    });
+  });
+}
+
+function runCwebpTool(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(CWEBP_BIN, args, { stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim().split(/\r?\n/).slice(-3).join(" ") || "webp_optimizer_failed"));
+    });
+  });
+}
+
+function probeMediaSize(file) {
+  if (!FFPROBE_AVAILABLE) return null;
+  try {
+    const result = spawnSync(FFPROBE_BIN, [
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height",
+      "-of", "csv=p=0:s=x",
+      file,
+    ], { encoding: "utf8" });
+    const match = String(result.stdout || "").trim().match(/^(\d+)x(\d+)$/);
+    if (!match) return null;
+    return { width: Number(match[1]), height: Number(match[2]) };
+  } catch {
+    return null;
+  }
+}
+
+function probeMediaRotation(file) {
+  if (!FFPROBE_AVAILABLE) return 0;
+  try {
+    const result = spawnSync(FFPROBE_BIN, [
+      "-v", "error",
+      "-show_entries", "stream_tags=rotate:side_data=rotation",
+      "-of", "default=nw=1",
+      file,
+    ], { encoding: "utf8" });
+    const match = String(result.stdout || "").match(/(?:rotation|rotate)=(-?\d+)/);
+    return match ? Number(match[1]) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function cwebpResizeArgs(file) {
+  const size = probeMediaSize(file);
+  if (!size) return [];
+  const edge = Math.max(size.width, size.height);
+  if (edge <= MEDIA_IMAGE_MAX_EDGE) return [];
+  return size.width >= size.height
+    ? ["-resize", String(MEDIA_IMAGE_MAX_EDGE), "0"]
+    : ["-resize", "0", String(MEDIA_IMAGE_MAX_EDGE)];
+}
+
+function maxEdgeScaleFilter(maxEdge) {
+  return `scale='if(gt(iw,ih),min(${maxEdge},iw),-2)':'if(gt(iw,ih),-2,min(${maxEdge},ih))':flags=lanczos`;
+}
+
+/* Card thumbnail: uploads/thumbs/<base>.webp, without upscaling. */
+async function generateUploadThumb(sourcePath, name) {
+  if (!CWEBP_AVAILABLE || !/\.(webp|png|jpe?g)$/i.test(name)) return;
+  try {
+    const thumbName = name.replace(/\.(png|jpe?g|webp)$/i, ".webp");
+    const size = probeMediaSize(sourcePath);
+    const resizeArgs = !size || size.width > MEDIA_THUMB_WIDTH ? ["-resize", String(MEDIA_THUMB_WIDTH), "0"] : [];
+    await runCwebpTool([
+      "-quiet",
+      "-preset", "picture",
+      "-q", String(MEDIA_THUMB_QUALITY),
+      "-m", "6",
+      "-sharp_yuv",
+      ...resizeArgs,
+      sourcePath,
+      "-o", path.join(UPLOAD_THUMB_DIR, thumbName),
+    ]);
+  } catch {}
+}
+
+async function optimizeUploadedMedia({ originalPath, finalBase, ext, kind, originalBytes }) {
+  const toolAvailable = kind === "image" ? CWEBP_AVAILABLE : FFMPEG_AVAILABLE;
+  if (!MEDIA_OPTIMIZE_ENABLED || !toolAvailable) {
+    const name = `${finalBase}.${ext}`;
+    fs.copyFileSync(originalPath, path.join(UPLOAD_DIR, name));
+    return { name, kind, bytes: originalBytes, optimized: false, originalBytes, savedBytes: 0, reason: MEDIA_OPTIMIZE_ENABLED ? "optimizer_missing" : "disabled" };
+  }
+
+  const targetExt = kind === "video" ? "mp4" : "webp";
+  const targetName = `${finalBase}.${targetExt}`;
+  const targetPath = path.join(UPLOAD_WORK_DIR, targetName);
+  try { fs.unlinkSync(targetPath); } catch {}
+
+  try {
+    if (kind === "image") {
+      let imageSource = originalPath;
+      let orientedPath = "";
+      const rotation = probeMediaRotation(originalPath);
+      if (rotation && FFMPEG_AVAILABLE) {
+        orientedPath = path.join(UPLOAD_WORK_DIR, `${finalBase}-oriented.png`);
+        try { fs.unlinkSync(orientedPath); } catch {}
+        await runMediaTool([
+          "-y", "-hide_banner", "-loglevel", "error",
+          "-i", originalPath,
+          "-vf", maxEdgeScaleFilter(MEDIA_IMAGE_MAX_EDGE),
+          orientedPath,
+        ]);
+        imageSource = orientedPath;
+      }
+      await runCwebpTool([
+        "-quiet",
+        "-preset", "picture",
+        "-q", String(MEDIA_IMAGE_QUALITY),
+        "-m", "6",
+        "-sharp_yuv",
+        ...(orientedPath ? [] : cwebpResizeArgs(originalPath)),
+        imageSource,
+        "-o", targetPath,
+      ]);
+      if (orientedPath) {
+        try { fs.unlinkSync(orientedPath); } catch {}
+      }
+    } else {
+      await runMediaTool([
+        "-y", "-hide_banner", "-loglevel", "error",
+        "-i", originalPath,
+        "-vf", maxEdgeScaleFilter(MEDIA_VIDEO_MAX_EDGE),
+        "-an",
+        "-c:v", "libx264",
+        "-preset", "medium",
+        "-crf", String(MEDIA_VIDEO_CRF),
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        targetPath,
+      ]);
+    }
+
+    const optimizedBytes = fs.statSync(targetPath).size;
+    const acceptsOptimized = kind === "video"
+      ? optimizedBytes > 1024 && optimizedBytes <= originalBytes * 1.15
+      : optimizedBytes > 1024 && optimizedBytes < originalBytes * 0.98;
+    if (acceptsOptimized) {
+      fs.renameSync(targetPath, path.join(UPLOAD_DIR, targetName));
+      if (kind === "image") await generateUploadThumb(path.join(UPLOAD_DIR, targetName), targetName);
+      return {
+        name: targetName,
+        kind,
+        bytes: optimizedBytes,
+        optimized: true,
+        originalBytes,
+        savedBytes: Math.max(0, originalBytes - optimizedBytes),
+      };
+    }
+  } catch {
+    try { fs.unlinkSync(targetPath); } catch {}
+  }
+
+  const fallbackName = `${finalBase}.${ext}`;
+  fs.copyFileSync(originalPath, path.join(UPLOAD_DIR, fallbackName));
+  if (kind === "image") await generateUploadThumb(path.join(UPLOAD_DIR, fallbackName), fallbackName);
+  return { name: fallbackName, kind, bytes: originalBytes, optimized: false, originalBytes, savedBytes: 0, reason: "kept_original" };
+}
+
 async function readJson(req, limit = 1e6) {
   const type = String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase();
   if (type && type !== "application/json") throw new Error("bad_type");
@@ -881,6 +1512,12 @@ function createSession() {
   db.prepare("INSERT INTO sessions (token, created_at) VALUES (?,?)").run(sha256(token), Date.now());
   return token;
 }
+function createManagerSession(managerId) {
+  const token = crypto.randomBytes(32).toString("hex");
+  db.prepare("INSERT INTO manager_sessions (token, manager_id, created_at) VALUES (?,?,?)")
+    .run(sha256(token), managerId, Date.now());
+  return token;
+}
 function isAdmin(req) {
   const token = parseCookies(req).sid;
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return false;
@@ -896,6 +1533,38 @@ function isAdmin(req) {
     return false;
   }
   return true;
+}
+function managerFromRequest(req) {
+  const token = parseCookies(req).sid;
+  if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
+  const tokenHash = sha256(token);
+  let row = db.prepare(`
+    SELECT m.id, m.name, m.login, m.telegram_chat_id, m.telegram_thread_id,
+           m.active, s.created_at
+    FROM manager_sessions s
+    JOIN managers m ON m.id=s.manager_id
+    WHERE s.token=?
+  `).get(tokenHash);
+  if (!row) {
+    row = db.prepare(`
+      SELECT m.id, m.name, m.login, m.telegram_chat_id, m.telegram_thread_id,
+             m.active, s.created_at
+      FROM manager_sessions s
+      JOIN managers m ON m.id=s.manager_id
+      WHERE s.token=?
+    `).get(token);
+    if (row) db.prepare("UPDATE manager_sessions SET token=? WHERE token=?").run(tokenHash, token);
+  }
+  if (!row || !row.active || Date.now() - row.created_at > SESSION_TTL) {
+    db.prepare("DELETE FROM manager_sessions WHERE token IN (?,?)").run(tokenHash, token);
+    return null;
+  }
+  return row;
+}
+function staffFromRequest(req) {
+  if (isAdmin(req)) return { role: "admin" };
+  const manager = managerFromRequest(req);
+  return manager ? { role: "manager", manager } : null;
 }
 function sessionCookie(req, token, maxAge) {
   const secure = (req.headers["x-forwarded-proto"] === "https") ? "; Secure" : "";
@@ -932,19 +1601,21 @@ function publicCustomer(row) {
   };
 }
 
-function createCustomerSession(customerId) {
+async function createCustomerSession(customerId) {
   const token = crypto.randomBytes(32).toString("hex");
-  db.prepare("INSERT INTO customer_sessions (token, customer_id, created_at) VALUES (?,?,?)")
+  if (postgresCommerce) await postgresCommerce.createCustomerSession(sha256(token), customerId, Date.now());
+  else db.prepare("INSERT INTO customer_sessions (token, customer_id, created_at) VALUES (?,?,?)")
     .run(sha256(token), customerId, Date.now());
   return token;
 }
 
-function customerFromRequest(req) {
+async function customerFromRequest(req) {
   const auth = String(req.headers.authorization || "");
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
   const token = bearer || parseCookies(req).cid;
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
   const tokenHash = sha256(token);
+  if (postgresCommerce) return postgresCommerce.customerFromSession(tokenHash, Date.now() - SESSION_TTL);
   const row = db.prepare(`
     SELECT c.* FROM customer_sessions s
     JOIN customers c ON c.id=s.customer_id
@@ -1010,6 +1681,25 @@ async function verifyFirebaseIdToken(idToken) {
   return payload;
 }
 
+async function verifyGoogleAccessToken(accessToken) {
+  if (!GOOGLE_CLIENT_ID) throw new Error("google_not_configured");
+  const token = String(accessToken || "").trim();
+  if (!token) throw new Error("bad_google_token");
+  const tokenInfo = await fetch("https://oauth2.googleapis.com/tokeninfo?access_token=" + encodeURIComponent(token));
+  if (!tokenInfo.ok) throw new Error("bad_google_token");
+  const info = await tokenInfo.json();
+  if (info.aud !== GOOGLE_CLIENT_ID) throw new Error("bad_google_audience");
+  if (!String(info.scope || "").split(/\s+/).includes("email")) throw new Error("bad_google_scope");
+  const profileRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!profileRes.ok) throw new Error("bad_google_profile");
+  const profile = await profileRes.json();
+  if (!profile.sub || !emailOk(normalizeEmail(profile.email))) throw new Error("bad_google_profile");
+  if (profile.email_verified !== true && profile.email_verified !== "true") throw new Error("google_email_not_verified");
+  return profile;
+}
+
 function normalizeAccountType(v) {
   return v === "individual" ? "individual" : v === "business" ? "business" : "";
 }
@@ -1020,11 +1710,19 @@ function normalizeApproval(v, accountType) {
   if (["active", "pending_review", "rejected", "info_requested"].includes(v)) return v;
   return "active";
 }
+
+function firebaseCustomerProvider(payload) {
+  const signInProvider = String(payload?.firebase?.sign_in_provider || "");
+  if (signInProvider === "apple.com") return "apple";
+  if (signInProvider === "google.com") return "google";
+  return "firebase";
+}
+
 function termsAccepted(v) {
   return v === true || v === "true" || v === "on" || v === "1" || v === 1;
 }
 
-function upsertCustomer({
+async function upsertCustomer({
   email,
   name = "",
   phone = "",
@@ -1050,6 +1748,17 @@ function upsertCustomer({
   const cleanApproval = approval_status
     ? normalizeApproval(approval_status, cleanAccount || "business")
     : cleanAccount ? normalizeApproval("", cleanAccount) : "";
+  if (postgresCommerce) {
+    return postgresCommerce.upsertCustomer({
+      email: cleanEmail,
+      name: str(name, 80), phone: str(phone, 25), city: str(city, 80), address: str(address, 300),
+      account_type: cleanAccount || "business", approval_status: cleanApproval || "active",
+      company_name: str(company_name, 140), tax_id: str(tax_id, 32), legal_address: str(legal_address, 300),
+      contact_person: str(contact_person, 80), expected_volume: str(expected_volume, 80),
+      business_license_url: str(business_license_url, 300), terms_accepted_at: str(terms_accepted_at, 40),
+      phone_verified: Boolean(phone_verified), provider, provider_uid: str(provider_uid, 160), password_hash,
+    });
+  }
   const existing = db.prepare("SELECT * FROM customers WHERE email=?").get(cleanEmail);
   if (existing) {
     db.prepare(`
@@ -1127,9 +1836,11 @@ function upsertCustomer({
 }
 
 /* ---------- misc ---------- */
-const CATS = ["pajamas", "robes", "homewear", "loungewear"]; // clothing type
+const CATS = ["pajamas", "robes", "homewear", "loungewear"]; // broad clothing type
+const CATALOG_PANELS = CATALOG_PANEL_IDS;
 const GENDERS = ["women", "men", "kids", "unisex"];
 const TAGS = ["", "bestseller", "new", "sale"];
+const COLLECTIONS = ["", "ss26"];
 const ORDER_STATUSES = ["new", "processing", "shipped", "done", "cancelled"];
 const PAYMENT_METHODS = ["manager", "cash", "bank", "click", "payme", "card"];
 const PAYMENT_STATUSES = ["pending", "invoice_sent", "waiting_for_customer", "submitted", "paid", "failed", "refunded", "cancelled"];
@@ -1147,23 +1858,143 @@ const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) && !/[<>"']/.test
 const htmlText = (v) => str(v, 5000).replace(/\s+/g, " ").trim();
 const money = (n, currency = "USD") => `${Math.round((Number(n) || 0) * 100) / 100} ${currency}`;
 
+function normalizePromoCode(v) {
+  return str(v, 40).toUpperCase().replace(/[^A-Z0-9_-]/g, "");
+}
+
+function publicCoupon(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    code: row.code,
+    title: row.title || row.code,
+    description: row.description || "",
+    discount_type: row.discount_type || "percent",
+    value: Math.max(0, Number(row.value) || 0),
+    min_total: Math.max(0, Number(row.min_total) || 0),
+    status: row.status || "active",
+    source: row.source || "promo",
+    assigned_at: row.assigned_at || "",
+    redeemed_at: row.redeemed_at || "",
+    expires_at: row.expires_at || "",
+  };
+}
+
+function ensureDefaultPromoCodes() {
+  db.prepare(`
+    INSERT OR IGNORE INTO promo_codes
+      (code, title, description, discount_type, value, min_total, usage_limit, per_customer_limit, starts_at, expires_at, active)
+    VALUES
+      ('WELCOME10', 'Welcome coupon', '10% off your next Milana order.', 'percent', 10, 0, 0, 1, datetime('now'), datetime('now', '+365 days'), 1)
+  `).run();
+}
+
+function promoIsUsable(promo) {
+  if (!promo || !Number(promo.active)) return false;
+  const now = Date.now();
+  if (promo.starts_at && Date.parse(promo.starts_at) > now) return false;
+  if (promo.expires_at && Date.parse(promo.expires_at) < now) return false;
+  return true;
+}
+
+async function couponsForCustomer(customerId) {
+  if (postgresCommerce) return (await postgresCommerce.couponsForCustomer(customerId)).map(publicCoupon);
+  return db.prepare(`
+    SELECT *
+    FROM customer_coupons
+    WHERE customer_id=?
+    ORDER BY
+      CASE status WHEN 'active' THEN 0 WHEN 'reserved' THEN 1 WHEN 'used' THEN 2 ELSE 3 END,
+      COALESCE(NULLIF(expires_at,''), '9999-12-31') ASC,
+      id DESC
+  `).all(customerId).map(publicCoupon);
+}
+
+async function assignCouponToCustomer(customer, promo, source = "promo") {
+  const code = normalizePromoCode(promo.code);
+  if (postgresCommerce) return postgresCommerce.assignCoupon(customer.id, { ...promo, code }, source);
+  const existing = db.prepare("SELECT * FROM customer_coupons WHERE customer_id=? AND code=?").get(customer.id, code);
+  if (existing) return existing;
+  const r = db.prepare(`
+    INSERT INTO customer_coupons
+      (customer_id, promo_id, code, title, description, discount_type, value, min_total, status, source, expires_at, metadata)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+  `).run(
+    customer.id,
+    promo.id || null,
+    code,
+    promo.title || code,
+    promo.description || "",
+    promo.discount_type || "percent",
+    Math.max(0, Number(promo.value) || 0),
+    Math.max(0, Number(promo.min_total) || 0),
+    "active",
+    source,
+    promo.expires_at || "",
+    JSON.stringify({ assigned_by: source })
+  );
+  return db.prepare("SELECT * FROM customer_coupons WHERE id=?").get(r.lastInsertRowid);
+}
+
+async function ensureCustomerWelcomeCoupon(customer) {
+  if (!customer) return null;
+  if (postgresCommerce) {
+    const promo = await postgresCommerce.promoByCode("WELCOME10");
+    if (!promo || !promoIsUsable(promo)) return null;
+    return assignCouponToCustomer(customer, promo, "welcome");
+  }
+  const promo = db.prepare("SELECT * FROM promo_codes WHERE code='WELCOME10'").get();
+  if (!promo || !promoIsUsable(promo)) return null;
+  return assignCouponToCustomer(customer, promo, "welcome");
+}
+
+async function customerOrderSummary(customerId, limit = 6) {
+  const rows = postgresCommerce ? await postgresCommerce.customerOrderSummary(customerId, limit) : db.prepare(`
+    SELECT id, number, status, order_type, tracking_number, items, total, lang, created_at, updated_at
+    FROM orders
+    WHERE customer_id=?
+    ORDER BY id DESC
+    LIMIT ?
+  `).all(customerId, limit);
+  return rows.map((row) => {
+    let items = [];
+    if (Array.isArray(row.items)) items = row.items;
+    else try { items = JSON.parse(row.items || "[]"); } catch {}
+    return {
+      id: row.id,
+      number: row.number,
+      status: row.status,
+      order_type: row.order_type || "wholesale",
+      tracking_number: row.tracking_number || "",
+      total: Number(row.total) || 0,
+      lang: row.lang || "en",
+      created_at: row.created_at || "",
+      updated_at: row.updated_at || "",
+      item_count: Array.isArray(items) ? items.reduce((n, item) => n + (Number(item.qty) || 0), 0) : 0,
+    };
+  });
+}
+
+ensureDefaultPromoCodes();
+
 const TELEGRAM_BOT_TOKEN = str(process.env.TELEGRAM_BOT_TOKEN || "", 200);
 const TELEGRAM_ORDER_CHAT_ID = str(process.env.TELEGRAM_ORDER_CHAT_ID || "", 80);
 const TELEGRAM_ORDER_THREAD_ID = str(process.env.TELEGRAM_ORDER_THREAD_ID || "", 30);
 const TELEGRAM_API_BASE = str(process.env.TELEGRAM_API_BASE || "https://api.telegram.org", 500).replace(/\/+$/, "");
-const TELEGRAM_ORDERS_ENABLED = process.env.TELEGRAM_ORDERS_ENABLED !== "0" && Boolean(TELEGRAM_BOT_TOKEN && TELEGRAM_ORDER_CHAT_ID);
+const TELEGRAM_ORDERS_ENABLED = process.env.TELEGRAM_ORDERS_ENABLED !== "0" && Boolean(TELEGRAM_BOT_TOKEN);
 
 function truncateTelegram(text) {
   return text.length <= 3900 ? text : text.slice(0, 3880) + "\n...truncated";
 }
 
-function formatTelegramOrder({ number, customer, items, total, orderType, paymentMethod, source, lang }) {
+function formatTelegramOrder({ number, customer, items, total, orderType, paymentMethod, source, lang, manager }) {
   const orderTypeLabel = orderType === "retail" ? "chakana" : "ulgurji";
   const paymentLabel = paymentMethod === "bank" ? "bank" : paymentMethod === "cash" ? "naqd" : "menejer orqali";
   const hasPendingPrice = items.some((item) => item.price_pending);
   const lines = [
     `Yangi Milana buyurtmasi ${number}`,
     `Manba: ${source || "website"} · Til: ${lang || "uz"} · Tur: ${orderTypeLabel}`,
+    `Menejer: ${manager?.name || customer.assigned_manager || "-"}`,
     `Mijoz: ${customer.name || "-"}`,
     `Telefon: ${customer.phone || "-"}`,
   ];
@@ -1194,13 +2025,13 @@ function formatTelegramOrder({ number, customer, items, total, orderType, paymen
 }
 
 async function notifyTelegramOrder(order) {
-  if (!TELEGRAM_ORDERS_ENABLED) return { skipped: true };
+  if (!TELEGRAM_ORDERS_ENABLED || !order.manager?.telegram_chat_id) return { skipped: true };
   const body = {
-    chat_id: TELEGRAM_ORDER_CHAT_ID,
+    chat_id: order.manager.telegram_chat_id,
     text: formatTelegramOrder(order),
     disable_web_page_preview: true,
   };
-  if (/^\d+$/.test(TELEGRAM_ORDER_THREAD_ID)) body.message_thread_id = Number(TELEGRAM_ORDER_THREAD_ID);
+  if (/^\d+$/.test(order.manager.telegram_thread_id || "")) body.message_thread_id = Number(order.manager.telegram_thread_id);
   const response = await fetch(`${TELEGRAM_API_BASE}/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1216,7 +2047,11 @@ function notifyTelegramOrderLater(order) {
       audit("system", "telegram.order_skipped", { number: order.number });
       return;
     }
-    audit("system", "telegram.order_sent", { number: order.number, message_id: result?.result?.message_id || result?.message_id || "" });
+    audit("system", "telegram.order_sent", {
+      number: order.number,
+      manager_id: order.manager?.id || null,
+      message_id: result?.result?.message_id || result?.message_id || "",
+    });
   }).catch((e) => {
     console.error("Telegram order notification failed:", e.message);
     audit("system", "telegram.order_failed", { number: order.number, error: e.message });
@@ -1343,10 +2178,11 @@ function productColors(p) {
 
 function decorateProduct(p) {
   const summary = reviewSummary(p.id, p.slug);
-  const storedReviews = Number(p.reviews) || 0;
-  const storedRating = Number(p.rating) || 0;
-  const reviews = summary.count || storedReviews;
-  const rating = summary.count ? Math.round(summary.avg * 10) / 10 : (storedRating || 4.8);
+  // Approved reviews are the only public source of rating data. Imported and
+  // seeded catalog rows historically contained a placeholder 4.8 value, which
+  // must never be presented as customer feedback.
+  const reviews = summary.count;
+  const rating = reviews ? Math.round(summary.avg * 10) / 10 : 0;
   const wholesale = Number(p.wholesale_price || p.price || 0);
   const retail = Number(p.retail_price || p.price || wholesale || 0);
   const colors = productColors(p);
@@ -1428,12 +2264,14 @@ function catalogRowToProduct(row) {
     variant: code,
     gender: meta.gender,
     category,
+    catalog_panel: inferCatalogPanel({ ...row, gender: meta.gender, category, name }),
+    product_type: inferProductType({ ...row, gender: meta.gender, category, name }),
     price,
     old_price: null,
     sizes: parseCatalogSizes(text),
     images: image ? [image] : [],
     tag: isSale ? "sale" : "",
-    rating: 4.8,
+    rating: 0,
     reviews: 0,
     active: true,
     sort: 1_000_000 - (Number(row.page) || 0) * 100 - (Number(row.card_index) || 0),
@@ -1540,7 +2378,7 @@ function smartTokens(query) {
 
 function productSearchText(p) {
   return smartNormalize([
-    p.name, p.slug, p.model_no, p.variant, p.gender, p.category, p.tag,
+    p.name, p.slug, p.model_no, p.variant, p.gender, p.category, p.catalog_panel, p.product_type, p.tag,
     Array.isArray(p.sizes) ? p.sizes.join(" ") : "",
     p.desc?.en, p.desc?.ru, p.desc?.uz,
     p.fabric?.en, p.fabric?.ru, p.fabric?.uz,
@@ -1560,7 +2398,7 @@ function smartProductScore(p, query) {
     if (model.includes(token)) {
       score += 18;
       reasons.push(token.toUpperCase());
-    } else if (p.gender === token || p.category === token) {
+    } else if (p.gender === token || p.category === token || p.catalog_panel === token) {
       score += 12;
       reasons.push(token);
     } else if ((p.sizes || []).some((s) => smartNormalize(s) === token)) {
@@ -1623,7 +2461,9 @@ function smartRecommendProducts(products, seed, limit = 4) {
 }
 
 async function activeProductsForCatalog(forceCatalogRefresh = false) {
-  const localProducts = db.prepare("SELECT * FROM products WHERE active=1 ORDER BY sort DESC, id DESC LIMIT 1000").all().map((r) => rowToProduct(r));
+  const localProducts = postgresCatalog
+    ? (await postgresCatalog.list({ activeOnly: true, limit: 1000, offset: 0 })).rows.map((r) => rowToProduct(r))
+    : db.prepare("SELECT * FROM products WHERE active=1 ORDER BY sort DESC, id DESC LIMIT 1000").all().map((r) => rowToProduct(r));
   if (CATALOG_SOURCE_ENABLED) {
     try {
       const seen = new Set(localProducts.map((p) => p.slug));
@@ -1638,8 +2478,147 @@ async function activeProductsForCatalog(forceCatalogRefresh = false) {
   return localProducts;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[char]);
+}
+
+function escapeXml(value) {
+  return escapeHtml(value);
+}
+
+function plainMetaText(value, fallback = "") {
+  const text = String(value || fallback || "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= 160) return text;
+  return text.slice(0, 157).replace(/\s+\S*$/, "") + "…";
+}
+
+function absoluteSiteUrl(value = "/") {
+  try { return new URL(String(value || "/"), SITE_ORIGIN + "/").href; }
+  catch { return SITE_ORIGIN + "/"; }
+}
+
+function jsonForHtml(value) {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+async function activeProductBySlug(slug) {
+  const row = postgresCatalog
+    ? await postgresCatalog.getBySlug(slug, true)
+    : db.prepare("SELECT * FROM products WHERE slug=? AND active=1").get(slug);
+  if (row) return rowToProduct(row);
+  if (!CATALOG_SOURCE_ENABLED) return null;
+  try {
+    const product = await catalogProductBySlug(slug);
+    return product && product.active !== false ? product : null;
+  } catch (error) {
+    catalogCache.error = error.message;
+    console.error("Catalog product lookup failed for SEO:", error.message);
+    return null;
+  }
+}
+
+function productSeo(product) {
+  const url = absoluteSiteUrl(`/p/${encodeURIComponent(product.slug)}`);
+  const productName = localizedProductType(product, "uz");
+  const model = str(product.model_no || product.variant, 80);
+  const title = `${productName}${model ? ` ${model}` : ""} — MILANA PREMIUM`;
+  const description = plainMetaText(
+    product.desc?.uz || product.desc?.en || product.desc?.ru,
+    `${productName} — Milana Premium ulgurji kiyim katalogi.`,
+  );
+  const images = (product.images || []).filter(Boolean).map(absoluteSiteUrl);
+  const image = images[0] || absoluteSiteUrl("/assets/hero-poster.jpg");
+  const price = Number(product.wholesale_price || product.price || 0);
+  const currency = String(product.currency || "USD").toUpperCase();
+  const schema = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "@id": `${url}#product`,
+    name: productName,
+    description,
+    image: images.length ? images : [image],
+    sku: product.model_no || product.variant || String(product.id),
+    category: product.catalog_panel || product.category || "Clothing",
+    brand: { "@type": "Brand", name: "MILANA PREMIUM" },
+    url,
+  };
+  if (price > 0) {
+    schema.offers = {
+      "@type": "Offer",
+      url,
+      price,
+      priceCurrency: currency,
+      availability: Number(product.available_qop) === 0
+        ? "https://schema.org/OutOfStock"
+        : "https://schema.org/InStock",
+      itemCondition: "https://schema.org/NewCondition",
+      seller: { "@type": "Organization", name: "MILANA PREMIUM" },
+    };
+  }
+  if (Number(product.reviews) > 0 && Number(product.rating) > 0) {
+    schema.aggregateRating = {
+      "@type": "AggregateRating",
+      ratingValue: Number(product.rating),
+      reviewCount: Number(product.reviews),
+    };
+  }
+  return { url, title, description, image, price, currency, schema };
+}
+
+function renderProductDocument(template, product) {
+  const seo = productSeo(product);
+  const tags = [
+    `<link rel="canonical" href="${escapeHtml(seo.url)}">`,
+    '<meta property="og:locale" content="uz_UZ">',
+    '<meta property="og:site_name" content="MILANA PREMIUM">',
+    '<meta property="og:type" content="product">',
+    `<meta property="og:title" content="${escapeHtml(seo.title)}">`,
+    `<meta property="og:description" content="${escapeHtml(seo.description)}">`,
+    `<meta property="og:url" content="${escapeHtml(seo.url)}">`,
+    `<meta property="og:image" content="${escapeHtml(seo.image)}">`,
+    '<meta name="twitter:card" content="summary_large_image">',
+    `<meta name="twitter:title" content="${escapeHtml(seo.title)}">`,
+    `<meta name="twitter:description" content="${escapeHtml(seo.description)}">`,
+    `<meta name="twitter:image" content="${escapeHtml(seo.image)}">`,
+    seo.price > 0 ? `<meta property="product:price:amount" content="${escapeHtml(seo.price)}">` : "",
+    seo.price > 0 ? `<meta property="product:price:currency" content="${escapeHtml(seo.currency)}">` : "",
+    `<script id="product-jsonld" type="application/ld+json">${jsonForHtml(seo.schema)}</script>`,
+  ].filter(Boolean).join("\n  ");
+  return template
+    .replace(/<html lang="[^"]*">/, '<html lang="uz">')
+    .replace(/<title>[\s\S]*?<\/title>/, `<title>${escapeHtml(seo.title)}</title>`)
+    .replace(/<meta name="description" content="[^"]*">/, `<meta name="description" content="${escapeHtml(seo.description)}">`)
+    .replace("</head>", `  ${tags}\n</head>`);
+}
+
+function sitemapDate(product) {
+  const date = new Date(product.updated_at || product.created_at || "");
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+}
+
+async function sitemapXml() {
+  const staticPaths = ["/", "/shop", "/ordering", "/support", "/terms"];
+  const products = await activeProductsForCatalog();
+  const urls = staticPaths.map((pathname) => ({ loc: absoluteSiteUrl(pathname), lastmod: "" }))
+    .concat(products.map((product) => ({
+      loc: absoluteSiteUrl(`/p/${encodeURIComponent(product.slug)}`),
+      lastmod: sitemapDate(product),
+    })));
+  const entries = urls.map(({ loc, lastmod }) =>
+    `  <url><loc>${escapeXml(loc)}</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ""}</url>`
+  ).join("\n");
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${entries}\n</urlset>\n`;
+}
+
 async function adminProductsForCatalog(forceCatalogRefresh = false) {
-  const localProducts = db.prepare("SELECT * FROM products ORDER BY sort DESC, id DESC LIMIT 1000").all().map((r) => rowToProduct(r));
+  const localProducts = postgresCatalog
+    ? (await postgresCatalog.list({ limit: 2500, offset: 0 })).rows.map((r) => rowToProduct(r))
+    : db.prepare("SELECT * FROM products ORDER BY sort DESC, id DESC LIMIT 2500").all().map((r) => rowToProduct(r));
   if (CATALOG_SOURCE_ENABLED) {
     try {
       const seen = new Set(localProducts.map((p) => p.slug));
@@ -1771,6 +2750,164 @@ async function openAiAssistantReply(message, lang, catalogProductsList) {
   }
 }
 
+function localProductImageDataUrl(imageUrl) {
+  const pathname = String(imageUrl || "").split(/[?#]/, 1)[0];
+  const roots = pathname.startsWith("/uploads/")
+    ? { prefix: "/uploads/", dir: UPLOAD_DIR }
+    : pathname.startsWith("/assets/")
+      ? { prefix: "/assets/", dir: path.join(PUBLIC_DIR, "assets") }
+      : null;
+  if (!roots) throw new Error("image_not_local");
+  let relative;
+  try { relative = decodeURIComponent(pathname.slice(roots.prefix.length)); }
+  catch { throw new Error("image_invalid"); }
+  const file = path.resolve(roots.dir, relative);
+  const root = path.resolve(roots.dir) + path.sep;
+  if (!file.startsWith(root) || !fs.existsSync(file)) throw new Error("image_not_found");
+  const bytes = fs.readFileSync(file);
+  if (bytes.length > 20 * 1024 * 1024) throw new Error("image_too_large");
+  const media = detectUploadMedia(bytes);
+  if (!media || media.kind !== "image") throw new Error("image_required");
+  const mime = media.ext === "jpg" ? "image/jpeg" : `image/${media.ext}`;
+  return `data:${mime};base64,${bytes.toString("base64")}`;
+}
+
+async function openAiProductDescriptions(body) {
+  if (!OPENAI_ASSISTANT_ENABLED) throw new Error("openai_not_configured");
+  const imageUrls = (Array.isArray(body.images) ? body.images : [body.image])
+    .map((value) => str(value, 300))
+    .filter(Boolean)
+    .filter((value) => !/\.(mp4|webm)(?:[?#]|$)/i.test(value))
+    .slice(0, 3);
+  if (!imageUrls.length) throw new Error("image_required");
+  const imageParts = imageUrls.map((value) => ({
+    type: "input_image",
+    image_url: localProductImageDataUrl(value),
+    detail: "high",
+  }));
+  const context = {
+    current_name: str(body.name, 120),
+    model: str(body.model_no, 40),
+    variant: str(body.variant, 60),
+    category: CATS.includes(body.category) ? body.category : "",
+    gender: GENDERS.includes(body.gender) ? body.gender : "",
+  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 45_000);
+  try {
+    const response = await fetch(`${OPENAI_API_BASE}/responses`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer " + OPENAI_API_KEY,
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        max_output_tokens: 700,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "product_photo_descriptions",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                product_type: {
+                  type: "string",
+                  enum: PRODUCT_TYPE_IDS,
+                },
+                facts: {
+                  type: "object",
+                  properties: {
+                    color: {
+                      type: "string",
+                      enum: ["", "black", "white", "gray", "beige", "brown", "red", "raspberry", "pink", "orange", "yellow", "green", "blue", "light_blue", "purple"],
+                    },
+                    pattern: {
+                      type: "string",
+                      enum: ["", "plaid", "striped", "floral", "polka_dot", "animal", "printed"],
+                    },
+                    sleeve: {
+                      type: "string",
+                      enum: ["", "sleeveless", "short", "three_quarter", "long"],
+                    },
+                    neckline: {
+                      type: "string",
+                      enum: ["", "collared", "v_neck", "round"],
+                    },
+                    closure: {
+                      type: "string",
+                      enum: ["", "buttons", "zipper"],
+                    },
+                    details: {
+                      type: "array",
+                      items: {
+                        type: "string",
+                        enum: ["waist_belt", "lace", "ruffle", "pockets", "hood", "embroidery"],
+                      },
+                    },
+                    pieces: { type: "integer", minimum: 0, maximum: 4 },
+                  },
+                  required: ["color", "pattern", "sleeve", "neckline", "closure", "details", "pieces"],
+                  additionalProperties: false,
+                },
+              },
+              required: ["product_type", "facts"],
+              additionalProperties: false,
+            },
+          },
+        },
+        input: [
+          {
+            role: "developer",
+            content: [
+              "Write an accurate clothing product description from the supplied product photos.",
+              "First identify the main garment type from the photo. Use exactly one product_type from: " + PRODUCT_TYPE_IDS.join(", ") + ".",
+              "Return only the structured visible facts defined by the schema. Use an empty string or empty array when a fact is hidden or uncertain.",
+              "Identify garment type or set pieces, color, print, neckline or collar, sleeves, closure, and visible decorative details.",
+              "Use the metadata only as supporting context. The photos are the source of truth.",
+              "Do not guess fabric, fiber composition, comfort, quality, season, fit, performance, age, brand, price, sizes, stock, packaging, Qadoq, Qop, or shipping.",
+              "Do not claim a detail that is hidden or uncertain. Do not use promotional superlatives.",
+              "Return JSON matching the supplied schema.",
+            ].join("\n"),
+          },
+          {
+            role: "user",
+            content: [
+              { type: "input_text", text: `Product context: ${JSON.stringify(context)}` },
+              ...imageParts,
+            ],
+          },
+        ],
+      }),
+    });
+    const raw = await response.text();
+    if (!response.ok) throw new Error("openai_" + response.status + ": " + raw.slice(0, 220));
+    const parsed = parseAssistantJson(responseText(JSON.parse(raw)));
+    const facts = parsed?.facts;
+    if (!PRODUCT_TYPE_IDS.includes(parsed?.product_type) || !facts || !Array.isArray(facts.details)) {
+      throw new Error("openai_bad_response");
+    }
+    const normalizedFacts = { ...facts, product_type: parsed.product_type };
+    return {
+      product_type: parsed.product_type,
+      names: {
+        ru: localizedProductType({ product_type: parsed.product_type }, "ru"),
+        uz: localizedProductType({ product_type: parsed.product_type }, "uz"),
+        en: localizedProductType({ product_type: parsed.product_type }, "en"),
+      },
+      desc: {
+        ru: descriptionFromFacts(normalizedFacts, "ru"),
+        uz: descriptionFromFacts(normalizedFacts, "uz"),
+        en: descriptionFromFacts(normalizedFacts, "en"),
+      },
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const TRANSLIT = {
   а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "zh", з: "z", и: "i",
   й: "y", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t",
@@ -1791,18 +2928,26 @@ function uniqueSlug(base, ignoreId = 0) {
   return slug;
 }
 
+async function uniqueCatalogSlug(base, ignoreId = 0) {
+  if (!postgresCatalog) return uniqueSlug(base, ignoreId);
+  let slug = base;
+  let i = 2;
+  while (await postgresCatalog.slugExists(slug, ignoreId)) slug = `${base}-${i++}`;
+  return slug;
+}
+
 const PRODUCT_COPY_LABELS = {
   en: {
     genders: { women: "women", men: "men", kids: "kids", unisex: "unisex" },
     categories: { pajamas: "Pajamas", robes: "Robes", homewear: "Homewear", loungewear: "Loungewear" },
-    text: ({ name, category, gender, model, variant, sizes, price }) =>
-      `${name} — ${category} for ${gender}. Model ${model}${variant ? `, variant ${variant}` : ""}. Sizes: ${sizes}. Wholesale orders start from 1 Qadoq (6 pcs, 1 per size) or 1 Qop (60 pcs, 10 per size); availability and dispatch are confirmed by a manager.${price ? ` Unit price: ${price}.` : ""}`,
+    text: ({ name, gender, model, variant, sizes, price }) =>
+      `${name} for ${gender}. Model ${model}${variant ? `, ${variant}` : ""}. Sizes: ${sizes}. Wholesale orders start from 1 pack (6 pcs, 1 per size) or 1 bag (60 pcs, 10 per size). Availability is confirmed by a manager.${price ? ` Unit price: ${price}.` : ""}`,
   },
   ru: {
     genders: { women: "женский", men: "мужской", kids: "детский", unisex: "унисекс" },
     categories: { pajamas: "Пижамы", robes: "Халаты", homewear: "Домашняя одежда", loungewear: "Лаунж-сеты" },
-    text: ({ name, category, gender, model, variant, sizes, price }) =>
-      `${name} — ${category.toLowerCase()}, ${gender}. Модель ${model}${variant ? `, вариант ${variant}` : ""}. Размеры: ${sizes}. Оптовый заказ от 1 Qadoq (6 шт., по 1 на размер) или 1 Qop (60 шт., по 10 на размер); финальную доступность и отправку подтверждает менеджер.${price ? ` Цена за 1 шт.: ${price}.` : ""}`,
+    text: ({ name, gender, model, variant, sizes, price }) =>
+      `${name}, ${gender}. Модель ${model}${variant ? `, ${variant}` : ""}. Размеры: ${sizes}. Оптовый заказ от 1 упаковки (6 шт., по 1 на размер) или 1 мешка (60 шт., по 10 на размер). Наличие подтверждает менеджер.${price ? ` Цена за 1 шт.: ${price}.` : ""}`,
   },
   uz: {
     genders: { women: "ayollar", men: "erkaklar", kids: "bolalar", unisex: "uniseks" },
@@ -1812,61 +2957,75 @@ const PRODUCT_COPY_LABELS = {
   },
 };
 
+const PRODUCT_TYPE_COPY = {
+  en: {
+    tunic: "Tunic", sarochka: "Nightgown", robe: "Robe", pajamas: "Pajamas",
+    set: "Set", tracksuit: "Tracksuit", hoodie: "Hoodie", dress: "Dress",
+    shirt: "Shirt", polo: "Polo", trousers: "Trousers", tshirt: "T-shirt",
+    shorts: "Shorts", top: "Top",
+  },
+  ru: {
+    tunic: "Туника", sarochka: "Сорочка", robe: "Халат", pajamas: "Пижама",
+    set: "Комплект", tracksuit: "Спортивный костюм", hoodie: "Худи", dress: "Платье",
+    shirt: "Рубашка", polo: "Поло", trousers: "Штаны", tshirt: "Футболка",
+    shorts: "Шорты", top: "Майка",
+  },
+  uz: {
+    tunic: "Tunika", sarochka: "Sarochka", robe: "Xalat", pajamas: "Pijama",
+    set: "To‘plam", tracksuit: "Sport kostyum", hoodie: "Hudi", dress: "Ko‘ylak",
+    shirt: "Ko‘ylak", polo: "Polo", trousers: "Ishton", tshirt: "Futbolka",
+    shorts: "Shortik", top: "Mayka",
+  },
+};
+
+function localizedProductType(product, lang = "uz") {
+  const type = inferProductType(product);
+  return PRODUCT_TYPE_COPY[lang]?.[type]
+    || PRODUCT_TYPE_COPY.en[type]
+    || String(product.name || "Milana");
+}
+
 function productCopyPrice(p) {
   const price = Number(p.wholesale_price || p.price || 0);
   return price > 0 ? `$${price.toFixed(2)}` : "";
 }
 
-function compactModel(value) {
-  return String(value || "").toLowerCase().replace(/[^a-z0-9а-яё]+/gi, "");
-}
-
-function shouldRefreshGeneratedCopy(value, model) {
-  const text = String(value || "").trim();
-  if (!text) return true;
-  if (/\bpachka\b|\bqop\b/.test(text)) return true;
-  const modelKey = compactModel(model);
-  if (!modelKey) return false;
-  const generated = /Qadoq|Qop|Оптовый заказ|Wholesale orders|Ulgurji buyurtma/.test(text);
-  return generated && !compactModel(text).includes(modelKey);
-}
-
 function defaultProductDescription(p, lang) {
-  const labels = PRODUCT_COPY_LABELS[lang] || PRODUCT_COPY_LABELS.en;
-  const model = str(p.model_no || p.slug || p.name, 80) || "Milana";
-  const sizes = (Array.isArray(p.sizes) && p.sizes.length ? p.sizes : defaultOrderSizes(p.gender, p.category)).join(", ");
-  return labels.text({
-    name: p.name || "Milana product",
-    category: labels.categories[p.category] || p.category || "Catalog",
-    gender: labels.genders[p.gender] || p.gender || "unisex",
-    model,
-    variant: p.variant || "",
-    sizes,
-    price: productCopyPrice(p),
-  });
+  const productType = inferProductType(p);
+  return descriptionFromFacts(visibleFacts(p, productType), lang);
 }
 
 function normalizeProductLocalizedCopy(p) {
-  const desc = p.desc || {};
   p.desc = {
-    en: shouldRefreshGeneratedCopy(desc.en, p.model_no) ? defaultProductDescription(p, "en") : String(desc.en).trim(),
-    ru: shouldRefreshGeneratedCopy(desc.ru, p.model_no) ? defaultProductDescription(p, "ru") : String(desc.ru).trim(),
-    uz: shouldRefreshGeneratedCopy(desc.uz, p.model_no) ? defaultProductDescription(p, "uz") : String(desc.uz).trim(),
+    en: defaultProductDescription(p, "en"),
+    ru: defaultProductDescription(p, "ru"),
+    uz: defaultProductDescription(p, "uz"),
   };
-  const fabric = p.fabric || {};
-  const fallbackFabric = String(fabric.en || fabric.ru || fabric.uz || "").trim();
   p.fabric = {
-    en: String(fabric.en || fallbackFabric || "Suprem · 100% cotton").trim(),
-    ru: String(fabric.ru || fallbackFabric || "Suprem · хлопок 100%").trim(),
-    uz: String(fabric.uz || fallbackFabric || "Suprem · 100% paxta").trim(),
+    en: localizedMaterial(p, "en"),
+    ru: localizedMaterial(p, "ru"),
+    uz: localizedMaterial(p, "uz"),
+  };
+  p.care = {
+    en: localizedCare(p, "en"),
+    ru: localizedCare(p, "ru"),
+    uz: localizedCare(p, "uz"),
   };
   return p;
 }
 
 function rowToProduct(r, lite = false) {
+  const arrayValue = (value) => {
+    if (Array.isArray(value)) return value;
+    if (!value) return [];
+    try { return JSON.parse(value); } catch { return []; }
+  };
   const p = decorateProduct({
     id: r.id, slug: r.slug, name: r.name,
+    name_i18n: { ru: r.name, en: r.name_en || r.name, uz: r.name_uz || r.name },
     model_no: r.model_no || "", variant: r.variant || "", gender: r.gender || "unisex", category: r.category,
+    catalog_panel: CATALOG_PANELS.includes(r.catalog_panel) ? r.catalog_panel : inferCatalogPanel(r),
+    product_type: inferProductType(r),
     price: r.price, old_price: r.old_price,
     wholesale_price: r.wholesale_price || r.price,
     wholesale_moq: ORDER_PACHKA_SIZE,
@@ -1875,8 +3034,8 @@ function rowToProduct(r, lite = false) {
     retail_stock: r.retail_stock || 0,
     available_qop: r.available_qop,
     like_count: r.like_count || 0,
-    sizes: JSON.parse(r.sizes || "[]"), images: JSON.parse(r.images || "[]"),
-    tag: r.tag, rating: r.rating, reviews: r.reviews, active: !!r.active, sort: r.sort,
+    sizes: arrayValue(r.sizes), images: arrayValue(r.images),
+    tag: r.tag, collection: r.collection || "", rating: r.rating, reviews: r.reviews, active: !!r.active, sort: r.sort,
   });
   if (lite) {
     p.images = p.images.slice(0, 2);
@@ -1894,6 +3053,12 @@ function validateProduct(b) {
   if (name.length < 2) throw new Error("name");
   if (!CATS.includes(b.category)) throw new Error("category");
   const gender = GENDERS.includes(b.gender) ? b.gender : "unisex";
+  const catalog_panel = CATALOG_PANELS.includes(b.catalog_panel)
+    ? b.catalog_panel
+    : inferCatalogPanel({ ...b, gender });
+  const product_type = PRODUCT_TYPE_IDS.includes(b.product_type)
+    ? b.product_type
+    : inferProductType(b);
   const model_no = str(b.model_no, 40);
   const variant = str(b.variant, 60);
   const price = Number(b.price);
@@ -1919,10 +3084,11 @@ function validateProduct(b) {
     ))
     .slice(0, 12);
   const tag = TAGS.includes(b.tag) ? b.tag : "";
+  const collection = COLLECTIONS.includes(b.collection) ? b.collection : "";
   const rating = Math.min(5, Math.max(0, Number(b.rating) || 0));
   const reviews = Math.min(1e6, Math.max(0, Math.round(Number(b.reviews) || 0)));
   return {
-    name, model_no, variant, gender, category: b.category, price: wholesale_price, old_price, tag, rating, reviews,
+    name, model_no, variant, gender, category: b.category, catalog_panel, product_type, price: wholesale_price, old_price, tag, collection, rating, reviews,
     wholesale_price, wholesale_moq, retail_enabled, retail_price, retail_stock, available_qop,
     sizes: JSON.stringify(sizes), images: JSON.stringify(images),
     desc_en: str(b.desc?.en, 5000), desc_ru: str(b.desc?.ru, 5000), desc_uz: str(b.desc?.uz, 5000),
@@ -1934,7 +3100,8 @@ function validateProduct(b) {
 
 const PUBLIC_SETTING_KEYS = ["phone", "whatsapp", "telegram", "instagram", "email",
   "address_en", "address_ru", "address_uz", "currency", "currency_pos",
-  "hero_type", "hero_image", "hero_video", "hero_poster", "accent", "accent_dark"];
+  "hero_type", "hero_image", "hero_video", "hero_poster", "accent", "accent_dark",
+  "hero_gap", "site_config"];
 const allSettings = () => {
   const settings = Object.fromEntries(PUBLIC_SETTING_KEYS.map((k) => [k, getSetting(k) ?? ""]));
   settings.currency = "$";
@@ -1952,17 +3119,30 @@ const SETTING_VALIDATORS = {
   hero_poster: (v) => (mediaPathOk(v) ? v : null),
   accent: (v) => (hexOk(v) ? v : null),
   accent_dark: (v) => (hexOk(v) ? v : null),
+  hero_gap: (v) => {
+    if (v === "") return "";
+    const n = Number(String(v).replace(",", "."));
+    return Number.isFinite(n) && n >= -2 && n <= 2 ? String(n) : null;
+  },
 };
 
-function healthResponse(req, res) {
+async function healthResponse(req, res) {
   const probe = db.prepare("SELECT 1 ok").get();
+  let catalogHealth = { ok: true, products: db.prepare("SELECT COUNT(*) c FROM products").get().c };
+  if (postgresCatalog) catalogHealth = await postgresCatalog.health();
+  const commerceHealth = postgresCommerce ? await postgresCommerce.health() : {
+    customers: db.prepare("SELECT COUNT(*) c FROM customers").get().c,
+    orders: db.prepare("SELECT COUNT(*) c FROM orders").get().c,
+  };
   send(res, 200, {
-    ok: probe?.ok === 1,
+    ok: probe?.ok === 1 && catalogHealth.ok,
     env: NODE_ENV,
     uptime: Math.round(process.uptime()),
-    products: db.prepare("SELECT COUNT(*) c FROM products").get().c,
-    orders: db.prepare("SELECT COUNT(*) c FROM orders").get().c,
-    catalog_source: CATALOG_SOURCE_ENABLED ? (CATALOG_API_BASE ? "catalog_api" : "supabase") : "sqlite",
+    products: catalogHealth.products,
+    orders: commerceHealth.orders,
+    customers: commerceHealth.customers,
+    commerce_source: COMMERCE_DB_DRIVER,
+    catalog_source: CATALOG_SOURCE_ENABLED ? (CATALOG_API_BASE ? "catalog_api" : "supabase") : CATALOG_DB_DRIVER,
     catalog_cached_products: catalogCache.products.length,
     catalog_error: catalogCache.error,
   });
@@ -1974,20 +3154,71 @@ const api = {
 
   /* ----- public ----- */
 
-  "GET /health": (req, res) => healthResponse(req, res),
+  "GET /health": async (req, res) => healthResponse(req, res),
 
-  "GET /api/health": (req, res) => healthResponse(req, res),
+  "GET /api/health": async (req, res) => healthResponse(req, res),
 
   "GET /api/settings": (req, res) => send(res, 200, allSettings()),
 
   "GET /api/auth/config": (req, res) => send(res, 200, {
     provider: FIREBASE_ENABLED ? "firebase" : "local",
     firebase: firebasePublicConfig(),
+    googleClientId: GOOGLE_CLIENT_ID || "",
+    appleEnabled: FIREBASE_APPLE_ENABLED,
   }),
 
-  "GET /api/auth/me": (req, res) => send(res, 200, {
-    customer: publicCustomer(customerFromRequest(req)),
+  "GET /api/auth/me": async (req, res) => send(res, 200, {
+    customer: publicCustomer(await customerFromRequest(req)),
   }),
+
+  "GET /api/auth/profile-dashboard": async (req, res) => {
+    const customer = await customerFromRequest(req);
+    if (!customer) return fail(res, 401, "unauthorized");
+    await ensureCustomerWelcomeCoupon(customer);
+    const orders = await customerOrderSummary(customer.id, 6);
+    const coupons = await couponsForCustomer(customer.id);
+    const totals = postgresCommerce ? await postgresCommerce.customerDashboardTotals(customer.id) : db.prepare(`
+      SELECT COUNT(*) orders_count, COALESCE(SUM(total),0) lifetime_spend
+      FROM orders
+      WHERE customer_id=? AND status!='cancelled'
+    `).get(customer.id) || {};
+    send(res, 200, {
+      customer: publicCustomer(customer),
+      stats: {
+        orders_count: Number(totals.orders_count) || 0,
+        lifetime_spend: Math.round((Number(totals.lifetime_spend) || 0) * 100) / 100,
+        active_coupons: coupons.filter((coupon) => coupon.status === "active").length,
+        price_discount: Math.max(0, Math.min(90, Number(customer.price_discount) || 0)),
+      },
+      coupons,
+      orders,
+    });
+  },
+
+  "POST /api/auth/promo/redeem": async (req, res) => {
+    const customer = await customerFromRequest(req);
+    if (!customer) return fail(res, 401, "unauthorized");
+    if (!rateLimit("customer-promo:" + customer.id, 20, 3600e3)) return fail(res, 429, "rate_limited");
+    const b = await readJson(req, 4e3);
+    const code = normalizePromoCode(b.code);
+    if (!code || code.length < 3) return fail(res, 400, "promo_code");
+    const promo = postgresCommerce ? await postgresCommerce.promoByCode(code) : db.prepare("SELECT * FROM promo_codes WHERE code=?").get(code);
+    if (!promo || !promoIsUsable(promo)) return fail(res, 404, "promo_not_found");
+    const existing = postgresCommerce ? await postgresCommerce.couponByCustomerCode(customer.id, code) : db.prepare("SELECT * FROM customer_coupons WHERE customer_id=? AND code=?").get(customer.id, code);
+    if (existing) return send(res, 200, { coupon: publicCoupon(existing), status: "already_added" });
+    const usageLimit = Number(promo.usage_limit) || 0;
+    const postgresCounts = postgresCommerce ? await postgresCommerce.couponCounts(promo.id, customer.id) : null;
+    if (usageLimit > 0) {
+      const used = postgresCounts ? postgresCounts.total : db.prepare("SELECT COUNT(*) c FROM customer_coupons WHERE promo_id=?").get(promo.id).c;
+      if (Number(used) >= usageLimit) return fail(res, 409, "promo_limit_reached");
+    }
+    const perCustomer = Math.max(1, Number(promo.per_customer_limit) || 1);
+    const customerUses = postgresCounts ? postgresCounts.customer : db.prepare("SELECT COUNT(*) c FROM customer_coupons WHERE customer_id=? AND promo_id=?").get(customer.id, promo.id).c;
+    if (Number(customerUses) >= perCustomer) return fail(res, 409, "promo_already_used");
+    const coupon = await assignCouponToCustomer(customer, promo, "redeemed");
+    audit("customer", "promo.redeemed", { id: customer.id, code });
+    send(res, 201, { coupon: publicCoupon(coupon), status: "added" });
+  },
 
   "POST /api/auth/otp/start": async (req, res) => {
     if (!rateLimit("customer-otp:" + ipOf(req), 8, 3600e3)) return fail(res, 429, "rate_limited");
@@ -2003,7 +3234,8 @@ const api = {
       const sms = await sendSms(normalized, otpSmsMessage(code, lang), { purpose: "phone_otp", lang });
       if (!sms.ok) return fail(res, sms.error === "sms_not_configured" ? 503 : 502, sms.error || "sms_failed");
     }
-    db.prepare(`
+    if (postgresCommerce) await postgresCommerce.upsertOtp("phone", normalized, hashOtp(normalized, code), Date.now() + 10 * 60e3);
+    else db.prepare(`
       INSERT INTO phone_otps (phone, code_hash, expires_at, attempts, verified_at)
       VALUES (?,?,?,?, '')
       ON CONFLICT(phone) DO UPDATE SET
@@ -2025,14 +3257,16 @@ const api = {
     const phone = normalizePhone(b.phone);
     const code = str(b.code, 12);
     if (!phone || !/^\d{6}$/.test(code)) return fail(res, 400, "otp");
-    const row = db.prepare("SELECT * FROM phone_otps WHERE phone=?").get(phone);
+    const row = postgresCommerce ? await postgresCommerce.otp("phone", phone) : db.prepare("SELECT * FROM phone_otps WHERE phone=?").get(phone);
     if (!row || Date.now() > Number(row.expires_at || 0)) return fail(res, 401, "otp_expired");
     if (Number(row.attempts || 0) >= 6) return fail(res, 429, "otp_locked");
     if (row.code_hash !== hashOtp(phone, code)) {
-      db.prepare("UPDATE phone_otps SET attempts=attempts+1 WHERE phone=?").run(phone);
+      if (postgresCommerce) await postgresCommerce.incrementOtp("phone", phone);
+      else db.prepare("UPDATE phone_otps SET attempts=attempts+1 WHERE phone=?").run(phone);
       return fail(res, 401, "otp_wrong");
     }
-    db.prepare("UPDATE phone_otps SET verified_at=datetime('now') WHERE phone=?").run(phone);
+    if (postgresCommerce) await postgresCommerce.verifyOtp("phone", phone);
+    else db.prepare("UPDATE phone_otps SET verified_at=datetime('now') WHERE phone=?").run(phone);
     audit("customer", "auth.otp_verified", { phone: phone.slice(-4) });
     send(res, 200, { ok: true });
   },
@@ -2055,7 +3289,8 @@ const api = {
         emailDelivery = "local_fallback";
       }
     }
-    db.prepare(`
+    if (postgresCommerce) await postgresCommerce.upsertOtp("email", email, hashEmailOtp(email, code), Date.now() + 10 * 60e3);
+    else db.prepare(`
       INSERT INTO email_otps (email, code_hash, expires_at, attempts, verified_at)
       VALUES (?,?,?,?, '')
       ON CONFLICT(email) DO UPDATE SET
@@ -2077,33 +3312,42 @@ const api = {
     const email = normalizeEmail(b.email);
     const code = str(b.code, 12);
     if (!emailOk(email) || !/^\d{6}$/.test(code)) return fail(res, 400, "otp");
-    const row = db.prepare("SELECT * FROM email_otps WHERE email=?").get(email);
+    const row = postgresCommerce ? await postgresCommerce.otp("email", email) : db.prepare("SELECT * FROM email_otps WHERE email=?").get(email);
     if (!row || Date.now() > Number(row.expires_at || 0)) return fail(res, 401, "otp_expired");
     if (Number(row.attempts || 0) >= 6) return fail(res, 429, "otp_locked");
     if (row.code_hash !== hashEmailOtp(email, code)) {
-      db.prepare("UPDATE email_otps SET attempts=attempts+1 WHERE email=?").run(email);
+      if (postgresCommerce) await postgresCommerce.incrementOtp("email", email);
+      else db.prepare("UPDATE email_otps SET attempts=attempts+1 WHERE email=?").run(email);
       return fail(res, 401, "otp_wrong");
     }
-    db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
+    if (postgresCommerce) await postgresCommerce.verifyOtp("email", email);
+    else db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
     audit("customer", "auth.email_otp_verified", { email: email.replace(/^(.).+(@.+)$/, "$1***$2") });
     send(res, 200, { ok: true });
   },
 
-  "GET /api/auth/orders": (req, res) => {
-    const customer = customerFromRequest(req);
+  "GET /api/auth/orders": async (req, res) => {
+    const customer = await customerFromRequest(req);
     if (!customer) return fail(res, 401, "unauthorized");
-    const rows = db.prepare(`
+    const sourceRows = postgresCommerce ? await postgresCommerce.customerOrders(customer.id, 50) : db.prepare(`
       SELECT id, number, status, order_type, tracking_number, items, total, lang, created_at, updated_at
       FROM orders
       WHERE customer_id=?
       ORDER BY id DESC
       LIMIT 50
-    `).all(customer.id).map((row) => {
+    `).all(customer.id);
+    const rows = sourceRows.map((row) => {
       let items = [];
-      try { items = JSON.parse(row.items || "[]"); } catch {}
-      const payment = db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(row.id) || {};
+      if (Array.isArray(row.items)) items = row.items;
+      else try { items = JSON.parse(row.items || "[]"); } catch {}
+      const payment = postgresCommerce ? {
+        id: row.payment_id, method: row.payment_method, provider: row.payment_provider,
+        status: row.payment_status, amount: row.payment_amount, currency: row.payment_currency,
+        reference: row.payment_reference, payload: row.payment_payload,
+      } : db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(row.id) || {};
       let paymentPayload = {};
-      try { paymentPayload = JSON.parse(payment.payload || "{}"); } catch {}
+      if (payment.payload && typeof payment.payload === "object") paymentPayload = payment.payload;
+      else try { paymentPayload = JSON.parse(payment.payload || "{}"); } catch {}
       return {
         id: row.id,
         number: row.number,
@@ -2148,10 +3392,10 @@ const api = {
     send(res, 200, { orders: rows });
   },
 
-  "GET /api/auth/support": (req, res) => {
-    const customer = customerFromRequest(req);
+  "GET /api/auth/support": async (req, res) => {
+    const customer = await customerFromRequest(req);
     if (!customer) return fail(res, 401, "unauthorized");
-    const rows = db.prepare(`
+    const rows = postgresCommerce ? await postgresCommerce.supportForCustomer(customer.id, 50) : db.prepare(`
       SELECT id, number, topic, message, status, lang, created_at, updated_at
       FROM support_requests
       WHERE customer_id=?
@@ -2162,19 +3406,37 @@ const api = {
   },
 
   "PUT /api/auth/profile": async (req, res) => {
-    const customer = customerFromRequest(req);
+    const customer = await customerFromRequest(req);
     if (!customer) return fail(res, 401, "unauthorized");
     const b = await readJson(req, 12e3);
     const name = str(b.name, 80);
     const phone = str(b.phone, 25);
     if (name.length < 2) return fail(res, 400, "name");
     if (phone && !/^[0-9+()\-\s]{5,25}$/.test(phone)) return fail(res, 400, "phone");
-    db.prepare(`
-      UPDATE customers
-      SET name=?, phone=?, city=?, address=?, updated_at=datetime('now')
-      WHERE id=?
-    `).run(name, phone, str(b.city, 80), str(b.address, 300), customer.id);
-    const updated = db.prepare("SELECT * FROM customers WHERE id=?").get(customer.id);
+    const city = str(b.city, 80);
+    const address = str(b.address, 300);
+    const business = {
+      company_name: str(b.company_name, 120),
+      tax_id: str(b.tax_id, 40),
+      legal_address: str(b.legal_address, 300),
+      contact_person: str(b.contact_person, 80),
+      expected_volume: str(b.expected_volume, 120),
+    };
+    let updated;
+    if (postgresCommerce) {
+      updated = await postgresCommerce.updateCustomerProfile(customer.id, { name, phone, city, address, ...business });
+    } else {
+      db.prepare(`
+        UPDATE customers
+        SET name=?, phone=?, city=?, address=?, company_name=?, tax_id=?, legal_address=?,
+            contact_person=?, expected_volume=?, updated_at=datetime('now')
+        WHERE id=?
+      `).run(
+        name, phone, city, address, business.company_name, business.tax_id,
+        business.legal_address, business.contact_person, business.expected_volume, customer.id
+      );
+      updated = db.prepare("SELECT * FROM customers WHERE id=?").get(customer.id);
+    }
     audit("customer", "auth.profile_updated", { id: customer.id });
     send(res, 200, { customer: publicCustomer(updated) });
   },
@@ -2193,26 +3455,30 @@ const api = {
     if (!termsAccepted(b.terms_accepted || b.terms)) return fail(res, 400, "terms");
     const normalizedPhone = phone ? normalizePhone(phone) : "";
     const emailCode = str(b.email_code || b.code, 12);
-    let emailOtpRow = db.prepare("SELECT verified_at FROM email_otps WHERE email=? AND verified_at!=''").get(email);
+    let emailOtpRow = postgresCommerce ? await postgresCommerce.otp("email", email) : db.prepare("SELECT verified_at FROM email_otps WHERE email=? AND verified_at!=''").get(email);
+    if (emailOtpRow && !emailOtpRow.verified_at) emailOtpRow = null;
     if (!emailOtpRow && /^\d{6}$/.test(emailCode)) {
-      const row = db.prepare("SELECT * FROM email_otps WHERE email=?").get(email);
+      const row = postgresCommerce ? await postgresCommerce.otp("email", email) : db.prepare("SELECT * FROM email_otps WHERE email=?").get(email);
       if (row && Date.now() <= Number(row.expires_at || 0) && row.code_hash === hashEmailOtp(email, emailCode)) {
-        db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
+        if (postgresCommerce) await postgresCommerce.verifyOtp("email", email);
+        else db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
         emailOtpRow = { verified_at: new Date().toISOString() };
       }
     }
-    let otpRow = normalizedPhone ? db.prepare("SELECT verified_at FROM phone_otps WHERE phone=? AND verified_at!=''").get(normalizedPhone) : null;
+    let otpRow = normalizedPhone ? (postgresCommerce ? await postgresCommerce.otp("phone", normalizedPhone) : db.prepare("SELECT verified_at FROM phone_otps WHERE phone=? AND verified_at!=''").get(normalizedPhone)) : null;
+    if (otpRow && !otpRow.verified_at) otpRow = null;
     if (!otpRow && normalizedPhone && /^\d{6}$/.test(str(b.otp_code, 12))) {
-      const row = db.prepare("SELECT * FROM phone_otps WHERE phone=?").get(normalizedPhone);
+      const row = postgresCommerce ? await postgresCommerce.otp("phone", normalizedPhone) : db.prepare("SELECT * FROM phone_otps WHERE phone=?").get(normalizedPhone);
       if (row && Date.now() <= Number(row.expires_at || 0) && row.code_hash === hashOtp(normalizedPhone, str(b.otp_code, 12))) {
-        db.prepare("UPDATE phone_otps SET verified_at=datetime('now') WHERE phone=?").run(normalizedPhone);
+        if (postgresCommerce) await postgresCommerce.verifyOtp("phone", normalizedPhone);
+        else db.prepare("UPDATE phone_otps SET verified_at=datetime('now') WHERE phone=?").run(normalizedPhone);
         otpRow = { verified_at: new Date().toISOString() };
       }
     }
     if (!emailOtpRow && !otpRow) return fail(res, 400, "email_not_verified");
     if (str(b.name, 80).length < 2) return fail(res, 400, "name");
-    if (db.prepare("SELECT id FROM customers WHERE email=?").get(email)) return fail(res, 409, "email_exists");
-    const customer = upsertCustomer({
+    if (postgresCommerce ? await postgresCommerce.customerByEmail(email) : db.prepare("SELECT id FROM customers WHERE email=?").get(email)) return fail(res, 409, "email_exists");
+    const customer = await upsertCustomer({
       email,
       name: str(b.name, 80),
       phone,
@@ -2231,7 +3497,7 @@ const api = {
       provider: "local",
       password_hash: hashPassword(password),
     });
-    const token = createCustomerSession(customer.id);
+    const token = await createCustomerSession(customer.id);
     audit("customer", "auth.signup", { id: customer.id, provider: "local" });
     authResponse(req, res, 201, customer, token);
   },
@@ -2242,11 +3508,11 @@ const api = {
     if (!rateLimit("customer-signin:" + ipOf(req), 12, 15 * 60e3)) return fail(res, 429, "rate_limited");
     const b = await readJson(req, 8e3);
     const email = normalizeEmail(b.email);
-    const row = emailOk(email) ? db.prepare("SELECT * FROM customers WHERE email=?").get(email) : null;
+    const row = emailOk(email) ? (postgresCommerce ? await postgresCommerce.customerByEmail(email) : db.prepare("SELECT * FROM customers WHERE email=?").get(email)) : null;
     if (!row || !row.password_hash || !verifyPassword(String(b.password || ""), row.password_hash)) {
       return fail(res, 401, "wrong_credentials");
     }
-    const token = createCustomerSession(row.id);
+    const token = await createCustomerSession(row.id);
     audit("customer", "auth.signin", { id: row.id, provider: row.provider || "local" });
     authResponse(req, res, 200, row, token);
   },
@@ -2257,17 +3523,19 @@ const api = {
     const email = normalizeEmail(b.email);
     const code = str(b.code || b.email_code, 12);
     if (!emailOk(email) || !/^\d{6}$/.test(code)) return fail(res, 400, "otp");
-    const customer = db.prepare("SELECT * FROM customers WHERE email=?").get(email);
-    const otp = db.prepare("SELECT * FROM email_otps WHERE email=?").get(email);
+    const customer = postgresCommerce ? await postgresCommerce.customerByEmail(email) : db.prepare("SELECT * FROM customers WHERE email=?").get(email);
+    const otp = postgresCommerce ? await postgresCommerce.otp("email", email) : db.prepare("SELECT * FROM email_otps WHERE email=?").get(email);
     if (!customer) return fail(res, 401, "account_not_found");
     if (!otp || Date.now() > Number(otp.expires_at || 0)) return fail(res, 401, "otp_expired");
     if (Number(otp.attempts || 0) >= 6) return fail(res, 429, "otp_locked");
     if (otp.code_hash !== hashEmailOtp(email, code)) {
-      db.prepare("UPDATE email_otps SET attempts=attempts+1 WHERE email=?").run(email);
+      if (postgresCommerce) await postgresCommerce.incrementOtp("email", email);
+      else db.prepare("UPDATE email_otps SET attempts=attempts+1 WHERE email=?").run(email);
       return fail(res, 401, "otp_wrong");
     }
-    db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
-    const token = createCustomerSession(customer.id);
+    if (postgresCommerce) await postgresCommerce.verifyOtp("email", email);
+    else db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
+    const token = await createCustomerSession(customer.id);
     audit("customer", "auth.passwordless", { id: customer.id, provider: customer.provider || "local" });
     authResponse(req, res, 200, customer, token);
   },
@@ -2281,21 +3549,24 @@ const api = {
     if (!emailOk(email)) return fail(res, 400, "email");
     if (!/^\d{6}$/.test(otpCode)) return fail(res, 400, "otp");
     if (password.length < 8 || password.length > 100) return fail(res, 400, "password");
-    const row = db.prepare("SELECT * FROM customers WHERE email=?").get(email);
+    const row = postgresCommerce ? await postgresCommerce.customerByEmail(email) : db.prepare("SELECT * FROM customers WHERE email=?").get(email);
     if (!row) return fail(res, 401, "recovery_mismatch");
-    const otpRow = db.prepare("SELECT * FROM email_otps WHERE email=?").get(email);
+    const otpRow = postgresCommerce ? await postgresCommerce.otp("email", email) : db.prepare("SELECT * FROM email_otps WHERE email=?").get(email);
     if (!otpRow || Date.now() > Number(otpRow.expires_at || 0)) return fail(res, 401, "otp_expired");
     if (Number(otpRow.attempts || 0) >= 6) return fail(res, 429, "otp_locked");
     if (otpRow.code_hash !== hashEmailOtp(email, otpCode)) {
-      db.prepare("UPDATE email_otps SET attempts=attempts+1 WHERE email=?").run(email);
+      if (postgresCommerce) await postgresCommerce.incrementOtp("email", email);
+      else db.prepare("UPDATE email_otps SET attempts=attempts+1 WHERE email=?").run(email);
       return fail(res, 401, "otp_wrong");
     }
-    db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
-    db.prepare("UPDATE customers SET password_hash=?, provider='local', updated_at=datetime('now') WHERE id=?")
-      .run(hashPassword(password), row.id);
-    db.prepare("DELETE FROM customer_sessions WHERE customer_id=?").run(row.id);
-    const updated = db.prepare("SELECT * FROM customers WHERE id=?").get(row.id);
-    const token = createCustomerSession(row.id);
+    if (postgresCommerce) await postgresCommerce.verifyOtp("email", email);
+    else db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
+    const updated = postgresCommerce ? await postgresCommerce.updateCustomerPassword(row.id, hashPassword(password)) :
+      (db.prepare("UPDATE customers SET password_hash=?, provider='local', updated_at=datetime('now') WHERE id=?").run(hashPassword(password), row.id),
+       db.prepare("SELECT * FROM customers WHERE id=?").get(row.id));
+    if (postgresCommerce) await postgresCommerce.deleteCustomerSessions(row.id);
+    else db.prepare("DELETE FROM customer_sessions WHERE customer_id=?").run(row.id);
+    const token = await createCustomerSession(row.id);
     audit("customer", "auth.password_recovered", { id: row.id, provider: row.provider || "local" });
     authResponse(req, res, 200, updated, token);
   },
@@ -2308,34 +3579,59 @@ const api = {
     catch (e) { return fail(res, 401, e.message); }
     const email = normalizeEmail(payload.email || b.email);
     if (!emailOk(email)) return fail(res, 400, "email");
-    const customer = upsertCustomer({
+    const customerProvider = firebaseCustomerProvider(payload);
+    const customer = await upsertCustomer({
       email,
       name: str(payload.name || b.name, 80),
       phone: str(b.phone || payload.phone_number || "", 25),
       city: str(b.city, 80),
       address: str(b.address, 300),
-      provider: "firebase",
+      provider: customerProvider,
       provider_uid: String(payload.sub || ""),
     });
-    const token = createCustomerSession(customer.id);
-    audit("customer", "auth.firebase", { id: customer.id, uid: payload.sub });
+    const token = await createCustomerSession(customer.id);
+    audit("customer", `auth.${customerProvider}`, { id: customer.id, uid: payload.sub });
     authResponse(req, res, 200, customer, token);
   },
 
-  "POST /api/auth/logout": (req, res) => {
+  "POST /api/auth/google": async (req, res) => {
+    if (!rateLimit("customer-google:" + ipOf(req), 30, 15 * 60e3)) return fail(res, 429, "rate_limited");
+    const b = await readJson(req, 32e3);
+    let payload;
+    try { payload = await verifyGoogleAccessToken(b.accessToken); }
+    catch (e) { return fail(res, 401, e.message); }
+    const email = normalizeEmail(payload.email);
+    if (!emailOk(email)) return fail(res, 400, "email");
+    const customer = await upsertCustomer({
+      email,
+      name: str(payload.name, 80),
+      phone: "",
+      provider: "google",
+      provider_uid: String(payload.sub || ""),
+      approval_status: "active",
+    });
+    const token = await createCustomerSession(customer.id);
+    audit("customer", "auth.google", { id: customer.id, uid: payload.sub });
+    authResponse(req, res, 200, customer, token);
+  },
+
+  "POST /api/auth/logout": async (req, res) => {
     const auth = String(req.headers.authorization || "");
     const bearer = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
     const token = bearer || parseCookies(req).cid;
-    if (token) db.prepare("DELETE FROM customer_sessions WHERE token=?").run(sha256(token));
+    if (token && postgresCommerce) await postgresCommerce.deleteCustomerSession(sha256(token));
+    else if (token) db.prepare("DELETE FROM customer_sessions WHERE token=?").run(sha256(token));
     send(res, 200, { ok: true }, { "Set-Cookie": customerCookie(req, "x", 0) });
   },
 
   "GET /api/products": async (req, res, u) => {
     const q = u.searchParams;
-    const customer = customerFromRequest(req);
+    const customer = await customerFromRequest(req);
+    const paging = paginationFrom(q, { defaultLimit: 48, maxLimit: 2500 });
     if (CATALOG_SOURCE_ENABLED) {
       try {
         let products = await activeProductsForCatalog();
+        if (CATALOG_PANELS.includes(q.get("panel"))) products = products.filter((p) => p.catalog_panel === q.get("panel"));
         if (CATS.includes(q.get("category"))) products = products.filter((p) => p.category === q.get("category"));
         if (GENDERS.includes(q.get("gender"))) products = products.filter((p) => p.gender === q.get("gender"));
         if (TAGS.includes(q.get("tag")) && q.get("tag")) products = products.filter((p) => p.tag === q.get("tag"));
@@ -2351,31 +3647,59 @@ const api = {
           "default": term ? (a, b) => (b.smart_score || 0) - (a.smart_score || 0) || b.sort - a.sort || b.id - a.id : (a, b) => b.sort - a.sort || b.id - a.id,
         };
         products = products.slice().sort(sorts[q.get("sort")] || sorts.default);
-        const limit = Math.min(1000, Math.max(1, Number(q.get("limit")) || 1000));
-        return send(res, 200, products.slice(0, limit).map((p) => publicProductCard(productForCustomer(p, customer))));
+        const total = products.length;
+        const items = products.slice(paging.offset, paging.offset + paging.limit)
+          .map((p) => publicProductCard(productForCustomer(p, customer)));
+        return sendPage(res, items, { ...paging, total }, q);
       } catch (e) {
         catalogCache.error = e.message;
         console.error("Catalog source failed; falling back to SQLite:", e.message);
       }
     }
-    let sql = "SELECT * FROM products WHERE active=1";
+    if (postgresCatalog) {
+      const result = await postgresCatalog.list({
+        activeOnly: true,
+        filters: {
+          catalog_panel: CATALOG_PANELS.includes(q.get("panel")) ? q.get("panel") : "",
+          category: CATS.includes(q.get("category")) ? q.get("category") : "",
+          gender: GENDERS.includes(q.get("gender")) ? q.get("gender") : "",
+          tag: TAGS.includes(q.get("tag")) ? q.get("tag") : "",
+        },
+        search: str(q.get("q") || "", 60),
+        sort: q.get("sort") || "default",
+        limit: paging.limit,
+        offset: paging.offset,
+      });
+      const items = result.rows
+        .map((row) => rowToProduct(row))
+        .map((product) => publicProductCard(productForCustomer(product, customer)));
+      return sendPage(res, items, { ...paging, total: result.total }, q);
+    }
+    let where = " FROM products WHERE active=1";
     const args = [];
-    if (CATS.includes(q.get("category"))) { sql += " AND category=?"; args.push(q.get("category")); }
-    if (GENDERS.includes(q.get("gender"))) { sql += " AND gender=?"; args.push(q.get("gender")); }
-    if (TAGS.includes(q.get("tag")) && q.get("tag")) { sql += " AND tag=?"; args.push(q.get("tag")); }
+    if (CATALOG_PANELS.includes(q.get("panel"))) { where += " AND catalog_panel=?"; args.push(q.get("panel")); }
+    if (CATS.includes(q.get("category"))) { where += " AND category=?"; args.push(q.get("category")); }
+    if (GENDERS.includes(q.get("gender"))) { where += " AND gender=?"; args.push(q.get("gender")); }
+    if (TAGS.includes(q.get("tag")) && q.get("tag")) { where += " AND tag=?"; args.push(q.get("tag")); }
     const term = str(q.get("q") || "", 60);
+    if (term) {
+      const like = `%${term.toLowerCase()}%`;
+      where += " AND (LOWER(name) LIKE ? OR LOWER(model_no) LIKE ? OR LOWER(variant) LIKE ? OR LOWER(slug) LIKE ?)";
+      args.push(like, like, like, like);
+    }
     const sorts = {
       "new": "created_at DESC, id DESC",
       "price-asc": "price ASC", "price-desc": "price DESC",
       "popular": "reviews DESC, rating DESC",
       "default": "sort DESC, id DESC",
     };
-    sql += " ORDER BY " + (sorts[q.get("sort")] || sorts.default);
-    const limit = Math.min(1000, Math.max(1, Number(q.get("limit")) || 200));
-    sql += " LIMIT " + (term ? 1000 : limit);
-    let products = db.prepare(sql).all(...args).map((r) => rowToProduct(r));
-    if (term) products = smartSearchProducts(products, term, limit);
-    send(res, 200, products.slice(0, limit).map((p) => publicProductCard(productForCustomer(p, customer))));
+    const total = db.prepare("SELECT COUNT(*) AS c" + where).get(...args).c;
+    const sql = "SELECT *" + where
+      + " ORDER BY " + (sorts[q.get("sort")] || sorts.default)
+      + " LIMIT ? OFFSET ?";
+    const products = db.prepare(sql).all(...args, paging.limit, paging.offset).map((r) => rowToProduct(r));
+    const items = products.map((p) => publicProductCard(productForCustomer(p, customer)));
+    sendPage(res, items, { ...paging, total }, q);
   },
 
   "GET /api/search/smart": async (req, res, u) => {
@@ -2384,10 +3708,12 @@ const api = {
     let products = await activeProductsForCatalog();
     const gender = u.searchParams.get("gender");
     const category = u.searchParams.get("category");
+    const panel = u.searchParams.get("panel");
     if (GENDERS.includes(gender)) products = products.filter((p) => p.gender === gender);
     if (CATS.includes(category)) products = products.filter((p) => p.category === category);
+    if (CATALOG_PANELS.includes(panel)) products = products.filter((p) => p.catalog_panel === panel);
     const limit = Math.min(24, Math.max(1, Number(u.searchParams.get("limit")) || 8));
-    const customer = customerFromRequest(req);
+    const customer = await customerFromRequest(req);
     send(res, 200, { query, products: smartSearchProducts(products.map((p) => productForCustomer(p, customer)), query, limit) });
   },
 
@@ -2398,13 +3724,15 @@ const api = {
     const seed = products.find((p) => (slug && p.slug === slug) || (id && p.id === id));
     if (!seed) return send(res, 200, { products: [] });
     const limit = Math.min(12, Math.max(1, Number(u.searchParams.get("limit")) || 4));
-    const customer = customerFromRequest(req);
+    const customer = await customerFromRequest(req);
     send(res, 200, { products: smartRecommendProducts(products, seed, limit).map((p) => publicProductCard(productForCustomer(p, customer))) });
   },
 
   "GET /api/products/:slug": async (req, res, u, m) => {
-    const customer = customerFromRequest(req);
-    const row = db.prepare("SELECT * FROM products WHERE slug=? AND active=1").get(m.slug);
+    const customer = await customerFromRequest(req);
+    const row = postgresCatalog
+      ? await postgresCatalog.getBySlug(m.slug, true)
+      : db.prepare("SELECT * FROM products WHERE slug=? AND active=1").get(m.slug);
     if (row) {
       const localProduct = rowToProduct(row);
       const related = smartRecommendProducts(await activeProductsForCatalog(), localProduct, 4).map((p) => publicProductCard(productForCustomer(p, customer)));
@@ -2425,29 +3753,35 @@ const api = {
     return fail(res, 404, "not_found");
   },
 
-  "GET /api/auth/likes": (req, res) => {
-    const customer = customerFromRequest(req);
+  "GET /api/auth/likes": async (req, res) => {
+    const customer = await customerFromRequest(req);
     if (!customer) return fail(res, 401, "unauthorized");
-    const rows = db.prepare(`
+    const localRows = postgresCommerce ? await postgresCommerce.likesForCustomer(customer.id, 100) : db.prepare(`
       SELECT l.product_id, l.product_slug, l.created_at, p.slug, p.name, p.price, p.images
       FROM likes l
       LEFT JOIN products p ON p.id=l.product_id
       WHERE l.customer_id=?
       ORDER BY l.id DESC
       LIMIT 100
-    `).all(customer.id).map((row) => ({
-      id: row.product_id,
-      slug: row.slug || row.product_slug,
-      name: row.name || row.product_slug || String(row.product_id),
-      price: row.price || 0,
-      image: (() => { try { return JSON.parse(row.images || "[]")[0] || ""; } catch { return ""; } })(),
-      added_at: row.created_at,
+    `).all(customer.id);
+    const rows = await Promise.all(localRows.map(async (row) => {
+      const pg = postgresCatalog ? await postgresCatalog.getById(row.product_id) : null;
+      const source = pg || row;
+      const images = Array.isArray(source.images) ? source.images : (() => { try { return JSON.parse(source.images || "[]"); } catch { return []; } })();
+      return {
+        id: row.product_id,
+        slug: source.slug || row.product_slug,
+        name: source.name || row.product_slug || String(row.product_id),
+        price: Number(source.price || 0),
+        image: images[0] || "",
+        added_at: row.created_at,
+      };
     }));
     send(res, 200, { likes: rows });
   },
 
   "POST /api/products/:id/like": async (req, res, u, m) => {
-    const customer = customerFromRequest(req);
+    const customer = await customerFromRequest(req);
     if (!customer) return fail(res, 401, "unauthorized");
     const id = Number(m.id);
     if (!id) return fail(res, 400, "product");
@@ -2455,27 +3789,39 @@ const api = {
     if (CATALOG_SOURCE_ENABLED) {
       try { slug = (await catalogProductById(id))?.slug || ""; } catch {}
     }
+    if (!slug && postgresCatalog) slug = (await postgresCatalog.getById(id))?.slug || "";
     if (!slug) slug = db.prepare("SELECT slug FROM products WHERE id=?").get(id)?.slug || "";
-    db.prepare("INSERT OR IGNORE INTO likes (customer_id, product_id, product_slug) VALUES (?,?,?)")
-      .run(customer.id, id, slug);
-    db.prepare("UPDATE products SET like_count=(SELECT COUNT(*) FROM likes WHERE product_id=?) WHERE id=?").run(id, id);
-    send(res, 200, { liked: true, like_count: likeCount(id, slug) });
+    let count;
+    if (postgresCommerce) count = await postgresCommerce.addLike(customer.id, id, slug);
+    else {
+      db.prepare("INSERT OR IGNORE INTO likes (customer_id, product_id, product_slug) VALUES (?,?,?)").run(customer.id, id, slug);
+      count = likeCount(id, slug);
+    }
+    if (postgresCatalog) await postgresCatalog.setLikeCount(id, count);
+    else db.prepare("UPDATE products SET like_count=(SELECT COUNT(*) FROM likes WHERE product_id=?) WHERE id=?").run(id, id);
+    send(res, 200, { liked: true, like_count: count });
   },
 
-  "DELETE /api/products/:id/like": (req, res, u, m) => {
-    const customer = customerFromRequest(req);
+  "DELETE /api/products/:id/like": async (req, res, u, m) => {
+    const customer = await customerFromRequest(req);
     if (!customer) return fail(res, 401, "unauthorized");
     const id = Number(m.id);
-    db.prepare("DELETE FROM likes WHERE customer_id=? AND product_id=?").run(customer.id, id);
-    db.prepare("UPDATE products SET like_count=(SELECT COUNT(*) FROM likes WHERE product_id=?) WHERE id=?").run(id, id);
-    const slug = db.prepare("SELECT slug FROM products WHERE id=?").get(id)?.slug || "";
-    send(res, 200, { liked: false, like_count: likeCount(id, slug) });
+    let count;
+    if (postgresCommerce) count = await postgresCommerce.deleteLike(customer.id, id);
+    else db.prepare("DELETE FROM likes WHERE customer_id=? AND product_id=?").run(customer.id, id);
+    const slug = postgresCatalog
+      ? (await postgresCatalog.getById(id))?.slug || ""
+      : db.prepare("SELECT slug FROM products WHERE id=?").get(id)?.slug || "";
+    if (!postgresCommerce) count = likeCount(id, slug);
+    if (postgresCatalog) await postgresCatalog.setLikeCount(id, count);
+    else db.prepare("UPDATE products SET like_count=(SELECT COUNT(*) FROM likes WHERE product_id=?) WHERE id=?").run(id, id);
+    send(res, 200, { liked: false, like_count: count });
   },
 
-  "GET /api/products/:slug/reviews": (req, res, u, m) => {
+  "GET /api/products/:slug/reviews": async (req, res, u, m) => {
     const slug = str(m.slug, 120);
     const productId = Number(u.searchParams.get("product_id")) || 0;
-    const rows = db.prepare(`
+    const rows = postgresCommerce ? await postgresCommerce.reviewsForProduct(productId, slug, 50) : db.prepare(`
       SELECT r.id, r.rating, r.comment, r.photo_url, r.verified_purchase, r.created_at,
              COALESCE(c.name, 'Milana customer') customer_name
       FROM reviews r
@@ -2484,11 +3830,12 @@ const api = {
       ORDER BY r.id DESC
       LIMIT 50
     `).all(slug, productId);
-    send(res, 200, { summary: reviewSummary(productId, slug), reviews: rows });
+    const summary = postgresCommerce ? await postgresCommerce.reviewSummary(productId, slug) : reviewSummary(productId, slug);
+    send(res, 200, { summary: { count: Number(summary.count) || 0, rating: Number(summary.rating) || 0 }, reviews: rows });
   },
 
   "POST /api/reviews": async (req, res) => {
-    const customer = customerFromRequest(req);
+    const customer = await customerFromRequest(req);
     if (!customer) return fail(res, 401, "unauthorized");
     if (!rateLimit("review:" + customer.id, 12, 24 * 3600e3)) return fail(res, 429, "rate_limited");
     const b = await readJson(req, 16e3);
@@ -2499,35 +3846,51 @@ const api = {
     const photo = str(b.photo_url, 300);
     if (!productId && !productSlug) return fail(res, 400, "product");
     if (!rating) return fail(res, 400, "rating");
-    const orders = db.prepare("SELECT id, items FROM orders WHERE customer_id=? AND status!='cancelled' ORDER BY id DESC LIMIT 100").all(customer.id);
+    const orders = postgresCommerce ? await postgresCommerce.ordersForCustomer(customer.id, 100) : db.prepare("SELECT id, items FROM orders WHERE customer_id=? AND status!='cancelled' ORDER BY id DESC LIMIT 100").all(customer.id);
     let orderId = 0;
     for (const order of orders) {
       let items = [];
-      try { items = JSON.parse(order.items || "[]"); } catch {}
+      if (Array.isArray(order.items)) items = order.items;
+      else try { items = JSON.parse(order.items || "[]"); } catch {}
       if (items.some((item) => Number(item.id) === productId || item.slug === productSlug)) {
         orderId = order.id;
         break;
       }
     }
     if (!orderId) return fail(res, 403, "verified_purchase_required");
-    const r = db.prepare(`
+    const created = postgresCommerce ? await postgresCommerce.createReview({
+      productId, productSlug, customerId: customer.id, orderId, rating, comment, photoUrl: photo,
+    }) : null;
+    const r = created ? null : db.prepare(`
       INSERT INTO reviews (product_id, product_slug, customer_id, order_id, rating, comment, photo_url, verified_purchase, status)
       VALUES (?,?,?,?,?,?,?,?, 'pending')
     `).run(productId || null, productSlug, customer.id, orderId, rating, comment, photo, 1);
-    audit("customer", "review.created", { id: r.lastInsertRowid, product_id: productId, status: "pending" });
-    send(res, 201, { id: r.lastInsertRowid, status: "pending" });
+    const reviewId = created ? created.id : r.lastInsertRowid;
+    audit("customer", "review.created", { id: reviewId, product_id: productId, status: "pending" });
+    send(res, 201, { id: reviewId, status: "pending" });
   },
 
   "POST /api/chat/message": async (req, res) => {
     if (!rateLimit("chat:" + ipOf(req), 40, 3600e3)) return fail(res, 429, "rate_limited");
     const b = await readJson(req, 12e3);
-    const signedInCustomer = customerFromRequest(req);
+    const signedInCustomer = await customerFromRequest(req);
     const message = str(b.message, 1500);
     if (message.length < 2) return fail(res, 400, "message");
     let sessionId = Number(b.session_id) || 0;
-    const existing = sessionId ? db.prepare("SELECT id FROM chat_sessions WHERE id=?").get(sessionId) : null;
+    const existing = sessionId
+      ? (postgresCommerce ? await postgresCommerce.chatSession(sessionId) : db.prepare("SELECT id FROM chat_sessions WHERE id=?").get(sessionId))
+      : null;
     if (!existing) {
-      const r = db.prepare(`
+      if (postgresCommerce) {
+        const session = await postgresCommerce.createChatSession({
+          customerId: signedInCustomer?.id || null,
+          name: str(b.name || signedInCustomer?.name || "", 80),
+          phone: str(b.phone || signedInCustomer?.phone || "", 25),
+          email: normalizeEmail(b.email || signedInCustomer?.email || ""),
+        });
+        sessionId = session.id;
+      } else {
+        const r = db.prepare(`
         INSERT INTO chat_sessions (customer_id, visitor_name, visitor_phone, visitor_email, status)
         VALUES (?,?,?,?, 'bot')
       `).run(
@@ -2536,9 +3899,11 @@ const api = {
         str(b.phone || signedInCustomer?.phone || "", 25),
         normalizeEmail(b.email || signedInCustomer?.email || "")
       );
-      sessionId = r.lastInsertRowid;
+        sessionId = r.lastInsertRowid;
+      }
     }
-    db.prepare("INSERT INTO chat_messages (session_id, sender_type, message) VALUES (?,?,?)").run(sessionId, "customer", message);
+    if (postgresCommerce) await postgresCommerce.addChatMessage(sessionId, "customer", message);
+    else db.prepare("INSERT INTO chat_messages (session_id, sender_type, message) VALUES (?,?,?)").run(sessionId, "customer", message);
     const lower = message.toLowerCase();
     const chatLang = ["en", "ru", "uz"].includes(b.lang) ? b.lang : "uz";
     const chatReplies = {
@@ -2589,15 +3954,17 @@ const api = {
     if (/price|цена|narx|стоим/.test(lower) && !products.length) reply = replies.price;
     if (wantsHuman) {
       reply = replies.human;
-      db.prepare("UPDATE chat_sessions SET status='escalated', updated_at=datetime('now') WHERE id=?").run(sessionId);
+      if (postgresCommerce) await postgresCommerce.escalateChat(sessionId);
+      else db.prepare("UPDATE chat_sessions SET status='escalated', updated_at=datetime('now') WHERE id=?").run(sessionId);
     }
-    db.prepare("INSERT INTO chat_messages (session_id, sender_type, message) VALUES (?,?,?)").run(sessionId, "bot", reply);
+    if (postgresCommerce) await postgresCommerce.addChatMessage(sessionId, "bot", reply);
+    else db.prepare("INSERT INTO chat_messages (session_id, sender_type, message) VALUES (?,?,?)").run(sessionId, "bot", reply);
     send(res, 200, { session_id: sessionId, reply, products });
   },
 
   "POST /api/chat/escalate": async (req, res) => {
     const b = await readJson(req, 12e3);
-    const signedInCustomer = customerFromRequest(req);
+    const signedInCustomer = await customerFromRequest(req);
     const sessionId = Number(b.session_id) || 0;
     const name = str(b.name || signedInCustomer?.name || "", 80);
     const phone = str(b.phone || signedInCustomer?.phone || "", 25);
@@ -2605,22 +3972,48 @@ const api = {
     const message = str(b.message || "Chat escalation", 3000);
     if (name.length < 2) return fail(res, 400, "name");
     if (!/^[0-9+()\-\s]{5,25}$/.test(phone)) return fail(res, 400, "phone");
-    if (sessionId) db.prepare("UPDATE chat_sessions SET status='escalated', visitor_name=?, visitor_phone=?, visitor_email=?, updated_at=datetime('now') WHERE id=?")
-      .run(name, phone, email, sessionId);
-    const r = db.prepare(`
+    if (sessionId) {
+      if (postgresCommerce) await postgresCommerce.escalateChat(sessionId, { name, phone, email });
+      else db.prepare("UPDATE chat_sessions SET status='escalated', visitor_name=?, visitor_phone=?, visitor_email=?, updated_at=datetime('now') WHERE id=?")
+        .run(name, phone, email, sessionId);
+    }
+    const support = postgresCommerce ? await postgresCommerce.createSupport({
+      customerId: signedInCustomer?.id || null,
+      name, phone, email, topic: "general", message,
+      lang: ["en", "ru", "uz"].includes(b.lang) ? b.lang : "uz",
+    }) : null;
+    const r = support ? null : db.prepare(`
       INSERT INTO support_requests (customer_id, name, phone, email, topic, message, lang)
       VALUES (?,?,?,?, 'general', ?, ?)
     `).run(signedInCustomer?.id || null, name, phone, email, message, ["en", "ru", "uz"].includes(b.lang) ? b.lang : "uz");
-    const number = "MS-" + new Date().getFullYear() + "-" + String(r.lastInsertRowid).padStart(4, "0");
-    db.prepare("UPDATE support_requests SET number=? WHERE id=?").run(number, r.lastInsertRowid);
+    const number = support?.number || ("MS-" + new Date().getFullYear() + "-" + String(r.lastInsertRowid).padStart(4, "0"));
+    if (!support) db.prepare("UPDATE support_requests SET number=? WHERE id=?").run(number, r.lastInsertRowid);
     send(res, 201, { number, status: "new" });
   },
 
+  "GET /api/managers": (req, res) => {
+    const managers = db.prepare(`
+      SELECT id, name
+      FROM managers
+      WHERE active=1 AND telegram_chat_id<>''
+      ORDER BY name COLLATE NOCASE, id
+    `).all();
+    send(res, 200, managers);
+  },
+
   "POST /api/orders": async (req, res) => {
-    if (!rateLimit("order:" + ipOf(req), 10, 3600e3)) return fail(res, 429, "rate_limited");
     const b = await readJson(req, 64e3);
     const c = b.customer || {};
     const name = str(c.name, 80), phone = str(c.phone, 25);
+    const managerId = Number(b.manager_id || c.manager_id);
+    const manager = Number.isInteger(managerId) && managerId > 0
+      ? db.prepare(`
+        SELECT id, name, telegram_chat_id, telegram_thread_id
+        FROM managers
+        WHERE id=? AND active=1 AND telegram_chat_id<>''
+      `).get(managerId)
+      : null;
+    if (!manager) return fail(res, 400, "manager");
     const requestedPayment = str(b.payment?.method || c.payment_method || "manager", 30);
     const paymentMethod = PAYMENT_METHODS.includes(requestedPayment) ? requestedPayment : "manager";
     const source = str(b.source || req.headers["x-client-name"] || "website", 40) || "website";
@@ -2630,10 +4023,19 @@ const api = {
     const customerDeliveryNote = str(c.delivery_note || c.note, 500);
     if (name.length < 2) return fail(res, 400, "name");
     if (!/^[0-9+()\-\s]{5,25}$/.test(phone)) return fail(res, 400, "phone");
+    // Production traffic reaches this service through a reverse proxy, so a
+    // strict per-socket-IP limit groups every shopper into one shared bucket.
+    // Keep a generous proxy-wide safety cap and enforce the meaningful limit
+    // per normalized customer phone number instead.
+    const orderPhoneKey = phone.replace(/\D/g, "");
+    if (!rateLimit("order-proxy:" + ipOf(req), 300, 3600e3)
+      || !rateLimit("order-phone:" + orderPhoneKey, 12, 3600e3)) {
+      return fail(res, 429, "rate_limited");
+    }
     if (source === "react_frontend" && customerCity.length < 2) return fail(res, 400, "city");
     if (source === "react_frontend" && customerAddress.length < 5) return fail(res, 400, "address");
     if (source === "react_frontend" && customerPostcode.length < 3) return fail(res, 400, "postcode");
-    const signedInCustomer = customerFromRequest(req);
+    const signedInCustomer = await customerFromRequest(req);
     const requestedOrderType = b.order_type === "retail" ? "retail" : b.order_type === "wholesale" ? "wholesale" : "";
     const orderType = signedInCustomer?.account_type === "individual" ? "retail" : (requestedOrderType || "wholesale");
     const customer = {
@@ -2646,7 +4048,7 @@ const api = {
       delivery_note: customerDeliveryNote,
       comment: str(c.comment, 1000),
       customer_tier: normalizeCustomerTier(signedInCustomer?.customer_tier),
-      assigned_manager: signedInCustomer?.assigned_manager || "",
+      assigned_manager: manager.name,
     };
     if (!Array.isArray(b.items) || !b.items.length || b.items.length > 50) return fail(res, 400, "items");
     const items = [];
@@ -2656,6 +4058,10 @@ const api = {
       let product = null;
       if (CATALOG_SOURCE_ENABLED) {
         try { product = await catalogProductById(Number(it.id)); } catch (e) { catalogCache.error = e.message; }
+      }
+      if (!product && postgresCatalog) {
+        const postgresRow = await postgresCatalog.getById(Number(it.id), true);
+        if (postgresRow) product = rowToProduct(postgresRow);
       }
       if (!product) {
         try { product = await localStoreProductById(Number(it.id)); } catch (e) { console.error("Local upstream product lookup failed:", e.message); }
@@ -2702,11 +4108,11 @@ const api = {
         bag_size = 1;
         price = Math.round(unit_price * 100) / 100;
         unit_type = "piece";
-        if (row && retailStock > 0) stockAdjustments.push({ type: "retail", id: row.id, qty });
+        if ((row || postgresCatalog) && retailStock > 0) stockAdjustments.push({ type: "retail", id, qty });
       } else {
         size_mix = packageSizeMix(sizes, gender, category, packagePieces);
-        if (row && availableQop != null) {
-          stockAdjustments.push({ type: "wholesale", id: row.id, qop: Math.ceil(wholesalePieces / ORDER_BAG_SIZE) });
+        if ((row || postgresCatalog) && availableQop != null) {
+          stockAdjustments.push({ type: "wholesale", id, qop: Math.ceil(wholesalePieces / ORDER_BAG_SIZE) });
         }
       }
       items.push({
@@ -2719,65 +4125,110 @@ const api = {
       total += price * qty;
     }
     const lang = ["en", "ru", "uz"].includes(b.lang) ? b.lang : "en";
-    const r = db.prepare("INSERT INTO orders (customer_id, customer, items, total, order_type, lang) VALUES (?,?,?,?,?,?)")
-      .run(signedInCustomer?.id || null, JSON.stringify(customer), JSON.stringify(items), Math.round(total * 100) / 100, orderType, lang);
-    const number = "MP-" + new Date().getFullYear() + "-" + String(r.lastInsertRowid).padStart(4, "0");
-    db.prepare("UPDATE orders SET number=? WHERE id=?").run(number, r.lastInsertRowid);
     const amount = Math.round(total * 100) / 100;
-    const payment = db.prepare(`
-      INSERT INTO payments (order_id, order_number, provider, method, status, amount, currency, payload)
-      VALUES (?,?,?,?,?,?,?,?)
-    `).run(
-      r.lastInsertRowid,
-      number,
-      paymentProvider(paymentMethod),
-      paymentMethod,
-      "pending",
-      amount,
-      "USD",
-      JSON.stringify({ source: "checkout", gateway_connected: false })
-    );
-    audit("customer", "order.created", { order_id: r.lastInsertRowid, number, total: Math.round(total * 100) / 100, order_type: orderType });
-    audit("customer", "payment.created", { order_id: r.lastInsertRowid, payment_id: payment.lastInsertRowid, method: paymentMethod, amount });
-    for (const adjustment of stockAdjustments) {
-      if (adjustment.type === "retail") {
-        db.prepare("UPDATE products SET retail_stock=MAX(0, retail_stock-?) WHERE id=?").run(adjustment.qty, adjustment.id);
-      } else {
-        db.prepare("UPDATE products SET available_qop=MAX(0, available_qop-?) WHERE id=? AND available_qop IS NOT NULL").run(adjustment.qop, adjustment.id);
+    let orderId, paymentId, number;
+    if (postgresCommerce) {
+      let created;
+      try {
+        created = await postgresCommerce.createCheckout({
+          customerId: signedInCustomer?.id || null, customer, items, total: amount, orderType, lang,
+          paymentProvider: paymentProvider(paymentMethod), paymentMethod, stockAdjustments,
+          managerId: manager.id, managerName: manager.name,
+        });
+      } catch (error) {
+        if (error.message === "insufficient_stock") return fail(res, 409, "insufficient_stock");
+        throw error;
+      }
+      orderId = created.order.id;
+      paymentId = created.payment.id;
+      number = created.order.number;
+    } else {
+      const r = db.prepare(`
+        INSERT INTO orders (customer_id, customer, items, total, order_type, lang, manager_id, manager_name)
+        VALUES (?,?,?,?,?,?,?,?)
+      `).run(
+        signedInCustomer?.id || null,
+        JSON.stringify(customer),
+        JSON.stringify(items),
+        amount,
+        orderType,
+        lang,
+        manager.id,
+        manager.name
+      );
+      orderId = r.lastInsertRowid;
+      number = "MP-" + new Date().getFullYear() + "-" + String(orderId).padStart(4, "0");
+      db.prepare("UPDATE orders SET number=? WHERE id=?").run(number, orderId);
+      const payment = db.prepare(`
+        INSERT INTO payments (order_id, order_number, provider, method, status, amount, currency, payload)
+        VALUES (?,?,?,?,?,?,?,?)
+      `).run(orderId, number, paymentProvider(paymentMethod), paymentMethod, "pending", amount, "USD",
+        JSON.stringify({ source: "checkout", gateway_connected: false }));
+      paymentId = payment.lastInsertRowid;
+      for (const adjustment of stockAdjustments) {
+        if (adjustment.type === "retail") {
+          db.prepare("UPDATE products SET retail_stock=MAX(0, retail_stock-?) WHERE id=?").run(adjustment.qty, adjustment.id);
+        } else {
+          db.prepare("UPDATE products SET available_qop=MAX(0, available_qop-?) WHERE id=? AND available_qop IS NOT NULL").run(adjustment.qop, adjustment.id);
+        }
       }
     }
-    notifyTelegramOrderLater({ id: r.lastInsertRowid, number, customer, items, total: amount, orderType, paymentMethod, source, lang });
-    send(res, 201, { id: r.lastInsertRowid, order_id: r.lastInsertRowid, number, total: amount, order_type: orderType, payment: { method: paymentMethod, status: "pending", amount, currency: "USD" } });
+    audit("customer", "order.created", { order_id: orderId, number, total: amount, order_type: orderType });
+    audit("customer", "payment.created", { order_id: orderId, payment_id: paymentId, method: paymentMethod, amount });
+    notifyTelegramOrderLater({
+      id: orderId, number, customer, items, total: amount, orderType, paymentMethod, source, lang, manager,
+    });
+    send(res, 201, {
+      id: orderId,
+      order_id: orderId,
+      number,
+      total: amount,
+      order_type: orderType,
+      manager: { id: manager.id, name: manager.name },
+      payment: { method: paymentMethod, status: "pending", amount, currency: "USD" },
+    });
   },
 
   "POST /api/auth/orders/:id/cancel": async (req, res, u, m) => {
-    const customer = customerFromRequest(req);
+    const customer = await customerFromRequest(req);
     if (!customer) return fail(res, 401, "unauthorized");
     const id = Number(m.id);
-    const order = db.prepare("SELECT * FROM orders WHERE id=? AND customer_id=?").get(id, customer.id);
+    const joined = postgresCommerce ? await postgresCommerce.customerOrderAndPayment(id, customer.id) : null;
+    const order = joined || db.prepare("SELECT * FROM orders WHERE id=? AND customer_id=?").get(id, customer.id);
     if (!order) return fail(res, 404, "not_found");
-    const payment = db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(id) || {};
+    const payment = joined ? { id: joined.payment_id, status: joined.payment_status } : db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(id) || {};
     if (order.status !== "new" || !["pending", "waiting_for_customer", "invoice_sent"].includes(payment.status || "pending")) {
       return fail(res, 409, "cannot_cancel");
     }
     const b = await readJson(req, 4e3);
-    db.prepare("UPDATE orders SET status='cancelled', updated_at=datetime('now') WHERE id=?").run(id);
-    db.prepare("UPDATE payments SET status='cancelled', payload=?, updated_at=datetime('now') WHERE id=?").run(
-      JSON.stringify({ cancelled_by: "customer", reason: str(b.reason, 500), cancelled_at: new Date().toISOString() }),
-      payment.id
-    );
+    if (postgresCommerce) {
+      try { await postgresCommerce.cancelOrder(id, customer.id, str(b.reason, 500)); }
+      catch (error) {
+        if (error.message === "cannot_cancel") return fail(res, 409, "cannot_cancel");
+        if (error.message === "not_found") return fail(res, 404, "not_found");
+        throw error;
+      }
+    } else {
+      db.prepare("UPDATE orders SET status='cancelled', updated_at=datetime('now') WHERE id=?").run(id);
+      db.prepare("UPDATE payments SET status='cancelled', payload=?, updated_at=datetime('now') WHERE id=?").run(
+        JSON.stringify({ cancelled_by: "customer", reason: str(b.reason, 500), cancelled_at: new Date().toISOString() }), payment.id);
+    }
     audit("customer", "order.cancelled", { id, number: order.number, reason: str(b.reason, 120) });
     send(res, 200, { order_id: id, status: "cancelled", payment_status: "cancelled", cancelled_at: new Date().toISOString(), stock_released_qop: 0 });
   },
 
   "POST /api/auth/orders/:id/payment-proof": async (req, res, u, m) => {
-    const customer = customerFromRequest(req);
+    const customer = await customerFromRequest(req);
     if (!customer) return fail(res, 401, "unauthorized");
     const id = Number(m.id);
-    const order = db.prepare("SELECT * FROM orders WHERE id=? AND customer_id=?").get(id, customer.id);
+    const joined = postgresCommerce ? await postgresCommerce.customerOrderAndPayment(id, customer.id) : null;
+    const order = joined || db.prepare("SELECT * FROM orders WHERE id=? AND customer_id=?").get(id, customer.id);
     if (!order) return fail(res, 404, "not_found");
     if (["cancelled", "done"].includes(order.status)) return fail(res, 409, "order_closed");
-    const payment = db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(id);
+    const payment = joined ? {
+      id: joined.payment_id, method: joined.payment_method, amount: joined.payment_amount,
+      payload: joined.payment_payload, status: joined.payment_status,
+    } : db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(id);
     if (!payment) return fail(res, 404, "payment_not_found");
     const b = await readJson(req, 8e3);
     const method = PAYMENT_METHODS.includes(b.method) ? b.method : payment.method || "manager";
@@ -2787,7 +4238,8 @@ const api = {
     if (!reference && !note) return fail(res, 400, "proof");
     const submittedAt = new Date().toISOString();
     let payload = {};
-    try { payload = JSON.parse(payment.payload || "{}"); } catch {}
+    if (payment.payload && typeof payment.payload === "object") payload = payment.payload;
+    else try { payload = JSON.parse(payment.payload || "{}"); } catch {}
     payload.submission = {
       method,
       amount: Number.isFinite(amount) && amount > 0 ? Math.round(amount * 100) / 100 : payment.amount,
@@ -2795,7 +4247,8 @@ const api = {
       note,
       submitted_at: submittedAt,
     };
-    db.prepare("UPDATE payments SET method=?, status='submitted', reference=COALESCE(NULLIF(?,''), reference), payload=?, updated_at=datetime('now') WHERE id=?")
+    if (postgresCommerce) await postgresCommerce.submitPaymentProof(payment.id, method, reference, payload);
+    else db.prepare("UPDATE payments SET method=?, status='submitted', reference=COALESCE(NULLIF(?,''), reference), payload=?, updated_at=datetime('now') WHERE id=?")
       .run(method, reference, JSON.stringify(payload), payment.id);
     audit("customer", "payment.submitted", { order_id: id, payment_id: payment.id, method });
     send(res, 200, { order_id: id, payment_status: "submitted", submitted_at: submittedAt });
@@ -2817,7 +4270,7 @@ const api = {
   "POST /api/support": async (req, res) => {
     if (!rateLimit("support:" + ipOf(req), 8, 3600e3)) return fail(res, 429, "rate_limited");
     const b = await readJson(req, 24e3);
-    const signedInCustomer = customerFromRequest(req);
+    const signedInCustomer = await customerFromRequest(req);
     const name = str(b.name || signedInCustomer?.name || "", 80);
     const phone = str(b.phone || signedInCustomer?.phone || "", 25);
     const email = normalizeEmail(b.email || signedInCustomer?.email || "");
@@ -2828,13 +4281,17 @@ const api = {
     if (!/^[0-9+()\-\s]{5,25}$/.test(phone)) return fail(res, 400, "phone");
     if (email && !emailOk(email)) return fail(res, 400, "email");
     if (message.length < 8) return fail(res, 400, "message");
-    const r = db.prepare(`
+    const support = postgresCommerce ? await postgresCommerce.createSupport({
+      customerId: signedInCustomer?.id || null,
+      name, phone, email, topic, message, lang,
+    }) : null;
+    const r = support ? null : db.prepare(`
       INSERT INTO support_requests (customer_id, name, phone, email, topic, message, lang)
       VALUES (?,?,?,?,?,?,?)
     `).run(signedInCustomer?.id || null, name, phone, email, topic, message, lang);
-    const number = "MS-" + new Date().getFullYear() + "-" + String(r.lastInsertRowid).padStart(4, "0");
-    db.prepare("UPDATE support_requests SET number=? WHERE id=?").run(number, r.lastInsertRowid);
-    audit("customer", "support.created", { id: r.lastInsertRowid, number, topic });
+    const number = support?.number || ("MS-" + new Date().getFullYear() + "-" + String(r.lastInsertRowid).padStart(4, "0"));
+    if (!support) db.prepare("UPDATE support_requests SET number=? WHERE id=?").run(number, r.lastInsertRowid);
+    audit("customer", "support.created", { id: support?.id || r.lastInsertRowid, number, topic });
     send(res, 201, { number, status: "new" });
   },
 
@@ -2845,25 +4302,118 @@ const api = {
     const b = await readJson(req, 4e3);
     const loginOk = str(b.login, 60).toLowerCase() === String(getSetting("admin_user") || "admin").toLowerCase();
     const passOk = verifyPassword(String(b.password || ""), getSetting("pass_hash"));
-    if (!loginOk || !passOk) return fail(res, 401, "wrong_credentials");
-    const token = createSession();
-    audit("admin", "auth.login", { ip: ipOf(req) });
-    send(res, 200, { ok: true }, { "Set-Cookie": sessionCookie(req, token, 30 * 24 * 3600) });
+    if (loginOk && passOk) {
+      const token = createSession();
+      audit("admin", "auth.login", { ip: ipOf(req) });
+      return send(res, 200, { ok: true, role: "admin" }, { "Set-Cookie": sessionCookie(req, token, 30 * 24 * 3600) });
+    }
+    const manager = db.prepare("SELECT * FROM managers WHERE lower(login)=lower(?) AND active=1").get(str(b.login, 60));
+    if (!manager || !verifyPassword(String(b.password || ""), manager.password_hash)) {
+      return fail(res, 401, "wrong_credentials");
+    }
+    const token = createManagerSession(manager.id);
+    audit(`manager:${manager.id}`, "auth.login", { ip: ipOf(req) });
+    send(res, 200, { ok: true, role: "manager", manager: { id: manager.id, name: manager.name } }, {
+      "Set-Cookie": sessionCookie(req, token, 30 * 24 * 3600),
+    });
   },
 
   "POST /api/logout": (req, res) => {
     const token = parseCookies(req).sid;
-    if (token) db.prepare("DELETE FROM sessions WHERE token IN (?,?)").run(sha256(token), token);
-    audit("admin", "auth.logout", { ip: ipOf(req) });
+    const staff = staffFromRequest(req);
+    if (token) {
+      db.prepare("DELETE FROM sessions WHERE token IN (?,?)").run(sha256(token), token);
+      db.prepare("DELETE FROM manager_sessions WHERE token IN (?,?)").run(sha256(token), token);
+    }
+    audit(staff?.role === "manager" ? `manager:${staff.manager.id}` : "admin", "auth.logout", { ip: ipOf(req) });
     send(res, 200, { ok: true }, { "Set-Cookie": sessionCookie(req, "x", 0) });
   },
 
-  "GET /api/me": (req, res) => send(res, 200, { admin: isAdmin(req) }),
+  "GET /api/me": (req, res) => {
+    const staff = staffFromRequest(req);
+    send(res, 200, {
+      admin: staff?.role === "admin",
+      role: staff?.role || "",
+      manager: staff?.role === "manager" ? { id: staff.manager.id, name: staff.manager.name, login: staff.manager.login } : null,
+    });
+  },
 
   /* ----- admin ----- */
 
-  "GET /api/admin/customers": (req, res, u) => {
-    let rows = db.prepare(`
+  "GET /api/admin/managers": (req, res) => {
+    send(res, 200, db.prepare(`
+      SELECT id, name, login, telegram_chat_id, telegram_thread_id, active, created_at, updated_at
+      FROM managers
+      ORDER BY active DESC, name COLLATE NOCASE, id
+    `).all());
+  },
+
+  "POST /api/admin/managers": async (req, res) => {
+    const b = await readJson(req, 8e3);
+    const name = str(b.name, 80);
+    const login = str(b.login, 60).toLowerCase();
+    const password = String(b.password || "");
+    const telegramChatId = str(b.telegram_chat_id, 80);
+    const telegramThreadId = str(b.telegram_thread_id, 30);
+    const active = b.active === false || b.active === 0 ? 0 : 1;
+    if (name.length < 2) return fail(res, 400, "name");
+    if (!/^[a-z0-9._-]{3,60}$/i.test(login)) return fail(res, 400, "login");
+    if (password.length < 8 || password.length > 100) return fail(res, 400, "password");
+    if (!telegramChatId) return fail(res, 400, "telegram_chat_id");
+    if (db.prepare("SELECT 1 FROM managers WHERE lower(login)=lower(?)").get(login)) return fail(res, 409, "login_exists");
+    const result = db.prepare(`
+      INSERT INTO managers (name, login, password_hash, telegram_chat_id, telegram_thread_id, active)
+      VALUES (?,?,?,?,?,?)
+    `).run(name, login, hashPassword(password), telegramChatId, telegramThreadId, active);
+    audit("admin", "manager.created", { id: result.lastInsertRowid, name, login });
+    const manager = db.prepare(`
+      SELECT id, name, login, telegram_chat_id, telegram_thread_id, active, created_at, updated_at
+      FROM managers WHERE id=?
+    `).get(result.lastInsertRowid);
+    send(res, 201, manager);
+  },
+
+  "PUT /api/admin/managers/:id": async (req, res, u, m) => {
+    const id = Number(m.id);
+    const existing = db.prepare("SELECT * FROM managers WHERE id=?").get(id);
+    if (!existing) return fail(res, 404, "not_found");
+    const b = await readJson(req, 8e3);
+    const name = str(b.name ?? existing.name, 80);
+    const login = str(b.login ?? existing.login, 60).toLowerCase();
+    const password = String(b.password || "");
+    const telegramChatId = str(b.telegram_chat_id ?? existing.telegram_chat_id, 80);
+    const telegramThreadId = str(b.telegram_thread_id ?? existing.telegram_thread_id, 30);
+    const active = b.active === false || b.active === 0 ? 0 : 1;
+    if (name.length < 2) return fail(res, 400, "name");
+    if (!/^[a-z0-9._-]{3,60}$/i.test(login)) return fail(res, 400, "login");
+    if (password && (password.length < 8 || password.length > 100)) return fail(res, 400, "password");
+    if (!telegramChatId) return fail(res, 400, "telegram_chat_id");
+    if (db.prepare("SELECT 1 FROM managers WHERE lower(login)=lower(?) AND id<>?").get(login, id)) {
+      return fail(res, 409, "login_exists");
+    }
+    if (password) {
+      db.prepare(`
+        UPDATE managers
+        SET name=?, login=?, password_hash=?, telegram_chat_id=?, telegram_thread_id=?, active=?, updated_at=datetime('now')
+        WHERE id=?
+      `).run(name, login, hashPassword(password), telegramChatId, telegramThreadId, active, id);
+    } else {
+      db.prepare(`
+        UPDATE managers
+        SET name=?, login=?, telegram_chat_id=?, telegram_thread_id=?, active=?, updated_at=datetime('now')
+        WHERE id=?
+      `).run(name, login, telegramChatId, telegramThreadId, active, id);
+    }
+    if (!active) db.prepare("DELETE FROM manager_sessions WHERE manager_id=?").run(id);
+    audit("admin", "manager.updated", { id, name, login, active });
+    send(res, 200, db.prepare(`
+      SELECT id, name, login, telegram_chat_id, telegram_thread_id, active, created_at, updated_at
+      FROM managers WHERE id=?
+    `).get(id));
+  },
+
+  "GET /api/admin/customers": async (req, res, u) => {
+    let rows = postgresCommerce ? await postgresCommerce.adminCustomers() : db.prepare(`
       SELECT id, email, name, phone, city, address, account_type, approval_status,
              company_name, tax_id, legal_address, contact_person, expected_volume,
              phone_verified, customer_tier, assigned_manager, price_discount,
@@ -2882,26 +4432,29 @@ const api = {
     const b = await readJson(req, 4e3);
     if (!APPROVAL_STATUSES.includes(b.approval_status)) return fail(res, 400, "approval_status");
     const id = Number(m.id);
-    const existing = db.prepare("SELECT approval_status FROM customers WHERE id=?").get(id);
+    const existing = postgresCommerce ? await postgresCommerce.customerById(id) : db.prepare("SELECT approval_status FROM customers WHERE id=?").get(id);
     if (!existing) return fail(res, 404, "not_found");
-    db.prepare("UPDATE customers SET approval_status=?, updated_at=datetime('now') WHERE id=?").run(b.approval_status, id);
+    const updated = postgresCommerce ? await postgresCommerce.updateCustomerApproval(id, b.approval_status) :
+      (db.prepare("UPDATE customers SET approval_status=?, updated_at=datetime('now') WHERE id=?").run(b.approval_status, id),
+       db.prepare("SELECT * FROM customers WHERE id=?").get(id));
     audit("admin", "customer.approval_changed", { id, from: existing.approval_status, to: b.approval_status });
-    send(res, 200, publicCustomer(db.prepare("SELECT * FROM customers WHERE id=?").get(id)));
+    send(res, 200, publicCustomer(updated));
   },
 
   "PUT /api/admin/customers/:id/commercial": async (req, res, u, m) => {
     const b = await readJson(req, 8e3);
     const id = Number(m.id);
-    const existing = db.prepare("SELECT * FROM customers WHERE id=?").get(id);
+    const existing = postgresCommerce ? await postgresCommerce.customerById(id) : db.prepare("SELECT * FROM customers WHERE id=?").get(id);
     if (!existing) return fail(res, 404, "not_found");
     const tier = normalizeCustomerTier(b.customer_tier);
     const manager = str(b.assigned_manager, 80);
     const discount = Math.max(0, Math.min(90, Number(b.price_discount) || 0));
-    db.prepare(`
+    const updated = postgresCommerce ? await postgresCommerce.updateCustomerCommercial(id, tier, manager, discount) :
+      (db.prepare(`
       UPDATE customers
       SET customer_tier=?, assigned_manager=?, price_discount=?, updated_at=datetime('now')
       WHERE id=?
-    `).run(tier, manager, discount, id);
+    `).run(tier, manager, discount, id), db.prepare("SELECT * FROM customers WHERE id=?").get(id));
     audit("admin", "customer.commercial_changed", {
       id,
       from_tier: existing.customer_tier || "regular",
@@ -2909,11 +4462,11 @@ const api = {
       manager,
       discount,
     });
-    send(res, 200, publicCustomer(db.prepare("SELECT * FROM customers WHERE id=?").get(id)));
+    send(res, 200, publicCustomer(updated));
   },
 
-  "GET /api/admin/reviews": (req, res) => {
-    const rows = db.prepare(`
+  "GET /api/admin/reviews": async (req, res) => {
+    const rows = postgresCommerce ? await postgresCommerce.adminReviews() : db.prepare(`
       SELECT r.*, c.name customer_name, c.email customer_email
       FROM reviews r
       JOIN customers c ON c.id=r.customer_id
@@ -2927,15 +4480,16 @@ const api = {
     const b = await readJson(req, 4e3);
     if (!REVIEW_STATUSES.includes(b.status)) return fail(res, 400, "status");
     const id = Number(m.id);
-    const existing = db.prepare("SELECT * FROM reviews WHERE id=?").get(id);
+    const existing = postgresCommerce ? await postgresCommerce.reviewById(id) : db.prepare("SELECT * FROM reviews WHERE id=?").get(id);
     if (!existing) return fail(res, 404, "not_found");
-    db.prepare("UPDATE reviews SET status=?, updated_at=datetime('now') WHERE id=?").run(b.status, id);
+    if (postgresCommerce) await postgresCommerce.updateReviewStatus(id, b.status);
+    else db.prepare("UPDATE reviews SET status=?, updated_at=datetime('now') WHERE id=?").run(b.status, id);
     audit("admin", "review.moderated", { id, from: existing.status, to: b.status });
     send(res, 200, { ok: true });
   },
 
-  "GET /api/admin/chat": (req, res) => {
-    const rows = db.prepare(`
+  "GET /api/admin/chat": async (req, res) => {
+    const rows = postgresCommerce ? await postgresCommerce.adminChat() : db.prepare(`
       SELECT s.*, c.name customer_name, c.email customer_email
       FROM chat_sessions s
       LEFT JOIN customers c ON c.id=s.customer_id
@@ -2952,29 +4506,99 @@ const api = {
     const b = await readJson(req, 4e3);
     if (!CHAT_STATUSES.includes(b.status)) return fail(res, 400, "status");
     const id = Number(m.id);
-    const existing = db.prepare("SELECT status FROM chat_sessions WHERE id=?").get(id);
+    const existing = postgresCommerce ? await postgresCommerce.chatSession(id) : db.prepare("SELECT status FROM chat_sessions WHERE id=?").get(id);
     if (!existing) return fail(res, 404, "not_found");
-    db.prepare("UPDATE chat_sessions SET status=?, updated_at=datetime('now') WHERE id=?").run(b.status, id);
+    if (postgresCommerce) await postgresCommerce.updateChatStatus(id, b.status);
+    else db.prepare("UPDATE chat_sessions SET status=?, updated_at=datetime('now') WHERE id=?").run(b.status, id);
     audit("admin", "chat.status_changed", { id, from: existing.status, to: b.status });
     send(res, 200, { ok: true });
   },
 
   "GET /api/admin/products": async (req, res, u) => {
+    const q = u.searchParams;
+    const paging = paginationFrom(q, { defaultLimit: 100, maxLimit: 250 });
     if (CATALOG_SOURCE_ENABLED) {
       try {
-        return send(res, 200, await adminProductsForCatalog(u.searchParams.get("refresh") === "1"));
+        let products = await adminProductsForCatalog(q.get("refresh") === "1");
+        if (CATALOG_PANELS.includes(q.get("panel"))) products = products.filter((p) => p.catalog_panel === q.get("panel"));
+        const term = str(q.get("q") || "", 100);
+        if (term) products = smartSearchProducts(products, term, products.length);
+        const total = products.length;
+        return sendPage(res, products.slice(paging.offset, paging.offset + paging.limit), { ...paging, total }, q);
       } catch (e) {
         catalogCache.error = e.message;
       }
     }
-    send(res, 200, db.prepare("SELECT * FROM products ORDER BY sort DESC, id DESC").all().map((r) => rowToProduct(r)));
+    if (postgresCatalog) {
+      const result = await postgresCatalog.list({
+        filters: { catalog_panel: CATALOG_PANELS.includes(q.get("panel")) ? q.get("panel") : "" },
+        search: str(q.get("q") || "", 100),
+        limit: paging.limit,
+        offset: paging.offset,
+      });
+      const rows = result.rows.map((row) => rowToProduct(row));
+      return sendPage(res, rows, { ...paging, total: result.total }, q);
+    }
+    let where = " FROM products WHERE 1=1";
+    const args = [];
+    if (CATALOG_PANELS.includes(q.get("panel"))) { where += " AND catalog_panel=?"; args.push(q.get("panel")); }
+    const term = str(q.get("q") || "", 100);
+    if (term) {
+      const like = `%${term.toLowerCase()}%`;
+      where += " AND (LOWER(name) LIKE ? OR LOWER(model_no) LIKE ? OR LOWER(variant) LIKE ? OR LOWER(slug) LIKE ?)";
+      args.push(like, like, like, like);
+    }
+    const total = db.prepare("SELECT COUNT(*) AS c" + where).get(...args).c;
+    const rows = db.prepare("SELECT *" + where + " ORDER BY sort DESC, id DESC LIMIT ? OFFSET ?")
+      .all(...args, paging.limit, paging.offset)
+      .map((r) => rowToProduct(r));
+    sendPage(res, rows, { ...paging, total }, q);
+  },
+
+  "GET /api/admin/catalog-panels": async (req, res) => {
+    const products = await adminProductsForCatalog();
+    send(res, 200, CATALOG_PANELS.map((id, index) => {
+      const rows = products.filter((product) => product.catalog_panel === id);
+      const cover = rows.find((product) => product.images?.[0] && !/\.(mp4|webm)(?:[?#]|$)/i.test(product.images[0]));
+      return {
+        id,
+        number: String(index + 5).padStart(2, "0"),
+        total: rows.length,
+        active: rows.filter((product) => product.active !== false).length,
+        image: cover?.images?.[0] || "",
+      };
+    }));
+  },
+
+  "POST /api/admin/products/describe": async (req, res) => {
+    const b = await readJson(req, 32e3);
+    try {
+      const result = await openAiProductDescriptions(b);
+      audit("admin", "product.description_generated", {
+        image_count: Array.isArray(b.images) ? Math.min(b.images.length, 3) : 1,
+        model: OPENAI_MODEL,
+      });
+      send(res, 200, result);
+    } catch (e) {
+      const code = String(e.message || "description_failed").split(":")[0];
+      const clientErrors = new Set([
+        "openai_not_configured", "image_required", "image_not_local",
+        "image_invalid", "image_not_found", "image_too_large",
+      ]);
+      fail(res, clientErrors.has(code) ? 400 : 502, code);
+    }
   },
 
   "POST /api/admin/products": async (req, res) => {
     const b = await readJson(req);
     let v;
     try { v = validateProduct(b); } catch (e) { return fail(res, 400, "invalid_" + e.message); }
-    const slug = uniqueSlug(slugify(str(b.slug, 80) || v.name));
+    const slug = await uniqueCatalogSlug(slugify(str(b.slug, 80) || v.name));
+    if (postgresCatalog) {
+      const created = await postgresCatalog.create(slug, v);
+      audit("admin", "product.created", { id: created.id, slug, catalog_db: "postgres" });
+      return send(res, 201, rowToProduct(created));
+    }
     const cols = Object.keys(v);
     const r = db.prepare(
       `INSERT INTO products (slug,${cols.join(",")}) VALUES (?${",?".repeat(cols.length)})`
@@ -2985,7 +4609,9 @@ const api = {
 
   "PUT /api/admin/products/:id": async (req, res, u, m) => {
     const id = Number(m.id);
-    const existing = db.prepare("SELECT * FROM products WHERE id=?").get(id);
+    const existing = postgresCatalog
+      ? await postgresCatalog.getById(id)
+      : db.prepare("SELECT * FROM products WHERE id=?").get(id);
     const b = await readJson(req);
     if (!existing && CATALOG_SOURCE_ENABLED) {
       const product = await catalogProductById(id);
@@ -2998,7 +4624,12 @@ const api = {
     if (!existing) return fail(res, 404, "not_found");
     let v;
     try { v = validateProduct(b); } catch (e) { return fail(res, 400, "invalid_" + e.message); }
-    const slug = uniqueSlug(slugify(str(b.slug, 80) || v.name), id);
+    const slug = await uniqueCatalogSlug(slugify(str(b.slug, 80) || v.name), id);
+    if (postgresCatalog) {
+      const updated = await postgresCatalog.update(id, slug, v);
+      audit("admin", "product.updated", { id, slug, catalog_db: "postgres" });
+      return send(res, 200, rowToProduct(updated));
+    }
     const cols = Object.keys(v);
     db.prepare(`UPDATE products SET slug=?, ${cols.map((c) => c + "=?").join(",")} WHERE id=?`)
       .run(slug, ...cols.map((c) => v[c]), id);
@@ -3006,50 +4637,85 @@ const api = {
     send(res, 200, rowToProduct(db.prepare("SELECT * FROM products WHERE id=?").get(id)));
   },
 
-  "DELETE /api/admin/products/:id": (req, res, u, m) => {
+  "DELETE /api/admin/products/:id": async (req, res, u, m) => {
     const id = Number(m.id);
-    const existing = db.prepare("SELECT id FROM products WHERE id=?").get(id);
+    const existing = postgresCatalog
+      ? await postgresCatalog.getById(id)
+      : db.prepare("SELECT id FROM products WHERE id=?").get(id);
     if (!existing && CATALOG_SOURCE_ENABLED) {
       setCatalogProductActive(id, false);
       audit("admin", "catalog_product.hidden", { id });
       return send(res, 200, { ok: true });
     }
-    db.prepare("DELETE FROM products WHERE id=?").run(id);
+    if (postgresCatalog) await postgresCatalog.delete(id);
+    else db.prepare("DELETE FROM products WHERE id=?").run(id);
     audit("admin", "product.deleted", { id });
     send(res, 200, { ok: true });
   },
 
   "POST /api/admin/upload": async (req, res) => {
     const uploadLimitMb = 64;
-    const buf = await readBody(req, uploadLimitMb * 1024 * 1024);
+    let buf;
+    try {
+      buf = await readBody(req, uploadLimitMb * 1024 * 1024);
+    } catch (e) {
+      return fail(res, e.message === "too_large" ? 413 : 400, e.message || "upload_failed");
+    }
     if (buf.length < 100) return fail(res, 400, "empty");
-    let ext = null, kind = "image";
-    // images
-    if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) ext = "jpg";
-    else if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) ext = "png";
-    else if (buf.slice(0, 4).toString("latin1") === "RIFF" && buf.slice(8, 12).toString("latin1") === "WEBP") ext = "webp";
-    // videos
-    else if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) { ext = "webm"; kind = "video"; }
-    else if (buf.slice(4, 8).toString("latin1") === "ftyp") { ext = "mp4"; kind = "video"; }
-    if (!ext) return fail(res, 400, "format_not_allowed");
-    const name = (kind === "video" ? "v" : "p") + Date.now().toString(36) + "-" + crypto.randomBytes(4).toString("hex") + "." + ext;
-    fs.writeFileSync(path.join(UPLOAD_DIR, name), buf);
-    audit("admin", "media.uploaded", { name, kind, bytes: buf.length });
-    send(res, 201, { url: "/uploads/" + name, kind });
+    const media = detectUploadMedia(buf);
+    if (!media) return fail(res, 400, "format_not_allowed");
+    const finalBase = (media.kind === "video" ? "v" : "p") + Date.now().toString(36) + "-" + crypto.randomBytes(4).toString("hex");
+    const originalName = `${finalBase}.${media.ext}`;
+    const originalPath = path.join(UPLOAD_ORIGINAL_DIR, originalName);
+    fs.writeFileSync(originalPath, buf);
+    const optimized = await optimizeUploadedMedia({
+      originalPath,
+      finalBase,
+      ext: media.ext,
+      kind: media.kind,
+      originalBytes: buf.length,
+    });
+    audit("admin", "media.uploaded", {
+      name: optimized.name,
+      kind: optimized.kind,
+      bytes: optimized.bytes,
+      original_bytes: optimized.originalBytes,
+      optimized: optimized.optimized,
+      saved_bytes: optimized.savedBytes,
+    });
+    send(res, 201, {
+      url: "/uploads/" + optimized.name,
+      original_url: "/uploads/originals/" + originalName,
+      kind: optimized.kind,
+      optimized: optimized.optimized,
+      bytes: optimized.bytes,
+      original_bytes: optimized.originalBytes,
+      saved_bytes: optimized.savedBytes,
+      optimizer: optimized.reason || "ok",
+    });
   },
 
-  "GET /api/admin/orders": (req, res) => {
-    const rows = db.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 500").all().map((r) => ({
+  "GET /api/admin/orders": async (req, res) => {
+    const staff = staffFromRequest(req);
+    const managerId = staff?.role === "manager" ? staff.manager.id : null;
+    const sourceRows = postgresCommerce
+      ? await postgresCommerce.adminOrders(500, managerId)
+      : managerId
+        ? db.prepare("SELECT * FROM orders WHERE manager_id=? ORDER BY id DESC LIMIT 500").all(managerId)
+        : db.prepare("SELECT * FROM orders ORDER BY id DESC LIMIT 500").all();
+    const rows = sourceRows.map((r) => ({
       id: r.id, number: r.number, status: r.status, order_type: r.order_type || "wholesale", tracking_number: r.tracking_number || "",
       total: r.total, lang: r.lang, customer_id: r.customer_id || null,
-      customer: JSON.parse(r.customer), items: JSON.parse(r.items), created_at: r.created_at,
-      payment: db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(r.id) || null,
+      manager_id: r.manager_id || null, manager_name: r.manager_name || "",
+      customer: typeof r.customer === "string" ? JSON.parse(r.customer) : r.customer,
+      items: typeof r.items === "string" ? JSON.parse(r.items) : r.items, created_at: r.created_at,
+      payment: postgresCommerce ? r.payment : db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(r.id) || null,
     }));
     send(res, 200, rows);
   },
 
-  "GET /api/admin/support": (req, res) => {
-    const rows = db.prepare("SELECT * FROM support_requests ORDER BY id DESC LIMIT 500").all();
+  "GET /api/admin/support": async (req, res) => {
+    const rows = postgresCommerce ? await postgresCommerce.adminSupport() : db.prepare("SELECT * FROM support_requests ORDER BY id DESC LIMIT 500").all();
     send(res, 200, rows);
   },
 
@@ -3057,9 +4723,10 @@ const api = {
     const b = await readJson(req, 4e3);
     if (!SUPPORT_STATUSES.includes(b.status)) return fail(res, 400, "status");
     const id = Number(m.id);
-    const existing = db.prepare("SELECT status FROM support_requests WHERE id=?").get(id);
+    const existing = postgresCommerce ? await postgresCommerce.supportById(id) : db.prepare("SELECT status FROM support_requests WHERE id=?").get(id);
     if (!existing) return fail(res, 404, "not_found");
-    db.prepare("UPDATE support_requests SET status=?, updated_at=datetime('now') WHERE id=?").run(b.status, id);
+    if (postgresCommerce) await postgresCommerce.updateSupportStatus(id, b.status);
+    else db.prepare("UPDATE support_requests SET status=?, updated_at=datetime('now') WHERE id=?").run(b.status, id);
     audit("admin", "support.status_changed", { id, from: existing.status, to: b.status });
     send(res, 200, { ok: true });
   },
@@ -3068,10 +4735,17 @@ const api = {
     const b = await readJson(req, 4e3);
     if (!ORDER_STATUSES.includes(b.status)) return fail(res, 400, "status");
     const id = Number(m.id);
-    const existing = db.prepare("SELECT status FROM orders WHERE id=?").get(id);
+    const staff = staffFromRequest(req);
+    const existing = postgresCommerce ? await postgresCommerce.orderById(id) : db.prepare("SELECT status, manager_id FROM orders WHERE id=?").get(id);
     if (!existing) return fail(res, 404, "not_found");
-    db.prepare("UPDATE orders SET status=?, tracking_number=COALESCE(NULLIF(?,''), tracking_number), updated_at=datetime('now') WHERE id=?").run(b.status, str(b.tracking_number, 80), id);
-    audit("admin", "order.status_changed", { id, from: existing.status, to: b.status });
+    if (staff?.role === "manager" && Number(existing.manager_id) !== Number(staff.manager.id)) {
+      return fail(res, 403, "forbidden");
+    }
+    if (postgresCommerce) await postgresCommerce.updateOrderStatus(id, b.status, str(b.tracking_number, 80));
+    else db.prepare("UPDATE orders SET status=?, tracking_number=COALESCE(NULLIF(?,''), tracking_number), updated_at=datetime('now') WHERE id=?").run(b.status, str(b.tracking_number, 80), id);
+    audit(staff?.role === "manager" ? `manager:${staff.manager.id}` : "admin", "order.status_changed", {
+      id, from: existing.status, to: b.status,
+    });
     send(res, 200, { ok: true });
   },
 
@@ -3079,10 +4753,11 @@ const api = {
     const b = await readJson(req, 8e3);
     if (!PAYMENT_STATUSES.includes(b.status)) return fail(res, 400, "status");
     const id = Number(m.id);
-    const existing = db.prepare("SELECT * FROM payments WHERE id=?").get(id);
+    const existing = postgresCommerce ? await postgresCommerce.paymentById(id) : db.prepare("SELECT * FROM payments WHERE id=?").get(id);
     if (!existing) return fail(res, 404, "not_found");
     const reference = "reference" in b ? str(b.reference, 120) : existing.reference;
-    db.prepare("UPDATE payments SET status=?, reference=?, updated_at=datetime('now') WHERE id=?").run(b.status, reference, id);
+    if (postgresCommerce) await postgresCommerce.updatePaymentStatus(id, b.status, reference);
+    else db.prepare("UPDATE payments SET status=?, reference=?, updated_at=datetime('now') WHERE id=?").run(b.status, reference, id);
     audit("admin", "payment.status_changed", { id, order_id: existing.order_id, from: existing.status, to: b.status });
     send(res, 200, { ok: true });
   },
@@ -3091,10 +4766,10 @@ const api = {
     send(res, 200, { ...allSettings(), admin_user: getSetting("admin_user") || "admin" }),
 
   "PUT /api/admin/settings": async (req, res) => {
-    const b = await readJson(req, 32e3);
+    const b = await readJson(req, 256e3);
     for (const k of PUBLIC_SETTING_KEYS) {
       if (!(k in b)) continue;
-      const raw = str(b[k], 300);
+      const raw = str(b[k], k === "site_config" ? 200000 : 300);
       if (SETTING_VALIDATORS[k]) {
         const clean = SETTING_VALIDATORS[k](raw);
         if (clean !== null) setSetting(k, clean); // silently ignore invalid values
@@ -3164,14 +4839,34 @@ function serveFile(res, absPath, cache, req) {
     res.end();
     return true;
   }
+  const contentType = MIME[ext] || "application/octet-stream";
+  const type = contentType.split(";", 1)[0].toLowerCase();
+  if (req?.method !== "HEAD" && COMPRESSIBLE_TYPES.has(type)) {
+    const compressed = compressBuffer(fs.readFileSync(absPath), req, contentType);
+    const headers = {
+      ...SECURITY_HEADERS,
+      "Content-Type": contentType,
+      "Content-Length": compressed.body.length,
+      "Cache-Control": cache,
+      "Last-Modified": lastMod,
+    };
+    if (compressed.encoding) {
+      headers["Content-Encoding"] = compressed.encoding;
+      headers.Vary = "Accept-Encoding";
+    }
+    res.writeHead(200, headers);
+    res.end(compressed.body);
+    return true;
+  }
   const stream = fs.createReadStream(absPath);
   res.writeHead(200, {
     ...SECURITY_HEADERS,
-    "Content-Type": MIME[ext] || "application/octet-stream",
+    "Content-Type": contentType,
     "Content-Length": st.size,
     "Cache-Control": cache,
     "Last-Modified": lastMod,
   });
+  if (req?.method === "HEAD") { res.end(); return true; }
   stream.pipe(res);
   return true;
 }
@@ -3244,9 +4939,9 @@ async function proxyCatalogStorage(req, res, pathname) {
 }
 
 async function proxyLocalStoreUpload(req, res, pathname) {
-  if (!LOCAL_STORE_API_BASE || !["GET", "HEAD"].includes(req.method)) return false;
+  if (!LOCAL_STORE_UPLOAD_BASE || !["GET", "HEAD"].includes(req.method)) return false;
   if (!pathname.startsWith("/uploads/") || pathname.includes("..") || pathname.includes("\\")) return false;
-  const target = new URL(pathname, LOCAL_STORE_API_BASE);
+  const target = new URL(pathname, LOCAL_STORE_UPLOAD_BASE);
   const headers = {};
   if (req.headers.range) headers.Range = req.headers.range;
   const upstream = await fetch(target, { method: "GET", headers });
@@ -3271,22 +4966,27 @@ async function proxyLocalStoreUpload(req, res, pathname) {
   return true;
 }
 
-const NEXT_STOREFRONT_ENABLED = process.env.NEXT_STOREFRONT_ENABLED !== "0";
+/* The LUXE storefront is the new presentation layer. The legacy preview stays
+   available at /preview and can still be restored explicitly for diagnostics. */
+const LUXE_STOREFRONT_ENABLED = process.env.LUXE_STOREFRONT_ENABLED !== "0";
+const storefrontPage = (luxePage, legacyPage = "local-preview.html") =>
+  LUXE_STOREFRONT_ENABLED ? luxePage : legacyPage;
 const PAGE_ALIASES = {
-  "/": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "index.html",
+  "/": storefrontPage("index.html"),
   "/preview": "local-preview.html",
-  "/shop": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "shop.html",
+  "/shop": storefrontPage("shop.html"),
   "/support": "support.html",
-  "/signin": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "signin.html",
-  "/signup": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "signin.html",
-  "/account": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "signin.html",
-  "/checkout": NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "shop.html",
+  "/signin": storefrontPage("signin.html"),
+  "/signup": storefrontPage("signin.html"),
+  "/account": storefrontPage("signin.html"),
+  "/checkout": storefrontPage("shop.html"),
   "/terms": "terms.html",
   "/ordering": "ordering.html",
 };
 const VIEWS_DIR = path.join(ROOT, "views");
 
 const server = http.createServer(async (req, res) => {
+  res._milanaReq = req;
   let u;
   try { u = new URL(req.url, "http://x"); } catch { return fail(res, 400, "bad_url"); }
   const pathname = u.pathname;
@@ -3310,16 +5010,34 @@ const server = http.createServer(async (req, res) => {
       const unsafe = !["GET", "HEAD", "OPTIONS"].includes(req.method);
       const cookieAuthPath = pathname.startsWith("/api/admin/") || pathname.startsWith("/api/auth/") || pathname.startsWith("/api/products/") || pathname.startsWith("/api/reviews") || pathname.startsWith("/api/chat") || pathname === "/api/logout" || pathname === "/api/login";
       if (unsafe && cookieAuthPath && !trustedRequestOrigin(req)) return fail(res, 403, "bad_origin");
-      if (pathname.startsWith("/api/admin/") && !isAdmin(req)) return fail(res, 401, "unauthorized");
+      if (pathname.startsWith("/api/admin/")) {
+        const staff = staffFromRequest(req);
+        if (!staff) return fail(res, 401, "unauthorized");
+        const managerOrderAccess = (req.method === "GET" && pathname === "/api/admin/orders")
+          || (req.method === "PUT" && /^\/api\/admin\/orders\/\d+$/.test(pathname));
+        if (staff.role === "manager" && !managerOrderAccess) return fail(res, 403, "forbidden");
+      }
       return await route.handler(req, res, u, route.params);
     }
 
     if (req.method !== "GET" && req.method !== "HEAD") return fail(res, 405, "method_not_allowed");
 
+    if (pathname === "/robots.txt") {
+      const body = `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /account\nDisallow: /checkout\nDisallow: /signin\nDisallow: /signup\n\nSitemap: ${SITE_ORIGIN}/sitemap.xml\n`;
+      return sendText(req, res, 200, body, "text/plain; charset=utf-8", "public, max-age=3600");
+    }
+
+    if (pathname === "/sitemap.xml") {
+      return sendText(req, res, 200, await sitemapXml(), "application/xml; charset=utf-8", "public, max-age=3600");
+    }
+
     /* uploads (Range-aware so video can stream / seek) */
     if (pathname.startsWith("/uploads/")) {
-      const name = path.basename(pathname); // flat dir – kills any traversal
-      if (serveUpload(req, res, path.join(UPLOAD_DIR, name))) return;
+      const uploadRel = decodeURIComponent(pathname.slice("/uploads/".length));
+      if (!uploadRel || uploadRel.includes("..") || uploadRel.includes("\\")) return fail(res, 403, "forbidden");
+      const uploadPath = path.normalize(path.join(UPLOAD_DIR, uploadRel));
+      if (!uploadPath.startsWith(UPLOAD_DIR + path.sep)) return fail(res, 403, "forbidden");
+      if (serveUpload(req, res, uploadPath)) return;
       if (await proxyLocalStoreUpload(req, res, pathname)) return;
       return fail(res, 404, "not_found");
     }
@@ -3330,16 +5048,31 @@ const server = http.createServer(async (req, res) => {
       return fail(res, 404, "not_found");
     }
 
+    const mapTile = pathname.match(/^\/map-tiles\/(\d{1,2})\/(\d+)\/(\d+)\.png$/);
+    if (mapTile) return await serveMapTile(req, res, Number(mapTile[1]), Number(mapTile[2]), Number(mapTile[3]));
+
     /* admin: the panel HTML is served only to an authenticated session —
        everyone else gets the login page. The file itself lives outside public/. */
     if (pathname === "/admin" || pathname === "/admin/") {
-      const file = isAdmin(req) ? "admin-app.html" : "admin-login.html";
+      const staff = staffFromRequest(req);
+      const file = staff?.role === "admin"
+        ? "admin-app.html"
+        : staff?.role === "manager"
+          ? "manager-app.html"
+          : "admin-login.html";
       return serveFile(res, path.join(VIEWS_DIR, file), "no-store") || fail(res, 404, "not_found");
     }
 
     /* pretty product url /p/:slug */
     if (/^\/p\/[a-z0-9-]+$/.test(pathname)) {
-      return serveFile(res, path.join(PUBLIC_DIR, NEXT_STOREFRONT_ENABLED ? "local-preview.html" : "product.html"), "no-store") || fail(res, 404, "not_found");
+      const slug = decodeURIComponent(pathname.slice(3));
+      const product = await activeProductBySlug(slug);
+      if (!product) return fail(res, 404, "not_found");
+      const templatePath = path.join(PUBLIC_DIR, storefrontPage("product.html"));
+      let template;
+      try { template = fs.readFileSync(templatePath, "utf8"); }
+      catch { return fail(res, 404, "not_found"); }
+      return sendText(req, res, 200, renderProductDocument(template, product), "text/html; charset=utf-8", "no-store");
     }
 
     /* pages + static */
@@ -3348,10 +5081,11 @@ const server = http.createServer(async (req, res) => {
     const abs = path.normalize(path.join(PUBLIC_DIR, rel));
     if (!abs.startsWith(PUBLIC_DIR + path.sep) && abs !== PUBLIC_DIR) return fail(res, 403, "forbidden");
     const ext = path.extname(abs).toLowerCase();
-    /* html/css/js/json always revalidate so admin edits and updates land
-       immediately; images and fonts can cache for a day */
+    /* HTML stays no-store so deploys land immediately. Versioned CSS/JS and
+       media can cache longer, which keeps repeat mobile/tablet visits snappy. */
     const cache = ext === ".html" || ext === "" ? "no-store"
-      : [".css", ".js", ".json"].includes(ext) ? "no-cache"
+      : ext === ".json" ? "no-cache"
+      : [".css", ".js", ".woff2", ".woff", ".svg", ".ico", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm"].includes(ext) ? "public, max-age=604800, stale-while-revalidate=86400"
       : "public, max-age=86400";
     if (serveFile(res, abs, cache, req)) return;
 
@@ -3371,7 +5105,9 @@ server.keepAliveTimeout = 5_000;
 
 function shutdown(signal) {
   console.log("\n  " + signal + " received; closing server.");
-  server.close(() => {
+  server.close(async () => {
+    try { await postgresCommerce?.close(); } catch {}
+    try { await postgresCatalog?.close(); } catch {}
     try { db.close(); } catch {}
     process.exit(0);
   });
@@ -3380,10 +5116,29 @@ function shutdown(signal) {
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-server.listen(PORT, HOST, () => {
-  console.log("\n  MILANA PREMIUM");
-  console.log("  Site:  http://localhost:" + PORT);
-  console.log("  Preview: http://localhost:" + PORT + "/preview");
-  console.log("  Shop:  http://localhost:" + PORT + "/shop");
-  console.log("  Admin: http://localhost:" + PORT + "/admin\n");
+async function startServer() {
+  if (postgresCatalog) {
+    const health = await postgresCatalog.health();
+    console.log(`  PostgreSQL catalog connected (${health.products} products).`);
+  }
+  if (postgresCommerce) {
+    await postgresCommerce.ensureDefaultPromo();
+    const health = await postgresCommerce.health();
+    console.log(`  PostgreSQL commerce connected (${health.customers} customers, ${health.orders} orders).`);
+  }
+  server.listen(PORT, HOST, () => {
+    console.log("\n  MILANA PREMIUM");
+    console.log("  Site:  http://localhost:" + PORT);
+    console.log("  Preview: http://localhost:" + PORT + "/preview");
+    console.log("  Shop:  http://localhost:" + PORT + "/shop");
+    console.log("  Admin: http://localhost:" + PORT + "/admin\n");
+  });
+}
+
+startServer().catch(async (error) => {
+  console.error("Server startup failed:", error.message);
+  try { await postgresCommerce?.close(); } catch {}
+  try { await postgresCatalog?.close(); } catch {}
+  try { db.close(); } catch {}
+  process.exit(1);
 });

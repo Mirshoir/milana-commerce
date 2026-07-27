@@ -10,9 +10,11 @@
   let provider = "local";
   let firebaseAuth = null;
   let googleProvider = null;
+  let appleProvider = null;
+  let appleEnabled = false;
   let orders = null;
 
-  const t = (k) => window.I18N ? I18N.t(k) : k;
+  const t = (k, v) => window.I18N ? I18N.t(k, v) : k;
   const fmt = (n) => window.I18N ? I18N.fmtPrice(n) : "$" + Number(n || 0).toFixed(2);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const json = async (url, body) => {
@@ -33,6 +35,9 @@
     const app = appMod.initializeApp(config);
     firebaseAuth = authMod.getAuth(app);
     googleProvider = new authMod.GoogleAuthProvider();
+    appleProvider = new authMod.OAuthProvider("apple.com");
+    appleProvider.addScope("email");
+    appleProvider.addScope("name");
     window.__milanaFirebase = { authMod };
   }
 
@@ -72,17 +77,104 @@
     const page = document.querySelector("[data-auth-page]");
     if (!page || !account) return;
     page.classList.toggle("is-authenticated", Boolean(me));
+    const shell = page.closest(".auth2");
+    if (shell) shell.classList.toggle("is-authenticated", Boolean(me));
     const forms = page.querySelectorAll(".auth-form, .auth-tabs");
     forms.forEach((el) => (el.hidden = Boolean(me)));
     page.querySelectorAll("[data-firebase-auth]").forEach((el) => {
       el.hidden = Boolean(me) || provider !== "firebase";
     });
+    page.querySelectorAll("[data-apple-signin]").forEach((el) => {
+      el.hidden = Boolean(me) || provider !== "firebase" || !appleEnabled;
+    });
     account.hidden = !me;
     if (!me) return;
     page.querySelector("[data-auth-name]").textContent = me.name || t("auth.customer");
     page.querySelector("[data-auth-email]").textContent = me.email || "";
+    const initial = page.querySelector("[data-account-initial]");
+    if (initial) initial.textContent = String(me.name || me.email || "M").trim().charAt(0).toUpperCase() || "M";
     renderAccountDetails();
     loadOrders();
+  }
+
+  /* поля профиля — расширяются для бизнес-аккаунтов */
+  function profileFields() {
+    const base = [
+      { key: "name", label: t("auth.name"), missing: t("auth.customer"), required: true, max: 80 },
+      { key: "phone", label: t("auth.phone"), missing: t("auth.missingPhone"), type: "tel", ph: "+998 90 123 45 67", max: 25 },
+      { key: "city", label: t("cart.city"), missing: t("auth.missingCity"), max: 80 },
+      { key: "address", label: t("cart.address"), missing: t("auth.missingAddress"), max: 300 },
+    ];
+    if (me && me.account_type === "business") base.push(
+      { key: "company_name", label: t("auth.company"), missing: t("auth.missingGeneric"), max: 120 },
+      { key: "tax_id", label: t("auth.taxId"), missing: t("auth.missingGeneric"), max: 40 },
+      { key: "contact_person", label: t("auth.contactPerson"), missing: t("auth.missingGeneric"), max: 80 },
+    );
+    return base;
+  }
+
+  function renderProfileView() {
+    const profile = document.querySelector("[data-account-profile]");
+    if (!profile || !me) return;
+    profile.innerHTML = profileFields().map((f) => {
+      const val = me[f.key];
+      const has = Boolean(String(val ?? "").trim());
+      const verified = f.key === "phone" && has && me.phone_verified ? ` <em class="account-profile__ok" title="${esc(t("auth.verified"))}">✓</em>` : "";
+      return `<p><span>${esc(f.label)}</span><strong${has ? "" : ' class="is-empty"'}>${esc(has ? val : f.missing)}${verified}</strong></p>`;
+    }).join("");
+    const edit = document.querySelector("[data-profile-edit]"); if (edit) edit.hidden = false;
+    const meta = document.querySelector("[data-account-progress-label]"); if (meta) meta.hidden = false;
+  }
+
+  function editProfile() {
+    const profile = document.querySelector("[data-account-profile]");
+    if (!profile || !me) return;
+    profile.innerHTML = `<form class="account-form" data-account-form novalidate>
+      ${profileFields().map((f) => `<label><span>${esc(f.label)}</span><input name="${f.key}" value="${esc(me[f.key] || "")}"${f.required ? " required" : ""}${f.type ? ` type="${f.type}"` : ""}${f.ph ? ` placeholder="${esc(f.ph)}"` : ""} maxlength="${f.max || 120}" autocomplete="off"></label>`).join("")}
+      <p class="account-form__msg" data-account-form-msg hidden></p>
+      <div class="account-form__actions">
+        <button type="submit" class="btn btn--primary">${esc(t("auth.save"))}</button>
+        <button type="button" class="account-form__cancel" data-profile-cancel>${esc(t("auth.cancel"))}</button>
+      </div>
+    </form>`;
+    const edit = document.querySelector("[data-profile-edit]"); if (edit) edit.hidden = true;
+    const meta = document.querySelector("[data-account-progress-label]"); if (meta) meta.hidden = true;
+    profile.querySelector("input")?.focus();
+  }
+
+  async function saveProfile(form) {
+    const data = Object.fromEntries(new FormData(form));
+    const msg = form.querySelector("[data-account-form-msg]");
+    const btn = form.querySelector("button[type=submit]");
+    const setM = (text, bad = true) => { if (msg) { msg.textContent = text; msg.hidden = !text; msg.classList.toggle("is-good", !bad); } };
+    setM("");
+    if (String(data.name || "").trim().length < 2) return setM(friendly("name"));
+    if (data.phone && !/^[0-9+()\-\s]{5,25}$/.test(String(data.phone).trim())) return setM(friendly("phone"));
+    btn.disabled = true;
+    try {
+      const r = await fetch("/api/auth/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(out.error || "request_failed");
+      me = out.customer || me;
+      renderProfileView();     // выйти из режима редактирования (форму убрать)
+      renderAccountDetails();  // обновить прогресс, бейджи, счётчики
+      flashSaved();
+      window.dispatchEvent(new CustomEvent("milana:auth", { detail: { customer: me } }));
+    } catch (ex) {
+      setM(friendly(ex.message));
+      btn.disabled = false;
+    }
+  }
+
+  function flashSaved() {
+    const host = document.querySelector(".account");
+    if (!host) return;
+    let el = host.querySelector(".account-toast");
+    if (!el) { el = document.createElement("div"); el.className = "account-toast"; host.appendChild(el); }
+    el.textContent = t("auth.profileSaved");
+    el.classList.add("is-on");
+    clearTimeout(el._t);
+    el._t = setTimeout(() => el.classList.remove("is-on"), 2600);
   }
 
   function renderAccountDetails() {
@@ -94,17 +186,35 @@
     const wishList = document.querySelector("[data-account-wishlist-list]");
     const wishlist = window.MilanaState?.wishlist?.all?.() || [];
 
-    if (profile) {
-      const rows = [
-        [t("auth.accountType"), me.account_type === "individual" ? t("auth.individual") : t("auth.business")],
-        [t("auth.status"), t("auth.status." + (me.approval_status || "active"))],
-        [t("auth.name"), me.name || t("auth.customer")],
-        [t("auth.phone"), me.phone || t("auth.missingPhone")],
-        [t("cart.city"), me.city || t("auth.missingCity")],
-        [t("cart.address"), me.address || t("auth.missingAddress")],
-      ];
-      profile.innerHTML = rows.map(([label, value]) => `<p><span>${esc(label)}</span><strong>${esc(value)}</strong></p>`).join("");
+    // не перерисовываем, если пользователь сейчас редактирует
+    if (profile && !profile.querySelector("[data-account-form]")) renderProfileView();
+
+    // бейджи: тип аккаунта + статус
+    const badges = document.querySelector("[data-account-badges]");
+    if (badges) {
+      const typeLabel = me.account_type === "individual" ? t("auth.individual") : t("auth.business");
+      const status = me.approval_status || "active";
+      let statusLabel = t("auth.status." + status);
+      if (statusLabel === "auth.status." + status) statusLabel = status.replace(/_/g, " ");
+      const statusMod = status === "active" ? "is-ok" : "is-wait";
+      badges.innerHTML =
+        `<span class="account-badge">${esc(typeLabel)}</span>` +
+        `<span class="account-badge ${statusMod}">${esc(statusLabel)}</span>`;
     }
+
+    // индикатор заполненности профиля (по всем полям — зависит от типа аккаунта)
+    const flds = profileFields();
+    const filled = flds.filter((f) => String(me[f.key] ?? "").trim()).length;
+    const pct = Math.round((filled / flds.length) * 100);
+    const bar = document.querySelector("[data-account-progress]");
+    const barLabel = document.querySelector("[data-account-progress-label]");
+    if (bar) {
+      bar.hidden = false;
+      const fill = bar.querySelector("i");
+      if (fill) fill.style.width = pct + "%";
+      bar.classList.toggle("is-complete", pct === 100);
+    }
+    if (barLabel) barLabel.textContent = t("auth.profileComplete", { pct });
 
     if (orderCount) orderCount.textContent = Array.isArray(orders) ? String(orders.length) : "0";
     if (wishCount) wishCount.textContent = String(wishlist.length);
@@ -120,7 +230,7 @@
           const extra = Math.max(0, (order.items?.length || 0) - 1);
           return `<a class="account-order" href="/support?topic=order">
             <span>${esc(order.number || "MP")}</span>
-            <strong>${esc(first.name || t("cart.title"))}${extra ? ` +${extra}` : ""}</strong>
+            <strong>${esc(first.name ? I18N.productName(first) : t("cart.title"))}${extra ? ` +${extra}` : ""}</strong>
             <i>${esc(order.status || "new")} · ${fmt(order.total || 0)}</i>
           </a>`;
         }).join("");
@@ -133,7 +243,7 @@
       } else {
         wishList.innerHTML = wishlist.slice(0, 4).map((item) => `<a class="account-wish" href="/p/${esc(item.slug || item.id)}">
           <img src="${esc(item.image || "/assets/img/detail-stack.jpg")}" alt="">
-          <span><strong>${esc(item.name || t("auth.savedModel"))}</strong><i>${item.price_visible === false ? t("price.manager") : fmt(item.price || 0)}</i></span>
+          <span><strong>${esc(item.name ? I18N.productName(item) : t("auth.savedModel"))}</strong><i>${item.price_visible === false ? t("price.manager") : fmt(item.price || 0)}</i></span>
           <button type="button" data-account-wish-remove="${esc(item.id)}" aria-label="Remove">×</button>
         </a>`).join("");
         window.MilanaState?.wireImages?.(wishList);
@@ -237,6 +347,43 @@
     window.dispatchEvent(new CustomEvent("milana:auth", { detail: { customer: me } }));
   }
 
+  function socialDisplayName(cred, authMod) {
+    const profile = authMod.getAdditionalUserInfo?.(cred)?.profile || {};
+    const profileName = profile.name;
+    if (typeof profileName === "string") return profileName.trim();
+    if (profileName && typeof profileName === "object") {
+      return [profileName.firstName, profileName.lastName].filter(Boolean).join(" ").trim();
+    }
+    return [
+      profile.firstName || profile.first_name || profile.given_name,
+      profile.lastName || profile.last_name || profile.family_name,
+    ].filter(Boolean).join(" ").trim() || cred.user.displayName || "";
+  }
+
+  async function handleSocialSignIn(button, oauthProvider) {
+    if (!button || !firebaseAuth || !oauthProvider || !window.__milanaFirebase) return;
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    try {
+      const { authMod } = window.__milanaFirebase;
+      const cred = await authMod.signInWithPopup(firebaseAuth, oauthProvider);
+      const idToken = await cred.user.getIdToken();
+      const res = await json("/api/auth/firebase", {
+        idToken,
+        name: socialDisplayName(cred, authMod),
+      });
+      me = res.customer || null;
+      renderLinks();
+      renderAccount();
+      window.dispatchEvent(new CustomEvent("milana:auth", { detail: { customer: me } }));
+    } catch (ex) {
+      setMsg("signin", friendly(ex.code || ex.message));
+    } finally {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+    }
+  }
+
   function wirePage() {
     const page = document.querySelector("[data-auth-page]");
     if (!page) return;
@@ -302,24 +449,22 @@
         renderAccountDetails();
       }
 
+      if (e.target.closest("[data-profile-edit]")) { editProfile(); return; }
+      if (e.target.closest("[data-profile-cancel]")) { renderProfileView(); return; }
+
       const google = e.target.closest("[data-google-signin]");
-      if (google && firebaseAuth && googleProvider && window.__milanaFirebase) {
-        google.disabled = true;
-        try {
-          const { authMod } = window.__milanaFirebase;
-          const cred = await authMod.signInWithPopup(firebaseAuth, googleProvider);
-          const idToken = await cred.user.getIdToken();
-          const res = await json("/api/auth/firebase", { idToken });
-          me = res.customer || null;
-          renderLinks();
-          renderAccount();
-          window.dispatchEvent(new CustomEvent("milana:auth", { detail: { customer: me } }));
-        } catch (ex) {
-          setMsg("signin", friendly(ex.message));
-        } finally {
-          google.disabled = false;
-        }
-      }
+      if (google) await handleSocialSignIn(google, googleProvider);
+
+      const apple = e.target.closest("[data-apple-signin]");
+      if (apple) await handleSocialSignIn(apple, appleProvider);
+    });
+
+    /* сохранение профиля (форма создаётся динамически) */
+    page.addEventListener("submit", (e) => {
+      const pform = e.target.closest("[data-account-form]");
+      if (!pform) return;
+      e.preventDefault();
+      saveProfile(pform);
     });
 
     page.querySelectorAll("[data-auth-form]").forEach((form) => {
@@ -396,6 +541,10 @@
       rate_limited: t("auth.errRateLimited"),
       phone_not_verified: t("auth.errPhoneVerify"),
       name: t("auth.errName"),
+      "auth/popup-closed-by-user": t("auth.errPopupClosed"),
+      "auth/cancelled-popup-request": t("auth.errPopupClosed"),
+      "auth/account-exists-with-different-credential": t("auth.errProviderConflict"),
+      "auth/operation-not-allowed": t("auth.errProviderDisabled"),
     };
     return map[clean] || clean || t("auth.errGeneric");
   }
@@ -403,15 +552,20 @@
   async function boot() {
     const config = await fetch("/api/auth/config").then((r) => r.json()).catch(() => ({ provider: "local" }));
     provider = config.provider || "local";
+    appleEnabled = config.appleEnabled === true;
     if (provider === "firebase") {
-      await initFirebase(config.firebase).catch(() => { provider = "local"; });
       document.querySelectorAll("[data-firebase-auth]").forEach((el) => { el.hidden = false; });
+      await initFirebase(config.firebase).catch(() => { provider = "local"; });
     }
+    document.querySelectorAll("[data-apple-signin]").forEach((el) => {
+      el.hidden = provider !== "firebase" || !appleEnabled;
+    });
     wirePage();
     await refresh();
   }
 
-  document.addEventListener("DOMContentLoaded", boot);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once: true });
+  else boot();
   window.addEventListener("i18n:change", () => { renderLinks(); renderAccount(); });
   window.addEventListener("milana:wishlist", renderAccountDetails);
   window.MilanaAuth = { refresh, get customer() { return me; } };

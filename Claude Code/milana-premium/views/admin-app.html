@@ -5,9 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Админ — MILANA PREMIUM</title>
   <meta name="robots" content="noindex, nofollow">
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='8' fill='%235c1f2d'/%3E%3Ctext x='32' y='44' font-family='Georgia,serif' font-size='34' fill='%23f4efe6' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/css/fonts.css">
-  <link rel="stylesheet" href="/css/admin.css?v=3">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230C0C0C'/%3E%3Ctext x='32' y='44' font-family='Helvetica,Arial,sans-serif' font-size='32' letter-spacing='2' fill='%23FFFFFF' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/admin.css?v=20260727-restore">
 </head>
 <body>
 
@@ -15,14 +14,16 @@
     <aside class="side">
       <p class="side__brand">Milana <span>Admin</span></p>
       <nav class="side__nav">
-        <button data-view="products" class="is-on">🧥 Товары</button>
-        <button data-view="customers">👥 Клиенты <i class="side__badge" id="customers-badge" hidden></i></button>
-        <button data-view="orders">📦 Заказы <i class="side__badge" id="orders-badge" hidden></i></button>
-        <button data-view="reviews">★ Отзывы <i class="side__badge" id="reviews-badge" hidden></i></button>
-        <button data-view="chat">💬 Чат <i class="side__badge" id="chat-badge" hidden></i></button>
-        <button data-view="support">☎️ Поддержка <i class="side__badge" id="support-badge" hidden></i></button>
-        <button data-view="design">🎨 Дизайн</button>
-        <button data-view="settings">⚙️ Настройки</button>
+        <button data-view="products" class="is-on">Товары</button>
+        <button data-view="customers">Клиенты <i class="side__badge" id="customers-badge" hidden></i></button>
+        <button data-view="managers">Менеджеры</button>
+        <button data-view="orders">Заказы <i class="side__badge" id="orders-badge" hidden></i></button>
+        <button data-view="reviews">Отзывы <i class="side__badge" id="reviews-badge" hidden></i></button>
+        <button data-view="chat">Чат <i class="side__badge" id="chat-badge" hidden></i></button>
+        <button data-view="support">Поддержка <i class="side__badge" id="support-badge" hidden></i></button>
+        <button data-view="design">Дизайн</button>
+        <button data-view="builder">Конструктор</button>
+        <button data-view="settings">Настройки</button>
       </nav>
       <div class="side__foot">
         <div class="admin-lang" data-admin-lang></div>
@@ -42,12 +43,18 @@
             <button class="abtn abtn--primary" id="prod-new">+ Добавить товар</button>
           </div>
         </header>
+        <div class="admin-catalog-panels" id="admin-catalog-panels" aria-label="Каталоги товаров"></div>
         <div class="tablewrap">
           <table class="atable" id="prod-table">
-            <thead><tr><th>Номер модели</th><th>Вариант</th><th>Название</th><th>Размеры</th><th>Категория гендера</th><th>Категория одежды</th><th>Тег</th><th>Цена</th><th>Статус</th><th></th></tr></thead>
+            <thead><tr><th>Номер модели</th><th>Вариант</th><th>Название</th><th>Каталог</th><th>Размеры</th><th>Категория гендера</th><th>Категория одежды</th><th>Тег</th><th>Цена</th><th>Статус</th><th></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
+        <nav class="admin-pager" id="prod-pager" aria-label="Product pages">
+          <button class="abtn" id="prod-prev" type="button">← Назад</button>
+          <span id="prod-page-label">Страница 1</span>
+          <button class="abtn" id="prod-next" type="button">Вперёд →</button>
+        </nav>
       </section>
 
       <!-- ===== PRODUCT EDIT ===== -->
@@ -83,6 +90,29 @@
                   <option value="homewear">Домашняя одежда</option><option value="loungewear">Лаунж-сеты</option>
                 </select>
               </label>
+              <label>Панель каталога
+                <select class="ainput" id="f-catalog-panel">
+                  <option value="pajamas">Pijama</option><option value="robes">Xalat</option>
+                  <option value="men">Erkaklar</option><option value="tunics">Tunika</option>
+                  <option value="trousers">Ishton</option><option value="nightgowns">Sarochka</option>
+                  <option value="sets">Dvoyka</option><option value="tshirts">Futbolka</option>
+                  <option value="kids">Yosh bolalar</option>
+                </select>
+              </label>
+              <label>Название по фото
+                <select class="ainput" id="f-product-type">
+                  <option value="">Определить из текста</option>
+                  <option value="tunic">Туника</option><option value="sarochka">Сорочка</option>
+                  <option value="robe">Халат</option><option value="pajamas">Пижама</option>
+                  <option value="set">Комплект</option><option value="tracksuit">Спортивный костюм</option>
+                  <option value="hoodie">Худи</option><option value="dress">Платье</option>
+                  <option value="shirt">Рубашка</option><option value="polo">Поло</option>
+                  <option value="trousers">Штаны</option><option value="tshirt">Футболка</option>
+                  <option value="shorts">Шорты</option><option value="top">Майка</option>
+                </select>
+              </label>
+            </div>
+            <div class="frow frow--2">
               <label>Цена <input class="ainput" id="f-price" type="number" min="0" step="0.01"></label>
               <label>Старая цена <input class="ainput" id="f-old" type="number" min="0" step="0.01" placeholder="—"></label>
             </div>
@@ -96,6 +126,12 @@
               <label>Размеры (через запятую) <input class="ainput" id="f-sizes" placeholder="XS, S, M, L"></label>
               <label>Рейтинг <input class="ainput" id="f-rating" type="number" min="0" max="5" step="0.1"></label>
               <label>Отзывов <input class="ainput" id="f-reviews" type="number" min="0" step="1"></label>
+              <label>Коллекция
+                <select class="ainput" id="f-collection">
+                  <option value="">—</option>
+                  <option value="ss26">Весна–Лето 26</option>
+                </select>
+              </label>
             </div>
             <div class="frow frow--4">
               <label>Опт. цена <input class="ainput" id="f-wholesale-price" type="number" min="0" step="0.01"></label>
@@ -116,9 +152,9 @@
           <div class="card">
             <h3>Фотографии</h3>
             <div class="photos" id="f-photos"></div>
-            <label class="upload">
+            <label class="upload" id="f-upload-zone">
               <input type="file" id="f-upload" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" multiple hidden>
-              <span>＋ Загрузить фото или видео (JPG / PNG / WebP до 64 МБ · MP4 / WebM до 64 МБ)</span>
+              <span>＋ Загрузить фото или видео<br>или перетащите файлы сюда (JPG / PNG / WebP · MP4 / WebM до 64 МБ)</span>
             </label>
             <p class="hint" id="upload-status"></p>
           </div>
@@ -126,7 +162,7 @@
           <div class="card">
             <div class="card__top">
               <h3>Описание</h3>
-              <button class="abtn" id="edit-ai-fill" type="button">Smart fill</button>
+              <button class="abtn" id="edit-ai-fill" type="button">По фото</button>
             </div>
             <div class="langtabs" id="desc-tabs">
               <button data-lt="ru" class="is-on">RU</button><button data-lt="uz">UZ</button><button data-lt="en">ENG</button>
@@ -155,12 +191,40 @@
         </div>
       </section>
 
+      <!-- ===== MANAGERS ===== -->
+      <section class="view" id="view-managers" hidden>
+        <header class="vhead"><h1>Менеджеры <span class="vhead__n" id="manager-count"></span></h1></header>
+        <div class="card manager-create">
+          <h3>Добавить менеджера</h3>
+          <div class="frow frow--3">
+            <label>Имя <input class="ainput" id="manager-name" maxlength="80"></label>
+            <label>Логин <input class="ainput" id="manager-login" maxlength="60" autocomplete="off"></label>
+            <label>Пароль <input class="ainput" id="manager-password" type="password" minlength="8" maxlength="100" autocomplete="new-password"></label>
+          </div>
+          <div class="frow frow--3">
+            <label>Telegram chat ID <input class="ainput" id="manager-chat-id" maxlength="80"></label>
+            <label>Telegram topic ID <input class="ainput" id="manager-thread-id" maxlength="30" placeholder="необязательно"></label>
+            <label class="fcheck"><input type="checkbox" id="manager-active" checked> Активен</label>
+          </div>
+          <div class="card__top">
+            <p class="hint" id="manager-msg"></p>
+            <button class="abtn abtn--primary" id="manager-create" type="button">Добавить</button>
+          </div>
+        </div>
+        <div class="tablewrap">
+          <table class="atable" id="manager-table">
+            <thead><tr><th>Имя</th><th>Логин</th><th>Новый пароль</th><th>Telegram chat ID</th><th>Topic ID</th><th>Статус</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
       <!-- ===== ORDERS ===== -->
       <section class="view" id="view-orders" hidden>
         <header class="vhead"><h1>Заказы <span class="vhead__n" id="order-count"></span></h1></header>
         <div class="tablewrap">
           <table class="atable atable--orders" id="order-table">
-            <thead><tr><th>№</th><th>Дата</th><th>Клиент</th><th>Тип</th><th>Состав</th><th>Сумма</th><th>Оплата</th><th>Статус</th></tr></thead>
+            <thead><tr><th>№</th><th>Дата</th><th>Менеджер</th><th>Клиент</th><th>Тип</th><th>Состав</th><th>Сумма</th><th>Оплата</th><th>Статус</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -199,6 +263,116 @@
         </div>
       </section>
 
+
+      <!-- ===== SITE BUILDER ===== -->
+      <section class="view" id="view-builder" hidden>
+        <header class="vhead">
+          <h1>Конструктор сайта</h1>
+          <div class="vhead__end">
+            <button class="abtn" id="b-reset">Сбросить всё</button>
+            <button class="abtn abtn--primary" id="b-save">Сохранить</button>
+          </div>
+        </header>
+        <p class="formerr" id="b-msg" hidden></p>
+        <div class="editgrid">
+          <div class="card">
+            <div class="card__top">
+              <h3>Hero-слайдер</h3>
+              <button class="abtn" id="hs-add" type="button">+ Добавить слайд</button>
+            </div>
+            <p class="hint" style="margin:0 0 14px">Фото или видео (JPG/PNG/WebP/MP4/WebM, до 64 МБ) и заголовок на трёх языках. Порядок — стрелками. Без слайдов на сайте остаётся стандартное видео.</p>
+            <label class="hs-interval">Время показа слайда (сек)
+              <input type="number" id="hs-interval" class="ainput" min="2" max="20" step="1" value="6">
+            </label>
+            <div class="hslides" id="hs-list"></div>
+            <input type="file" id="hs-file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" hidden>
+          </div>
+          <div class="card">
+            <h3>Секции главной страницы</h3>
+            <p class="hint" style="margin:0 0 14px">Стрелки меняют порядок блоков, выключатель скрывает блок с сайта. Изменения видны после «Сохранить».</p>
+            <div class="bsecs" id="b-sections"></div>
+          </div>
+          <div class="card">
+            <h3>Типографика</h3>
+            <p class="hint" style="margin:0 0 14px">Настройки шрифта витрины. «Стандарт» — фирменные значения дизайна; изменения применяются после «Сохранить».</p>
+            <div class="tyfontrow">
+              <label>Шрифт сайта
+                <select class="ainput" id="ty-font">
+                  <option value="">Lato — фирменный</option>
+                  <option value="system-sans">Системный гротеск (Helvetica / Arial)</option>
+                  <option value="system-serif">Антиква (Georgia)</option>
+                  <option value="custom">Свой шрифт (файл)</option>
+                </select>
+              </label>
+              <div class="tyfontup" id="ty-fontup-row" hidden>
+                <button class="abtn" id="ty-fontup" type="button">Загрузить шрифт (WOFF2/WOFF/TTF/OTF)</button>
+                <span class="hint" id="ty-fontname" style="margin:0"></span>
+                <input type="file" id="ty-fontfile" accept=".woff2,.woff,.ttf,.otf" hidden>
+              </div>
+            </div>
+            <div class="tygrid">
+              <label>Базовый размер текста
+                <select class="ainput" id="ty-base">
+                  <option value="">Стандарт (14 px)</option>
+                  <option value="13">13 px</option><option value="15">15 px</option><option value="16">16 px</option>
+                </select>
+              </label>
+              <label>Межстрочный интервал
+                <select class="ainput" id="ty-lh">
+                  <option value="">Стандарт (1.6)</option>
+                  <option value="1.4">1.4 — плотнее</option><option value="1.7">1.7</option><option value="1.8">1.8 — воздушнее</option>
+                </select>
+              </label>
+              <label>Размер заголовков
+                <select class="ainput" id="ty-hscale">
+                  <option value="">Стандарт (100%)</option>
+                  <option value="90">90%</option><option value="95">95%</option>
+                  <option value="105">105%</option><option value="110">110%</option><option value="115">115%</option>
+                </select>
+              </label>
+              <label>Начертание заголовков
+                <select class="ainput" id="ty-hweight">
+                  <option value="">Стандарт</option>
+                  <option value="100">Hairline — тончайшее</option>
+                  <option value="300">Light — лёгкое</option>
+                  <option value="400">Regular — обычное</option>
+                </select>
+              </label>
+              <label>Разрядка заголовков
+                <select class="ainput" id="ty-hspacing">
+                  <option value="">Стандарт</option>
+                  <option value="-0.01">Плотнее</option>
+                  <option value="0.04">Шире</option>
+                  <option value="0.08">Широко</option>
+                </select>
+              </label>
+              <label>Регистр заголовков
+                <select class="ainput" id="ty-hcase">
+                  <option value="">Как в тексте</option>
+                  <option value="uppercase">ВСЕ ПРОПИСНЫЕ</option>
+                </select>
+              </label>
+            </div>
+            <div class="typreview" id="ty-preview">
+              <p class="typreview__h">Уют начинается здесь</p>
+              <p class="typreview__t">Milana Premium — фабрика домашней и повседневной одежды в Андижане. Оптовый каталог: халаты, пижамы, туники.</p>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card__top">
+              <h3>Тексты сайта</h3>
+              <div class="langtabs" id="b-langtabs">
+                <button type="button" data-blang="ru" class="is-on">RU</button>
+                <button type="button" data-blang="uz">UZ</button>
+                <button type="button" data-blang="en">EN</button>
+              </div>
+            </div>
+            <p class="hint" style="margin:0 0 14px">Серый текст в поле — стандартный. Впишите свой, чтобы заменить его; очистите поле, чтобы вернуть стандартный.</p>
+            <div id="b-texts"></div>
+          </div>
+        </div>
+      </section>
+
       <!-- ===== SETTINGS ===== -->
       <section class="view" id="view-settings" hidden>
         <header class="vhead">
@@ -217,6 +391,7 @@
             <div class="frow frow--3">
               <label>Telegram (без @) <input class="ainput" id="s-telegram"></label>
               <label>Instagram (без @) <input class="ainput" id="s-instagram"></label>
+              <label>Hero: сдвиг нижней строки (em, минус — ближе; пусто = авто) <input class="ainput" id="s-hero_gap" type="number" step="0.05" min="-2" max="2" placeholder="-0.62"></label>
               <label>E-mail <input class="ainput" id="s-email"></label>
             </div>
           </div>
@@ -325,7 +500,7 @@
   </div>
 
   <div class="atoast" id="atoast"></div>
-  <script src="/js/admin.js?v=9" defer></script>
-  <script src="/js/admin-locale.js?v=1" defer></script>
+  <script src="/js/admin.js?v=20260727-about2" defer></script>
+  <script src="/js/admin-locale.js?v=20260724-photo-names" defer></script>
 </body>
 </html>

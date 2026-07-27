@@ -11,7 +11,10 @@
   const isVideo = (u) => /\.(mp4|webm)(\?|$)/i.test(u || "");
   const mediaTag = (url, alt, eager = false) => isVideo(url)
     ? `<video src="${esc(url)}" muted loop playsinline autoplay preload="metadata" aria-label="${esc(alt)}"></video>`
-    : `<img src="${esc(url)}" alt="${esc(alt)}" loading="${eager ? "eager" : "lazy"}" decoding="async" fetchpriority="${eager ? "high" : "auto"}" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`;
+    : `<img src="${esc((window.MilanaThumb || ((x) => x))(url))}" data-full="${esc(url)}" alt="${esc(alt)}" loading="${eager ? "eager" : "lazy"}" decoding="async" fetchpriority="${eager ? "high" : "auto"}" onerror="if(this.dataset.full&&this.src.indexOf('/uploads/thumbs/')>-1){this.src=this.dataset.full}else{this.classList.add('is-broken');this.removeAttribute('src')}">`;
+  const apiItems = (payload) => Array.isArray(payload)
+    ? payload
+    : (payload && Array.isArray(payload.items) ? payload.items : []);
   let products = [];
 
   /* ---------- bestsellers from the live catalog ---------- */
@@ -22,6 +25,7 @@
       const pct = Math.round((1 - p.price / p.old_price) * 100);
       return `<span class="product__tag product__tag--sale">−${pct}%</span>`;
     }
+    if (p.tag === "sale") return `<span class="product__tag product__tag--sale">${I18N.t("shop.tagSale")}</span>`;
     return "";
   }
 
@@ -32,21 +36,21 @@
 
   function card(p, i = 0) {
     const lang = I18N.lang;
-    const fabric = (p.fabric && (p.fabric[lang] || p.fabric.en)) || "";
+    const fabric = (window.MilanaFab || ((x) => x))((p.fabric && (p.fabric[lang] || p.fabric.en)) || "");
+    const nm = window.MilanaName ? MilanaName(p) : p.name;
     return `
     <article class="product" data-id="${p.id}">
-      <div class="product__media">
-        ${tagChip(p)}
+      <div class="product__media" data-imgs="${esc((p.images || []).slice(0, 6).join('|'))}">
         <button class="product__wish" aria-label="Wishlist"><svg class="ic"><use href="#i-heart"/></svg></button>
-        <a class="product__go" href="/p/${p.slug}"><figure>${mediaTag(p.images[0] || "", p.name, i < 4)}</figure></a>
+        <a class="product__go" href="/p/${p.slug}"><figure>${mediaTag(p.images[0] || "", nm, i < 4)}</figure></a>
         <div class="product__quick">
           <div class="product__sizes">${p.sizes.map((s) => `<span data-size="${esc(s)}">${esc(s)}</span>`).join("")}</div>
           <button class="product__add" data-add="${p.id}"><svg class="ic"><use href="#i-cart"/></svg><span data-i18n="best.add">${I18N.t("best.add")}</span></button>
         </div>
       </div>
       <div class="product__info">
-        <div class="product__row"><h3><a href="/p/${p.slug}">${esc(p.name)}</a></h3>
-          ${priceHtml(p)}</div>
+        <div class="product__row"><h3><a href="/p/${p.slug}">${esc(nm)}</a></h3>
+          ${priceHtml(p)}${tagChip(p)}</div>
         <p class="product__fab" data-fab>${esc(fabric)}</p>
         <p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} <i data-i18n="best.reviews">${I18N.t("best.reviews")}</i>)</span></p>
       </div>
@@ -58,8 +62,9 @@
     if (!grid) return;
     try {
       const localNikePreview = document.documentElement.classList.contains("nike-local");
-      const r = await fetch(`/api/products?limit=${localNikePreview ? 8 : 4}`);
-      products = await r.json();
+      const r = await fetch(`/api/products?limit=${localNikePreview ? 8 : 12}`);
+      if (!r.ok) throw new Error("catalog_unavailable");
+      products = apiItems(await r.json());
       grid.innerHTML = products.map(card).join("");
       window.MilanaState?.wireImages?.(grid);
       window.dispatchEvent(new CustomEvent("products:rendered"));
@@ -73,7 +78,7 @@
       e.preventDefault();
       const p = products.find((x) => x.id === Number(addBtn.dataset.add));
       if (!p) return;
-      Cart.add({ id: p.id, slug: p.slug, name: p.name, image: p.images[0] || "", price: p.price, price_visible: p.price_visible, price_label: p.price_label, sizes: p.sizes });
+      Cart.add({ id: p.id, slug: p.slug, name: window.MilanaName ? MilanaName(p) : p.name, image: p.images[0] || "", price: p.price, price_visible: p.price_visible, price_label: p.price_label, sizes: p.sizes });
     }
     const wish = e.target.closest(".product__wish");
     if (wish && !wish.dataset.bound) { wish.classList.toggle("is-active"); e.preventDefault(); }
@@ -107,7 +112,7 @@
       const p = products.find((x) => x.id === Number(card.dataset.id));
       if (!p) return;
       const fab = card.querySelector("[data-fab]");
-      if (fab) fab.textContent = (p.fabric && (p.fabric[I18N.lang] || p.fabric.en)) || "";
+      if (fab) fab.textContent = (window.MilanaFab || ((x) => x))((p.fabric && (p.fabric[I18N.lang] || p.fabric.en)) || "");
       const price = card.querySelector(".product__price");
       if (price) {
         price.classList.toggle("product__price--pending", p.price_visible === false);

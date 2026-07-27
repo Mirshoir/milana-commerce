@@ -36,7 +36,7 @@
     <aside class="drawer__panel" role="dialog" aria-modal="true" aria-label="Cart">
       <header class="drawer__head">
         <h3 class="drawer__title"></h3>
-        <button class="drawer__x" data-cart-close aria-label="Close">&#10005;</button>
+        <button type="button" class="drawer__x" data-cart-close aria-label="Close">&#10005;</button>
       </header>
       <div class="drawer__body"></div>
       <footer class="drawer__foot"></footer>
@@ -46,6 +46,21 @@
   let view = "list"; // list | checkout | success
   let lastOrder = null;
   let lastPayment = null;
+  let managers = [];
+  let managersLoaded = false;
+
+  async function loadManagers() {
+    if (managersLoaded) return managers;
+    try {
+      const response = await fetch("/api/managers", { headers: { Accept: "application/json" } });
+      const data = await response.json().catch(() => []);
+      managers = response.ok && Array.isArray(data) ? data : [];
+    } catch {
+      managers = [];
+    }
+    managersLoaded = true;
+    return managers;
+  }
 
   const bodyEl = () => drawer.querySelector(".drawer__body");
   const footEl = () => drawer.querySelector(".drawer__foot");
@@ -75,11 +90,18 @@
       const customer = window.MilanaAuth?.customer || {};
       const mode = orderMode();
       bodyEl().innerHTML = `
-        <form class="drawer__form" id="checkout-form" novalidate>
+        <form class="drawer__form" id="checkout-form">
           <label><span>${t("cart.name")} *</span><input name="name" required maxlength="80" autocomplete="name" value="${esc(customer.name || "")}"></label>
           <label><span>${t("cart.phone")} *</span><input name="phone" required maxlength="25" autocomplete="tel" placeholder="+998 90 123 45 67" value="${esc(customer.phone || "")}"></label>
           <label><span>${t("cart.city")}</span><input name="city" maxlength="80" autocomplete="address-level2"></label>
           <label><span>${t("cart.address")}</span><input name="address" maxlength="300" autocomplete="street-address"></label>
+          <label><span>${t("cart.manager")} *</span>
+            <select name="manager_id" required>
+              <option value="">${managersLoaded ? t("cart.managerChoose") : t("cart.managerLoading")}</option>
+              ${managers.map((manager) => `<option value="${esc(manager.id)}">${esc(manager.name)}</option>`).join("")}
+            </select>
+          </label>
+          ${managersLoaded && !managers.length ? `<p class="drawer__err">${t("cart.managerUnavailable")}</p>` : ""}
           <label><span>${t("cart.payment")} *</span>
             <select name="payment_method" required>
               <option value="manager">${t("cart.paymentManager")}</option>
@@ -94,12 +116,12 @@
           <p class="drawer__note">${mode === "retail" ? "Retail order: quantities are pieces. Manager confirms delivery and availability before dispatch." : t("cart.bagRule")}</p>
           <p class="drawer__note">${t("cart.paymentNote")}</p>
           <p class="drawer__note"><a href="/ordering" target="_blank">How ordering works</a> · ${t("cart.orderNote")}</p>
-          <p class="drawer__err" hidden></p>
         </form>`;
       footEl().innerHTML = `
         <div class="drawer__total"><span>${t("cart.total")}</span><strong>${hasPendingTotal() ? t("cart.totalPending") : fmt(total())}</strong></div>
-        <button class="btn btn--primary drawer__cta" data-place><span>${t("cart.place")}</span><svg class="ic"><use href="#i-arrow"/></svg></button>
-        <button class="drawer__backlink" data-back>&larr; ${t("cart.back")}</button>`;
+        <p class="drawer__err" data-order-error role="alert" aria-live="assertive" hidden></p>
+        <button type="submit" form="checkout-form" class="btn btn--primary drawer__cta" data-place><span>${t("cart.place")}</span><svg class="ic"><use href="#i-arrow"/></svg></button>
+        <button type="button" class="drawer__backlink" data-back>&larr; ${t("cart.back")}</button>`;
       return;
     }
 
@@ -119,21 +141,21 @@
       <div class="citem">
           <a class="citem__img" href="/p/${it.slug}"><img src="${it.image}" alt=""></a>
         <div class="citem__info">
-          <a class="citem__name" href="/p/${it.slug}">${esc(it.name)}</a>
+          <a class="citem__name" href="/p/${it.slug}">${esc(window.I18N?.productName ? I18N.productName(it) : it.name)}</a>
           <p class="citem__size">${t("cart.unitPrice")}: ${priceText(it)}</p>
           ${mode === "retail" ? `<p class="citem__size">Retail pieces</p>` : `<p class="citem__size">${t("cart.sizeMix")}: ${mixText(it.sizes)}</p><p class="citem__size">${t("cart.bagTotal")}: ${priceText(it, it.price * BAG_SIZE())}</p>`}
           <div class="citem__row">
             <div class="citem__qty">
-              <button data-qty="${idx}:-1" aria-label="−">−</button><span>${it.qty} ${mode === "retail" ? "pcs" : t("cart.bagShort")}</span><button data-qty="${idx}:1" aria-label="+">+</button>
+              <button type="button" data-qty="${idx}:-1" aria-label="−">−</button><span>${it.qty} ${mode === "retail" ? "pcs" : t("cart.bagShort")}</span><button type="button" data-qty="${idx}:1" aria-label="+">+</button>
             </div>
             <strong>${priceText(it, lineTotal(it))}</strong>
           </div>
         </div>
-        <button class="citem__x" data-del="${idx}" aria-label="Remove">&#10005;</button>
+        <button type="button" class="citem__x" data-del="${idx}" aria-label="Remove">&#10005;</button>
       </div>`).join("");
     footEl().innerHTML = `
       <div class="drawer__total"><span>${t("cart.total")}</span><strong>${hasPendingTotal() ? t("cart.totalPending") : fmt(total())}</strong></div>
-      <button class="btn btn--primary drawer__cta" data-checkout><span>${t("cart.checkout")}</span><svg class="ic"><use href="#i-arrow"/></svg></button>`;
+      <button type="button" class="btn btn--primary drawer__cta" data-checkout><span>${t("cart.checkout")}</span><svg class="ic"><use href="#i-arrow"/></svg></button>`;
   }
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -149,40 +171,72 @@
       items[idx].qty = Math.min(20, Math.max(1, items[idx].qty + d));
       save(); render(); return;
     }
-    if (e.target.closest("[data-checkout]")) { view = "checkout"; render(); return; }
+    if (e.target.closest("[data-checkout]")) {
+      view = "checkout";
+      render();
+      await loadManagers();
+      render();
+      return;
+    }
     if (e.target.closest("[data-back]")) { view = "list"; render(); return; }
-    if (e.target.closest("[data-place]")) return placeOrder(e.target.closest("[data-place]"));
+  });
+
+  drawer.addEventListener("submit", (e) => {
+    if (!e.target.matches("#checkout-form")) return;
+    e.preventDefault();
+    const btn = drawer.querySelector("[data-place]");
+    if (btn && !btn.disabled) placeOrder(btn);
   });
 
   async function placeOrder(btn) {
     const form = drawer.querySelector("#checkout-form");
-    const err = form.querySelector(".drawer__err");
+    if (!form) return;
+    const err = drawer.querySelector("[data-order-error]");
     const data = Object.fromEntries(new FormData(form));
-    if (data.name.trim().length < 2 || !/^[0-9+()\-\s]{5,25}$/.test(data.phone.trim())) {
-      err.textContent = t("cart.invalid"); err.hidden = false; return;
+    const name = String(data.name || "").trim();
+    const phone = String(data.phone || "").trim();
+    const managerId = Number(data.manager_id);
+    if (name.length < 2 || !/^[0-9+()\-\s]{5,25}$/.test(phone)) {
+      if (err) { err.textContent = t("cart.invalid"); err.hidden = false; }
+      form.reportValidity();
+      return;
     }
-    err.hidden = true;
+    if (!Number.isInteger(managerId) || managerId < 1) {
+      if (err) { err.textContent = t("cart.managerRequired"); err.hidden = false; }
+      form.reportValidity();
+      return;
+    }
+    if (err) err.hidden = true;
     btn.disabled = true; btn.style.opacity = ".6";
     try {
       const r = await fetch("/api/orders", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customer: data,
+          manager_id: managerId,
           payment: { method: data.payment_method || "manager" },
           order_type: orderMode() === "retail" ? "retail" : "wholesale",
-          items: items.map((i) => ({ id: i.id, qty: i.qty })),
+          items: items.map((i) => ({
+            id: i.id,
+            qty: i.qty,
+            unit_type: orderMode() === "retail" ? "piece" : "qop",
+          })),
           lang: window.I18N ? I18N.lang : "en",
           source: "website",
         }),
       });
-      const res = await r.json();
+      const res = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(res.error || "error");
       lastOrder = res.number;
       lastPayment = res.payment || null;
       items = []; save();
       view = "success"; render();
     } catch (ex) {
-      err.textContent = t("cart.invalid") + " (" + ex.message + ")"; err.hidden = false;
+      if (err) {
+        err.textContent = t("cart.invalid") + " (" + ex.message + ")";
+        err.hidden = false;
+        err.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
     } finally { btn.disabled = false; btn.style.opacity = ""; }
   }
 

@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Заказы менеджера — MILANA PREMIUM</title>
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="stylesheet" href="/css/admin.css?v=20260725-managers">
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <p class="side__brand">Milana <span>Manager</span></p>
+      <nav class="side__nav">
+        <button class="is-on">Мои заказы <i class="side__badge" id="orders-badge" hidden></i></button>
+      </nav>
+      <div class="side__foot">
+        <strong id="manager-name"></strong>
+        <a href="/" target="_blank">↗ Открыть сайт</a>
+        <button id="logout">Выйти</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <section class="view">
+        <header class="vhead">
+          <h1>Мои заказы <span class="vhead__n" id="order-count"></span></h1>
+          <button class="abtn" id="refresh" type="button">Обновить</button>
+        </header>
+        <p class="formerr" id="error" hidden></p>
+        <div class="tablewrap">
+          <table class="atable atable--orders" id="order-table">
+            <thead>
+              <tr><th>№</th><th>Дата</th><th>Клиент</th><th>Состав</th><th>Сумма</th><th>Статус</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div class="atoast" id="atoast"></div>
+
+  <script>
+    (() => {
+      "use strict";
+      const $ = (selector) => document.querySelector(selector);
+      const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[char]));
+      const statuses = {
+        new: "🆕 Новый",
+        processing: "⏳ В работе",
+        shipped: "🚚 Отправлен",
+        done: "✅ Выполнен",
+        cancelled: "✖ Отменён",
+      };
+
+      async function api(path, options = {}) {
+        const response = await fetch(path, {
+          headers: options.body ? { "Content-Type": "application/json" } : {},
+          ...options,
+          body: options.body ? JSON.stringify(options.body) : undefined,
+        });
+        if (response.status === 401 || response.status === 403) {
+          location.replace("/admin");
+          throw new Error("unauthorized");
+        }
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || String(response.status));
+        return data;
+      }
+
+      function toast(message) {
+        const element = $("#atoast");
+        element.textContent = message;
+        element.classList.add("is-on");
+        setTimeout(() => element.classList.remove("is-on"), 2200);
+      }
+
+      function customerCell(customer = {}) {
+        const address = [customer.city, customer.address].filter(Boolean).join(", ");
+        return `
+          <b>${esc(customer.name || "—")}</b>
+          <small>${esc(customer.phone || "")}</small>
+          ${address ? `<small>${esc(address)}</small>` : ""}
+          ${customer.comment ? `<small>${esc(customer.comment)}</small>` : ""}`;
+      }
+
+      function itemCell(items = []) {
+        return items.map((item) => {
+          const unit = item.unit_type === "piece" ? "шт." : item.unit_type === "pachka" ? "Qadoq" : "Qop";
+          return `<div class="oitem"><b>${esc(item.name || "—")}</b><span class="oitem__qty">× ${esc(item.qty)} ${unit}</span></div>`;
+        }).join("");
+      }
+
+      async function loadOrders() {
+        const error = $("#error");
+        error.hidden = true;
+        try {
+          const orders = await api("/api/admin/orders");
+          const fresh = orders.filter((order) => order.status === "new").length;
+          $("#orders-badge").hidden = !fresh;
+          $("#orders-badge").textContent = fresh;
+          $("#order-count").textContent = "· " + orders.length;
+          $("#order-table tbody").innerHTML = orders.map((order) => `
+            <tr>
+              <td class="onum">${esc(order.number)}</td>
+              <td class="odate">${esc((order.created_at || "").slice(0, 16).replace("T", " "))}</td>
+              <td class="ocust">${customerCell(order.customer)}</td>
+              <td class="oitems">${itemCell(order.items)}</td>
+              <td class="osum">${esc(order.total)}</td>
+              <td>
+                <select class="osel ${order.status === "new" ? "osel--new" : ""}" data-order="${order.id}">
+                  ${Object.entries(statuses).map(([value, label]) =>
+                    `<option value="${value}" ${value === order.status ? "selected" : ""}>${label}</option>`
+                  ).join("")}
+                </select>
+              </td>
+            </tr>
+          `).join("") || `<tr><td colspan="6" style="text-align:center;color:var(--soft);padding:36px">У вас пока нет заказов</td></tr>`;
+        } catch (exception) {
+          error.textContent = "Не удалось загрузить заказы: " + exception.message;
+          error.hidden = false;
+        }
+      }
+
+      $("#order-table").addEventListener("change", async (event) => {
+        const select = event.target.closest("[data-order]");
+        if (!select) return;
+        select.disabled = true;
+        try {
+          await api("/api/admin/orders/" + select.dataset.order, {
+            method: "PUT",
+            body: { status: select.value },
+          });
+          toast("Статус обновлён");
+          await loadOrders();
+        } catch (exception) {
+          toast("Ошибка: " + exception.message);
+        } finally {
+          select.disabled = false;
+        }
+      });
+
+      $("#refresh").addEventListener("click", loadOrders);
+      $("#logout").addEventListener("click", async () => {
+        await fetch("/api/logout", { method: "POST" }).catch(() => {});
+        location.replace("/admin");
+      });
+
+      (async () => {
+        try {
+          const me = await fetch("/api/me").then((response) => response.json());
+          if (me.role !== "manager" || !me.manager) return location.replace("/admin");
+          $("#manager-name").textContent = me.manager.name;
+          await loadOrders();
+        } catch {
+          location.replace("/admin");
+        }
+      })();
+    })();
+  </script>
+</body>
+</html>

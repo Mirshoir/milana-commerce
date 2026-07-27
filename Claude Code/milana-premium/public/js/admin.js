@@ -12,6 +12,17 @@
   const GENDER_EN = { women: "women", men: "men", kids: "kids", unisex: "unisex" };
   const CLO_UZ = { pajamas: "pijama", robes: "xalat", homewear: "uy kiyimi", loungewear: "lounge to'plam" };
   const CLO_EN = { pajamas: "pajamas", robes: "robes", homewear: "homewear", loungewear: "loungewear sets" };
+  const PANEL_RU = {
+    pajamas: "Pijama", robes: "Xalat", men: "Erkaklar", tunics: "Tunika",
+    trousers: "Ishton", nightgowns: "Sarochka", sets: "Dvoyka",
+    tshirts: "Futbolka", kids: "Yosh bolalar",
+  };
+  const TYPE_RU = {
+    tunic: "Туника", sarochka: "Сорочка", robe: "Халат", pajamas: "Пижама",
+    set: "Комплект", tracksuit: "Спортивный костюм", hoodie: "Худи",
+    dress: "Платье", shirt: "Рубашка", polo: "Поло", trousers: "Штаны",
+    tshirt: "Футболка", shorts: "Шорты", top: "Майка",
+  };
   const TAG_RU = { bestseller: "Бестселлер", new: "Новинка", sale: "Скидка" };
   const STATUS_RU = { new: "🆕 Новый", processing: "⏳ В работе", shipped: "🚚 Отправлен", done: "✅ Выполнен", cancelled: "✖ Отменён" };
   const PAYMENT_METHOD_RU = { manager: "Менеджер", cash: "Наличные", bank: "Банк", click: "Click", payme: "Payme", card: "Карта" };
@@ -21,9 +32,16 @@
   const TIER_RU = { regular: "Обычный", premium: "Премиум", vip: "VIP" };
 
   let products = [];
+  let catalogPanels = [];
+  let catalogPanelFilter = "";
+  let productPage = 1;
+  let productTotal = 0;
+  let productPages = 1;
+  const PRODUCT_PAGE_SIZE = 100;
   let orders = [];
   let support = [];
   let customers = [];
+  let managers = [];
   let reviews = [];
   let chats = [];
   let editing = null;     // product being edited (null = new)
@@ -58,7 +76,7 @@
     const tokens = smartTokens(query);
     if (!tokens.length) return 1;
     const hay = smartNormalize([
-      p.name, p.slug, p.model_no, p.variant, p.gender, p.category, p.tag,
+      p.name, p.slug, p.model_no, p.variant, p.gender, p.category, p.catalog_panel, p.product_type, p.tag,
       (p.sizes || []).join(" "), p.desc?.ru, p.desc?.uz, p.desc?.en, p.fabric?.ru, p.fabric?.uz, p.fabric?.en,
     ].filter(Boolean).join(" "));
     const model = smartNormalize([p.model_no, p.variant, p.name].join(" "));
@@ -66,7 +84,7 @@
       if (!hay.includes(token)) return score;
       let next = score + 8;
       if (model.includes(token)) next += 16;
-      if (p.gender === token || p.category === token) next += 12;
+      if (p.gender === token || p.category === token || p.catalog_panel === token) next += 12;
       if ((p.sizes || []).some((s) => smartNormalize(s) === token)) next += 10;
       return next;
     }, 0);
@@ -209,7 +227,7 @@
 
   /* ---------------- auth ---------------- */
   async function showApp() {
-    await Promise.all([loadProducts(), loadCustomers(), loadOrders(), loadReviews(), loadChat(), loadSupport()]);
+    await Promise.all([loadProducts(), loadCatalogPanels(), loadCustomers(), loadManagers(), loadOrders(), loadReviews(), loadChat(), loadSupport()]);
   }
 
   $("#logout").addEventListener("click", async () => {
@@ -225,8 +243,9 @@
     });
   });
   function switchView(name) {
-    ["products", "edit", "customers", "orders", "reviews", "chat", "support", "settings", "design"].forEach((v) => { $("#view-" + v).hidden = v !== name; });
+    ["products", "edit", "customers", "managers", "orders", "reviews", "chat", "support", "settings", "design", "builder"].forEach((v) => { $("#view-" + v).hidden = v !== name; });
     if (name === "customers") loadCustomers();
+    if (name === "managers") loadManagers();
     if (name === "orders") loadOrders();
     if (name === "reviews") loadReviews();
     if (name === "chat") loadChat();
@@ -236,10 +255,47 @@
   }
 
   /* ================= PRODUCTS ================= */
-  async function loadProducts() {
-    products = await api("/api/admin/products?refresh=1");
+  async function loadProducts({ reset = false } = {}) {
+    if (reset) productPage = 1;
+    const query = $("#prod-search")?.value.trim() || "";
+    const panel = catalogPanelFilter ? `&panel=${encodeURIComponent(catalogPanelFilter)}` : "";
+    const result = await api(`/api/admin/products?meta=1&limit=${PRODUCT_PAGE_SIZE}&page=${productPage}&q=${encodeURIComponent(query)}${panel}`);
+    products = Array.isArray(result) ? result : (result.items || []);
+    productTotal = Number(result?.meta?.total ?? products.length);
+    productPages = Math.max(1, Number(result?.meta?.pages) || 1);
+    if (productPage > productPages) {
+      productPage = productPages;
+      return loadProducts();
+    }
     renderProducts();
   }
+
+  async function loadCatalogPanels() {
+    catalogPanels = await api("/api/admin/catalog-panels");
+    renderCatalogPanels();
+  }
+
+  function renderCatalogPanels() {
+    const root = $("#admin-catalog-panels");
+    root.innerHTML = catalogPanels.map((panel) => `
+      <button type="button" class="admin-catalog-panel${catalogPanelFilter === panel.id ? " is-on" : ""}" data-admin-panel="${panel.id}">
+        <span class="admin-catalog-panel__media">${panel.image ? `<img src="${esc(panel.image)}" alt="">` : ""}</span>
+        <span class="admin-catalog-panel__body">
+          <small>Каталог ${esc(panel.number)}</small>
+          <b>${esc(PANEL_RU[panel.id] || panel.id)}</b>
+          <i>${panel.active} активных · ${panel.total} всего</i>
+        </span>
+      </button>
+    `).join("");
+  }
+
+  $("#admin-catalog-panels").addEventListener("click", async (e) => {
+    const button = e.target.closest("[data-admin-panel]");
+    if (!button) return;
+    catalogPanelFilter = catalogPanelFilter === button.dataset.adminPanel ? "" : button.dataset.adminPanel;
+    renderCatalogPanels();
+    await loadProducts({ reset: true });
+  });
 
   function clearAutofilledProductSearch() {
     const input = $("#prod-search");
@@ -247,7 +303,7 @@
     const value = input.value.trim().toLowerCase();
     if (value === "admin") {
       input.value = "";
-      renderProducts();
+      loadProducts({ reset: true });
     }
   }
 
@@ -260,12 +316,13 @@
       .filter((row) => !q.trim() || row.score > 0)
       .sort((a, b) => b.score - a.score || (b.p.sort || 0) - (a.p.sort || 0) || b.p.id - a.p.id)
       .map((row) => row.p);
-    $("#prod-count").textContent = "· " + list.length;
+    $("#prod-count").textContent = "· " + productTotal;
     $("#prod-table tbody").innerHTML = list.map((p) => `
       <tr data-id="${p.id}">
         <td class="pmodel">${esc(p.model_no || "—")}</td>
         <td>${esc(p.variant || "—")}</td>
         <td><span class="pname"><img class="pthumb" src="${esc(p.images[0] || "")}" alt="">${esc(p.name)}<small>/p/${esc(p.slug)}</small></span></td>
+        <td><span class="pcatalog">${esc(PANEL_RU[p.catalog_panel] || p.catalog_panel || "—")}<small>${esc(TYPE_RU[p.product_type] || "—")}</small></span></td>
         <td class="psizes">${p.sizes.join(", ") || "—"}</td>
         <td>${GENDER_RU[p.gender] || "—"}</td>
         <td>${CLO_RU[p.category] || p.category}</td>
@@ -277,12 +334,29 @@
           <button data-act="del" class="del" title="Удалить">🗑</button>
         </div></td>
       </tr>`).join("");
+    $("#prod-page-label").textContent = `Страница ${productPage} из ${productPages}`;
+    $("#prod-prev").disabled = productPage <= 1;
+    $("#prod-next").disabled = productPage >= productPages;
   }
 
   $("#prod-search").addEventListener("keydown", (e) => {
     if (e.key === "Enter") e.preventDefault();
   });
-  $("#prod-search").addEventListener("input", renderProducts);
+  let productSearchTimer;
+  $("#prod-search").addEventListener("input", () => {
+    clearTimeout(productSearchTimer);
+    productSearchTimer = setTimeout(() => loadProducts({ reset: true }).catch((e) => toast("Ошибка: " + e.message)), 250);
+  });
+  $("#prod-prev").addEventListener("click", () => {
+    if (productPage <= 1) return;
+    productPage -= 1;
+    loadProducts().catch((e) => toast("Ошибка: " + e.message));
+  });
+  $("#prod-next").addEventListener("click", () => {
+    if (productPage >= productPages) return;
+    productPage += 1;
+    loadProducts().catch((e) => toast("Ошибка: " + e.message));
+  });
   window.addEventListener("pageshow", () => setTimeout(clearAutofilledProductSearch, 80));
   setTimeout(clearAutofilledProductSearch, 250);
 
@@ -312,8 +386,7 @@
       if (!confirmed) return;
       try {
         await api("/api/admin/products/" + id, { method: "DELETE" });
-        products = products.filter((x) => x.id !== id);
-        renderProducts();
+        await loadProducts();
         toast("Товар удалён");
       } catch (ex) { toast("Ошибка: " + ex.message); }
     }
@@ -335,6 +408,8 @@
     $("#f-variant").value = p?.variant || "";
     $("#f-gender").value = p?.gender || "women";
     $("#f-cat").value = p?.category || "pajamas";
+    $("#f-catalog-panel").value = p?.catalog_panel || "pajamas";
+    $("#f-product-type").value = p?.product_type || "";
     $("#f-price").value = p?.price ?? "";
     $("#f-old").value = p?.old_price ?? "";
     $("#f-wholesale-price").value = p?.wholesale_price ?? p?.price ?? "";
@@ -344,8 +419,9 @@
     $("#f-retail-stock").value = p?.retail_stock ?? 0;
     $("#f-retail-enabled").checked = p ? !!p.retail_enabled : true;
     $("#f-tag").value = p?.tag || "";
+    $("#f-collection").value = p?.collection || "";
     $("#f-sizes").value = (p?.sizes || []).join(", ");
-    $("#f-rating").value = p?.rating ?? 4.8;
+    $("#f-rating").value = p?.rating ?? 0;
     $("#f-reviews").value = p?.reviews ?? 0;
     $("#f-active").checked = p ? !!p.active : true;
     ["ru", "uz", "en"].forEach((l) => {
@@ -401,19 +477,30 @@
     renderPhotos();
   });
 
-  $("#f-upload").addEventListener("change", async (e) => {
-    const files = [...e.target.files];
-    e.target.value = "";
+  async function uploadProductFiles(files, source = "picker") {
+    files = [...(files || [])].filter(Boolean);
+    if (!files.length) return;
     const status = $("#upload-status");
+    const zone = $("#f-upload-zone");
+    const optimizedStats = [];
+    zone?.classList.add("is-uploading");
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       const isVid = /^video\//.test(f.type) || /\.(mp4|webm)$/i.test(f.name);
+      const allowed = /^(image\/(jpeg|png|webp)|video\/(mp4|webm))$/.test(f.type)
+        || /\.(jpe?g|png|webp|mp4|webm)$/i.test(f.name);
+      if (!allowed) {
+        status.textContent = `«${f.name}» не поддерживается — нужен JPG, PNG, WebP, MP4 или WebM.`;
+        zone?.classList.remove("is-uploading");
+        return;
+      }
       const cap = 64;
       if (f.size > cap * 1024 * 1024) { status.textContent = `«${f.name}» больше ${cap} МБ — пропущен.`; continue; }
-      status.textContent = `Загрузка ${i + 1} из ${files.length}… ${isVid ? "(видео может занять время)" : ""}`;
+      status.textContent = `${source === "drop" ? "Перетаскивание" : "Загрузка"} ${i + 1} из ${files.length}… ${isVid ? "(видео может занять время)" : ""}`;
       try {
         const buf = await f.arrayBuffer();
         const res = await api("/api/admin/upload", { method: "POST", body: buf });
+        if (res.optimized && res.saved_bytes) optimizedStats.push(res.saved_bytes);
         editImages.push(res.url);
         renderPhotos();
       } catch (ex) {
@@ -421,12 +508,51 @@
           : ex.message === "too_large" ? "файл больше 64 МБ"
           : ex.message;
         status.textContent = `Ошибка загрузки «${f.name}»: ${msg}`;
+        zone?.classList.remove("is-uploading");
         return;
       }
     }
-    status.textContent = "Готово ✓";
+    zone?.classList.remove("is-uploading");
+    const saved = optimizedStats.reduce((sum, value) => sum + value, 0);
+    status.textContent = saved
+      ? `Готово ✓ Оптимизировано, сэкономлено ${(saved / 1024 / 1024).toFixed(1)} МБ.`
+      : "Готово ✓";
+    const descriptionsEmpty = ["ru", "uz", "en"].every((lang) => !$("#f-desc-" + lang).value.trim());
+    if (descriptionsEmpty && editImages.some((url) => !/\.(mp4|webm)(?:\?|$)/i.test(url))) {
+      await generatePhotoDescription({ automatic: true });
+    }
     setTimeout(() => (status.textContent = ""), 2000);
+  }
+
+  $("#f-upload").addEventListener("change", async (e) => {
+    const files = [...e.target.files];
+    e.target.value = "";
+    await uploadProductFiles(files);
   });
+
+  const uploadZone = $("#f-upload-zone");
+  if (uploadZone) {
+    ["dragenter", "dragover"].forEach((type) => {
+      uploadZone.addEventListener(type, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadZone.classList.add("is-dragover");
+      });
+    });
+    ["dragleave", "dragend"].forEach((type) => {
+      uploadZone.addEventListener(type, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        uploadZone.classList.remove("is-dragover");
+      });
+    });
+    uploadZone.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      uploadZone.classList.remove("is-dragover");
+      await uploadProductFiles([...(e.dataTransfer?.files || [])], "drop");
+    });
+  }
 
   /* language tabs for description */
   $("#desc-tabs").addEventListener("click", (e) => {
@@ -447,35 +573,54 @@
     $(sel).addEventListener("input", updateEditChecklist);
   });
 
-  function smartFillCopy() {
-    const model = $("#f-model").value.trim() || $("#f-name").value.trim() || "Milana";
-    const variant = $("#f-variant").value.trim();
-    const name = $("#f-name").value.trim() || [model, variant].filter(Boolean).join(" / ");
-    const category = $("#f-cat").value;
-    const gender = $("#f-gender").value;
-    const sizes = ($("#f-sizes").value || "48, 50, 52, 54, 56, 58").split(",").map((s) => s.trim()).filter(Boolean).join(", ");
-    const price = $("#f-price").value ? `$${Number($("#f-price").value).toFixed(2)}` : "";
-    const fabricRu = $("#f-fab-ru").value.trim() || "Suprem · хлопок 100%";
-    const fabricUz = $("#f-fab-uz").value.trim() || "Suprem · 100% paxta";
-    const fabricEn = $("#f-fab-en").value.trim() || "Suprem · 100% cotton";
-    if (!$("#f-name").value.trim()) $("#f-name").value = name;
-    if (!$("#f-wholesale-price").value && $("#f-price").value) $("#f-wholesale-price").value = $("#f-price").value;
-    if (!$("#f-retail-price").value && $("#f-price").value) $("#f-retail-price").value = $("#f-price").value;
-    if (!$("#f-fab-ru").value.trim()) $("#f-fab-ru").value = fabricRu;
-    if (!$("#f-fab-uz").value.trim()) $("#f-fab-uz").value = fabricUz;
-    if (!$("#f-fab-en").value.trim()) $("#f-fab-en").value = fabricEn;
-    const ru = `${name} — ${CLO_RU[category].toLowerCase()} для категории ${GENDER_RU[gender].toLowerCase()}. Модель ${model}${variant ? `, вариант ${variant}` : ""}. Размеры: ${sizes}. Оптовый заказ от 1 Qadoq (6 шт., по 1 на размер) или 1 Qop (60 шт., по 10 на размер); финальную доступность и отправку подтверждает менеджер.${price ? ` Цена за 1 шт.: ${price}.` : ""}`;
-    const uz = `${name} — ${GENDER_UZ[gender]} uchun ${CLO_UZ[category]}. Model ${model}${variant ? `, variant ${variant}` : ""}. O'lchamlar: ${sizes}. Ulgurji buyurtma kamida 1 Qadoq (6 dona, har o'lchamdan 1 tadan) yoki 1 Qop (60 dona, har o'lchamdan 10 tadan); mavjudlik va jo'natishni menejer tasdiqlaydi.${price ? ` 1 dona narxi: ${price}.` : ""}`;
-    const en = `${name} — ${CLO_EN[category]} for ${GENDER_EN[gender]}. Model ${model}${variant ? `, variant ${variant}` : ""}. Sizes: ${sizes}. Wholesale orders start from 1 Qadoq (6 pcs, 1 per size) or 1 Qop (60 pcs, 10 per size); availability and dispatch are confirmed by a manager.${price ? ` Unit price: ${price}.` : ""}`;
-    if (!$("#f-desc-ru").value.trim()) $("#f-desc-ru").value = ru;
-    if (!$("#f-desc-uz").value.trim()) $("#f-desc-uz").value = uz;
-    if (!$("#f-desc-en").value.trim()) $("#f-desc-en").value = en;
-    if (!slugTouched) $("#f-slug").value = slugifyLocal([model, variant, name].filter(Boolean).join(" "));
-    updateEditChecklist();
-    $("#edit-ai-msg").textContent = "Smart fill заполнил только пустые поля. Чтобы переписать текст, очистите поле и нажмите снова.";
+  async function generatePhotoDescription({ automatic = false } = {}) {
+    const images = editImages.filter((url) => !/\.(mp4|webm)(?:\?|$)/i.test(url)).slice(0, 3);
+    const button = $("#edit-ai-fill");
+    const message = $("#edit-ai-msg");
+    if (!images.length) {
+      message.textContent = "Сначала загрузите фотографию товара.";
+      return;
+    }
+    button.disabled = true;
+    button.textContent = "Анализ…";
+    message.textContent = automatic ? "Создаём описание по загруженному фото…" : "Анализируем фото товара…";
+    try {
+      const result = await api("/api/admin/products/describe", {
+        method: "POST",
+        body: {
+          images,
+          name: $("#f-name").value,
+          model_no: $("#f-model").value,
+          variant: $("#f-variant").value,
+          category: $("#f-cat").value,
+          gender: $("#f-gender").value,
+        },
+      });
+      ["ru", "uz", "en"].forEach((lang) => {
+        $("#f-desc-" + lang).value = result.desc?.[lang] || "";
+      });
+      if (result.product_type) $("#f-product-type").value = result.product_type;
+      if (!$("#f-name").value.trim() && result.names?.ru) {
+        $("#f-name").value = result.names.ru;
+      }
+      updateEditChecklist();
+      message.textContent = "Описание создано по фото на русском, узбекском и английском. Проверьте и сохраните товар.";
+    } catch (ex) {
+      const errors = {
+        openai_not_configured: "OpenAI не настроен на сервере.",
+        image_required: "Нужно загрузить фотографию, не видео.",
+        image_not_local: "Можно анализировать только загруженные на сайт фотографии.",
+        image_not_found: "Фотография не найдена. Загрузите её заново.",
+        image_too_large: "Фотография слишком большая для анализа.",
+      };
+      message.textContent = errors[ex.message] || "Не удалось создать описание по фото. Попробуйте ещё раз.";
+    } finally {
+      button.disabled = false;
+      button.textContent = "По фото";
+    }
   }
 
-  $("#edit-ai-fill").addEventListener("click", smartFillCopy);
+  $("#edit-ai-fill").addEventListener("click", () => generatePhotoDescription());
 
   $("#edit-save").addEventListener("click", async () => {
     const err = $("#edit-err");
@@ -487,6 +632,8 @@
       variant: $("#f-variant").value,
       gender: $("#f-gender").value,
       category: $("#f-cat").value,
+      catalog_panel: $("#f-catalog-panel").value,
+      product_type: $("#f-product-type").value,
       price: Number($("#f-price").value),
       old_price: $("#f-old").value === "" ? null : Number($("#f-old").value),
       wholesale_price: Number($("#f-wholesale-price").value || $("#f-price").value),
@@ -496,6 +643,7 @@
       retail_price: Number($("#f-retail-price").value || $("#f-price").value),
       retail_stock: Number($("#f-retail-stock").value || 0),
       tag: $("#f-tag").value,
+      collection: $("#f-collection").value,
       sizes: $("#f-sizes").value.split(",").map((s) => s.trim()).filter(Boolean),
       rating: Number($("#f-rating").value) || 0,
       reviews: Number($("#f-reviews").value) || 0,
@@ -517,6 +665,7 @@
         products.unshift(created);
       }
       renderProducts();
+      await loadCatalogPanels();
       switchView("products");
       toast("Сохранено ✓");
     } catch (ex) {
@@ -598,6 +747,79 @@
     } catch (ex) { toast("Ошибка: " + ex.message); }
   });
 
+  /* ================= MANAGERS ================= */
+  async function loadManagers() {
+    managers = await api("/api/admin/managers");
+    $("#manager-count").textContent = "· " + managers.length;
+    $("#manager-table tbody").innerHTML = managers.map((manager) => `
+      <tr data-manager-row="${manager.id}">
+        <td><input class="ainput" data-manager-name value="${esc(manager.name)}" maxlength="80"></td>
+        <td><input class="ainput" data-manager-login value="${esc(manager.login)}" maxlength="60" autocomplete="off"></td>
+        <td><input class="ainput" data-manager-password type="password" minlength="8" maxlength="100" autocomplete="new-password" placeholder="Без изменений"></td>
+        <td><input class="ainput" data-manager-chat value="${esc(manager.telegram_chat_id)}" maxlength="80"></td>
+        <td><input class="ainput" data-manager-thread value="${esc(manager.telegram_thread_id)}" maxlength="30" placeholder="—"></td>
+        <td>
+          <select class="ainput" data-manager-active>
+            <option value="1" ${manager.active ? "selected" : ""}>Активен</option>
+            <option value="0" ${manager.active ? "" : "selected"}>Отключён</option>
+          </select>
+        </td>
+        <td><button class="abtn" type="button" data-manager-save="${manager.id}">Сохранить</button></td>
+      </tr>
+    `).join("") || `<tr><td colspan="7" style="text-align:center;color:var(--soft);padding:36px">Добавьте первого менеджера</td></tr>`;
+  }
+
+  $("#manager-create").addEventListener("click", async () => {
+    const msg = $("#manager-msg");
+    msg.textContent = "";
+    try {
+      await api("/api/admin/managers", {
+        method: "POST",
+        body: {
+          name: $("#manager-name").value.trim(),
+          login: $("#manager-login").value.trim(),
+          password: $("#manager-password").value,
+          telegram_chat_id: $("#manager-chat-id").value.trim(),
+          telegram_thread_id: $("#manager-thread-id").value.trim(),
+          active: $("#manager-active").checked,
+        },
+      });
+      ["manager-name", "manager-login", "manager-password", "manager-chat-id", "manager-thread-id"]
+        .forEach((id) => { $("#" + id).value = ""; });
+      $("#manager-active").checked = true;
+      msg.textContent = "Менеджер добавлен";
+      await loadManagers();
+    } catch (error) {
+      msg.textContent = "Ошибка: " + error.message;
+    }
+  });
+
+  $("#manager-table").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-manager-save]");
+    if (!button) return;
+    const row = button.closest("[data-manager-row]");
+    button.disabled = true;
+    try {
+      await api("/api/admin/managers/" + button.dataset.managerSave, {
+        method: "PUT",
+        body: {
+          name: row.querySelector("[data-manager-name]").value.trim(),
+          login: row.querySelector("[data-manager-login]").value.trim(),
+          password: row.querySelector("[data-manager-password]").value,
+          telegram_chat_id: row.querySelector("[data-manager-chat]").value.trim(),
+          telegram_thread_id: row.querySelector("[data-manager-thread]").value.trim(),
+          active: row.querySelector("[data-manager-active]").value === "1",
+        },
+      });
+      toast("Менеджер сохранён");
+      await loadManagers();
+    } catch (error) {
+      toast("Ошибка: " + error.message);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   /* ================= ORDERS ================= */
   async function loadOrders() {
     orders = await api("/api/admin/orders");
@@ -613,6 +835,7 @@
       <tr>
         <td class="onum">${esc(o.number)}</td>
         <td class="odate">${esc((o.created_at || "").slice(0, 16).replace("T", " "))}</td>
+        <td><b>${esc(o.manager_name || customer.assigned_manager || "—")}</b></td>
         <td class="ocust">${renderCustomerCell(customer)}</td>
         <td>${o.order_type === "retail" ? "Розница" : "Опт"}</td>
         <td class="oitems">${o.items.map(renderOrderItem).join("")}</td>
@@ -630,7 +853,7 @@
           </select>
         </td>
       </tr>`;
-    }).join("") || `<tr><td colspan="8" style="text-align:center;color:var(--soft);padding:36px">Заказов пока нет</td></tr>`;
+    }).join("") || `<tr><td colspan="9" style="text-align:center;color:var(--soft);padding:36px">Заказов пока нет</td></tr>`;
   }
 
   $("#order-table").addEventListener("change", async (e) => {
@@ -763,7 +986,7 @@
   });
 
   /* ================= SETTINGS ================= */
-  const S_KEYS = ["phone", "whatsapp", "telegram", "instagram", "email", "address_ru", "address_uz", "address_en", "currency", "currency_pos", "admin_user"];
+  const S_KEYS = ["phone", "whatsapp", "telegram", "instagram", "email", "address_ru", "address_uz", "address_en", "currency", "currency_pos", "hero_gap", "admin_user"];
 
   async function loadSettings() {
     const s = await api("/api/admin/settings");
@@ -899,4 +1122,565 @@
       showApp();
     } catch { location.replace("/admin"); }
   })();
+})();
+
+/* ============================================================
+   КОНСТРУКТОР САЙТА — секции главной + тексты (site_config)
+   ============================================================ */
+(() => {
+  "use strict";
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const view = $("#view-builder");
+  if (!view) return;
+
+  const SECTIONS = [
+    ["promo",       "Промо-строка (верх сайта)", false],
+    ["hero",        "Главный баннер (видео)", true],
+    ["services",    "Преимущества (3 колонки)", true],
+    ["catstrip",    "Сезонная лента (Лето 2026)", true],
+    ["categories",  "Категории — 4 плитки", true],
+    ["bestsellers", "Хиты продаж", true],
+    ["types",       "Тип одежды", true],
+    ["lookbook",    "Галерея-лукбук", true],
+    ["band",        "Чёрная полоса (CTA)", true],
+    ["maison",      "Бренд / фабрика", true],
+    ["wholesale",   "Как работает опт", true],
+    ["faq",         "Частые вопросы", true],
+    ["map",         "Карта — как нас найти", true],
+  ];
+
+  const SCHEMA = [
+    ["Промо-строка", [["best.ship", "Текст промо-строки", 1]]],
+    ["Сезонная лента", [["season.label", "Заголовок сезона (напр. Лето 2026)"]]],
+    ["Главный экран", [
+      ["hero.overline", "Надстрочник"], ["hero.t1", "Заголовок — строка 1"],
+      ["hero.t2", "Заголовок — строка 2"], ["hero.cta", "Кнопка на баннере (Перейти)"], ["nav.viewCatalog", "Кнопка «Смотреть каталог»"]]],
+    ["Преимущества (3 колонки)", [
+      ["ws.p1", "Колонка 1 — заголовок"], ["ws.p2d", "Колонка 1 — текст"],
+      ["ws.p4", "Колонка 2 — заголовок"], ["ws.p4d", "Колонка 2 — текст"],
+      ["hero.proof2", "Колонка 3 — заголовок"], ["flow.s3d", "Колонка 3 — текст"]]],
+    ["Категории", [
+      ["cats.t1", "Заголовок — часть 1"], ["cats.t2", "Заголовок — часть 2"],
+      ["cats.women", "Женщинам"], ["mq.4", "Женщинам — подпись"],
+      ["cats.men", "Мужчинам"], ["mq.2", "Мужчинам — подпись"],
+      ["cats.kids", "Детям"], ["mq.3", "Детям — подпись"],
+      ["cats.family", "Для всей семьи"], ["cats.familyNote", "Для всей семьи — подпись"],
+      ["preview.explore", "Кнопка «Смотреть»"]]],
+    ["Хиты продаж", [
+      ["best.t1", "Заголовок — часть 1"], ["best.t2", "Заголовок — часть 2"], ["best.cta", "Кнопка"]]],
+    ["Тип одежды", [
+      ["shop.clothing", "Заголовок ленты"], ["cats.pajamas", "Пижамы"], ["cats.robes", "Халаты"],
+      ["cats.homewear", "Домашняя одежда"], ["cats.loungewear", "Лаунж-сеты"]]],
+    ["Галерея-лукбук", [
+      ["look.over", "Надстрочник"], ["look.t1", "Заголовок — часть 1"], ["look.t2", "Заголовок — часть 2"],
+      ["look.side", "Подпись"], ["coll.hint", "Подсказка управления"]]],
+    ["Чёрная полоса (CTA)", [
+      ["ws.over", "Надстрочник"], ["close.t1", "Заголовок — часть 1"], ["close.t2", "Заголовок — часть 2"],
+      ["ws.text", "Текст", 1], ["ws.wa", "Ссылка WhatsApp"], ["ws.tg", "Ссылка Telegram"], ["close.showroom", "Подпись фабрики"]]],
+    ["Бренд / фабрика", [
+      ["mai.over", "Надстрочник"], ["mai.t1", "Заголовок — часть 1"], ["mai.t2", "Заголовок — часть 2"],
+      ["mai.text", "Текст о бренде", 1],
+      ["ws.p1d", "Пункт 1 — пояснение"], ["ws.p2", "Пункт 2 — заголовок"],
+      ["ws.p3", "Пункт 3 — заголовок"], ["ws.p3d", "Пункт 3 — пояснение"]]],
+    ["Как работает опт", [
+      ["flow.over", "Надстрочник"], ["flow.t1", "Заголовок — часть 1"], ["flow.t2", "Заголовок — часть 2"],
+      ["flow.s1", "Шаг 1"], ["flow.s1d", "Шаг 1 — текст", 1],
+      ["flow.s2", "Шаг 2"], ["flow.s2d", "Шаг 2 — текст", 1],
+      ["flow.s3", "Шаг 3"], ["flow.s4", "Шаг 4"], ["flow.s4d", "Шаг 4 — текст", 1]]],
+    ["Частые вопросы", [
+      ["faq.t1", "Заголовок — часть 1"], ["faq.t2", "Заголовок — часть 2"],
+      ["faq.q1", "Вопрос 1"], ["faq.a1", "Ответ 1", 1],
+      ["faq.q2", "Вопрос 2"], ["faq.a2", "Ответ 2", 1],
+      ["faq.q3", "Вопрос 3"], ["faq.a3", "Ответ 3", 1],
+      ["faq.q4", "Вопрос 4"], ["faq.a4", "Ответ 4", 1],
+      ["faq.q5", "Вопрос 5"], ["faq.a5", "Ответ 5", 1]]],
+    ["Популярные товары", [["pop.title", "Заголовок ленты"]]],
+    ["Шапка и меню", [
+      ["nav.shop", "Пункт «Все товары»"], ["nav.bestsellers", "Пункт «Бестселлеры»"],
+      ["terms.navOrdering", "Пункт «Как работает заказ»"], ["nav.maison", "Пункт «О нас»"],
+      ["shop.search", "Плейсхолдер поиска"]]],
+    ["О нас — факты о производстве", [
+      ["mai.t1", "Заголовок раздела"], ["mai.text", "Описание компании", 1],
+      ["about.s1n", "Цифра 1"], ["about.s1l", "Подпись 1"],
+      ["about.s2n", "Цифра 2"], ["about.s2l", "Подпись 2"],
+      ["about.s3n", "Цифра 3"], ["about.s3l", "Подпись 3"],
+      ["about.s4n", "Цифра 4"], ["about.s4l", "Подпись 4"],
+      ["about.s5n", "Цифра 5"], ["about.s5l", "Подпись 5"],
+      ["about.s6n", "Цифра 6"], ["about.s6l", "Подпись 6"],
+      ["about.c1t", "Карточка 1 — заголовок"], ["about.c1d", "Карточка 1 — текст", 1],
+      ["about.c2t", "Карточка 2 — заголовок"], ["about.c2d", "Карточка 2 — текст", 1],
+      ["about.c3t", "Карточка 3 — заголовок"], ["about.c3d", "Карточка 3 — текст", 1],
+      ["about.exportT", "География поставок — заголовок"], ["about.countries", "Список стран", 1]]],
+    ["Подвал", [
+      ["foot.tag", "Описание под логотипом", 1], ["foot.nl", "Заголовок рассылки"], ["foot.nlNote", "Подпись рассылки"]]],
+  ];
+
+  let cfg = { sections: { order: [], hidden: [] }, texts: { ru: {}, uz: {}, en: {} }, hero: { slides: [] }, typography: {} };
+  let defaults = { ru: {}, uz: {}, en: {} };
+  let curLang = "ru";
+  let order = SECTIONS.filter(([, , mov]) => mov).map(([id]) => id);
+
+  const secsBox = $("#b-sections");
+  const textsBox = $("#b-texts");
+  const msg = $("#b-msg");
+
+  function note(text, ok) {
+    msg.textContent = text;
+    msg.hidden = !text;
+    msg.classList.toggle("formerr--ok", Boolean(ok));
+  }
+
+  /* ---------- секции ---------- */
+  function renderSections() {
+    const hidden = new Set(cfg.sections.hidden || []);
+    const rows = [SECTIONS[0], ...order.map((id) => SECTIONS.find((s) => s[0] === id))];
+    secsBox.innerHTML = rows.map(([id, label, movable], i) => `
+      <div class="bsec" data-sec="${id}">
+        <div class="bsec__move">
+          ${movable ? `<button type="button" data-mv="-1" title="Выше" ${i <= 1 ? "disabled" : ""}>↑</button>
+          <button type="button" data-mv="1" title="Ниже" ${i === rows.length - 1 ? "disabled" : ""}>↓</button>` : ""}
+        </div>
+        <span class="bsec__name">${label}</span>
+        <button type="button" class="tgl ${hidden.has(id) ? "" : "is-on"}" data-tgl title="Показывать блок"></button>
+      </div>`).join("");
+  }
+
+  secsBox.addEventListener("click", (e) => {
+    const row = e.target.closest(".bsec");
+    if (!row) return;
+    const id = row.dataset.sec;
+    const mv = e.target.closest("[data-mv]");
+    if (mv) {
+      const d = Number(mv.dataset.mv);
+      const i = order.indexOf(id);
+      const j = i + d;
+      if (i >= 0 && j >= 0 && j < order.length) {
+        [order[i], order[j]] = [order[j], order[i]];
+        cfg.sections.order = order.slice();
+        renderSections();
+      }
+    }
+    if (e.target.closest("[data-tgl]")) {
+      const hidden = new Set(cfg.sections.hidden || []);
+      hidden.has(id) ? hidden.delete(id) : hidden.add(id);
+      cfg.sections.hidden = [...hidden];
+      renderSections();
+    }
+  });
+
+  /* ---------- тексты ---------- */
+  function renderTexts() {
+    const dict = defaults[curLang] || {};
+    const over = cfg.texts[curLang] || {};
+    textsBox.innerHTML = SCHEMA.map(([group, keys]) => `
+      <div class="bgrp">
+        <h4>${group}</h4>
+        ${keys.map(([key, label, area]) => {
+          const def = String(dict[key] ?? "").replace(/"/g, "&quot;");
+          const val = String(over[key] ?? "").replace(/"/g, "&quot;");
+          return `<div class="brow"><span>${label}</span>
+            <div class="redit${area ? " redit--area" : ""}">
+              <div class="redit__bar" contenteditable="false">
+                <button type="button" data-rcmd="bold" title="Жирный"><b>Ж</b></button>
+                <button type="button" data-rcmd="italic" title="Курсив"><i>К</i></button>
+                <button type="button" data-rcmd="underline" title="Подчёркнутый"><u>Ч</u></button>
+                <button type="button" data-rcmd="strikeThrough" title="Зачёркнутый"><s>А</s></button>
+                <button type="button" data-rcmd="link" title="Ссылка">&#128279;</button>
+                <button type="button" data-rcmd="clear" title="Убрать форматирование">&#10005;</button>
+              </div>
+              <div class="ainput redit__area" contenteditable="true" data-bkey="${key}" data-ph="${def}">${over[key] ?? ""}</div>
+            </div></div>`;
+        }).join("")}
+      </div>`).join("");
+  }
+
+  /* мини-санитайзер: b/i/u/s/br/a[href] */
+  function rSanitize(html) {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = String(html);
+    const SAFE = { B: 1, STRONG: 1, I: 1, EM: 1, U: 1, S: 1, STRIKE: 1, BR: 1, A: 1 };
+    const KILL = { SCRIPT: 1, STYLE: 1, IFRAME: 1, OBJECT: 1, EMBED: 1 };
+    (function walk(node) {
+      [...node.children].forEach((el) => {
+        if (KILL[el.tagName]) { el.remove(); return; }
+        walk(el);
+        if (!SAFE[el.tagName]) {
+          if ((el.tagName === "DIV" || el.tagName === "P") && el.previousSibling) el.parentNode.insertBefore(document.createElement("br"), el);
+          el.replaceWith(...el.childNodes); return;
+        }
+        [...el.attributes].forEach((a) => {
+          if (el.tagName === "A" && a.name === "href" && /^(https?:\/\/|\/|#|tel:|mailto:)/i.test(a.value)) return;
+          el.removeAttribute(a.name);
+        });
+      });
+    })(tpl.content);
+    return tpl.innerHTML;
+  }
+
+  function rSave(el) {
+    const clean = rSanitize(el.innerHTML)
+      .replace(/\u200B/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/^(\s|<br>)+|(\s|<br>)+$/g, "");
+    const hasText = el.textContent.trim().length > 0;
+    if (!cfg.texts[curLang]) cfg.texts[curLang] = {};
+    if (hasText) cfg.texts[curLang][el.dataset.bkey] = clean;
+    else delete cfg.texts[curLang][el.dataset.bkey];
+  }
+
+  textsBox.addEventListener("input", (e) => {
+    const el = e.target.closest("[data-bkey]");
+    if (el) rSave(el);
+  });
+
+  /* Enter = перенос строки (не блок) */
+  textsBox.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.closest("[data-bkey]")) {
+      e.preventDefault();
+      document.execCommand("insertHTML", false, "<br>\u200B");
+    }
+  });
+
+  /* панель форматирования */
+  textsBox.addEventListener("mousedown", (e) => {
+    if (e.target.closest("[data-rcmd]")) e.preventDefault(); /* не терять выделение */
+  });
+  textsBox.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-rcmd]");
+    if (!b) return;
+    const area = b.closest(".redit").querySelector("[data-bkey]");
+    area.focus();
+    const cmd = b.dataset.rcmd;
+    if (cmd === "link") {
+      const url = prompt("Ссылка (URL или /страница):", "https://");
+      if (url && url !== "https://") document.execCommand("createLink", false, url.trim());
+    } else if (cmd === "clear") {
+      document.execCommand("removeFormat");
+      document.execCommand("unlink");
+    } else {
+      document.execCommand(cmd);
+    }
+    rSave(area);
+  });
+
+  $("#b-langtabs").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-blang]");
+    if (!b) return;
+    curLang = b.dataset.blang;
+    document.querySelectorAll("#b-langtabs button").forEach((x) => x.classList.toggle("is-on", x === b));
+    renderTexts();
+  });
+
+  /* ---------- hero-слайдер ---------- */
+  const hsList = $("#hs-list");
+  const hsFile = $("#hs-file");
+  let hsTarget = -1; /* -1 = новый слайд, иначе замена медиа */
+
+  const hesc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  function renderSlides() {
+    if (!hsList) return;
+    const slides = cfg.hero.slides;
+    if (!slides.length) {
+      hsList.innerHTML = '<div class="account-empty"><p>Слайдов нет — на сайте показывается стандартное видео. Нажмите «+ Добавить слайд».</p></div>';
+      return;
+    }
+    hsList.innerHTML = slides.map((s, i) => `
+      <div class="hsrow" data-i="${i}">
+        <div class="hsrow__thumb">
+          ${s.type === "video"
+            ? `<video src="${hesc(s.src)}" muted preload="metadata"></video><span class="hsrow__badge">VIDEO</span>`
+            : `<img src="${hesc(s.src)}" alt="">`}
+        </div>
+        <div class="hsrow__fields">
+          <div class="hsbar redit__bar" contenteditable="false">
+            <button type="button" data-hsfmt="bold" title="Жирный"><b>Ж</b></button>
+            <button type="button" data-hsfmt="italic" title="Курсив"><i>К</i></button>
+            <button type="button" data-hsfmt="underline" title="Подчёркнутый"><u>Ч</u></button>
+            <button type="button" data-hsfmt="clear" title="Убрать форматирование">&#10005;</button>
+            <span class="hsbar__sep"></span>
+            <button type="button" data-hsalign="left" class="${(s.align || "left") === "left" ? "is-on" : ""}" title="Влево">&#9664;</button>
+            <button type="button" data-hsalign="center" class="${s.align === "center" ? "is-on" : ""}" title="По центру">&#9679;</button>
+            <button type="button" data-hsalign="right" class="${s.align === "right" ? "is-on" : ""}" title="Вправо">&#9654;</button>
+            <span class="hsbar__sep"></span>
+            <label class="hsbar__scale">Размер <select data-hsscale>${[70, 80, 90, 100, 110, 120, 130].map((v) => `<option value="${v}"${(Number(s.scale) || 100) === v ? " selected" : ""}>${v}%</option>`).join("")}</select></label>
+          </div>
+          <div class="ainput redit__area redit__area--mini" contenteditable="true" data-hst="ru" data-ph="Заголовок (RU)">${s.title_ru || ""}</div>
+          <div class="ainput redit__area redit__area--mini" contenteditable="true" data-hst="uz" data-ph="Sarlavha (UZ)">${s.title_uz || ""}</div>
+          <div class="ainput redit__area redit__area--mini" contenteditable="true" data-hst="en" data-ph="Title (EN)">${s.title_en || ""}</div>
+          <div class="ainput redit__area redit__area--mini" contenteditable="true" data-hss="ru" data-ph="Подзаголовок курсивом (RU)">${s.sub_ru || ""}</div>
+          <div class="ainput redit__area redit__area--mini" contenteditable="true" data-hss="uz" data-ph="Kursiv pastki sarlavha (UZ)">${s.sub_uz || ""}</div>
+          <div class="ainput redit__area redit__area--mini" contenteditable="true" data-hss="en" data-ph="Italic subtitle (EN)">${s.sub_en || ""}</div>
+          <input class="ainput" data-hsl placeholder="Ссылка кнопки «Перейти» (напр. /shop?category=robes) — пусто = /shop" value="${hesc(s.href || "")}">
+        </div>
+        <div class="hsrow__act">
+          <button type="button" data-hsmv="-1" title="Выше" ${i === 0 ? "disabled" : ""}>↑</button>
+          <button type="button" data-hsmv="1" title="Ниже" ${i === slides.length - 1 ? "disabled" : ""}>↓</button>
+          <button type="button" data-hsrep title="Заменить фото/видео">⇆</button>
+          <button type="button" data-hsdel class="del" title="Удалить">✕</button>
+        </div>
+      </div>`).join("");
+  }
+
+  async function hsUpload(file) {
+    const r = await fetch("/api/admin/upload", { method: "POST", body: await file.arrayBuffer() });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || "upload_failed");
+    return d; /* {url, kind} */
+  }
+
+  if (hsList) {
+    $("#hs-interval")?.addEventListener("input", (e) => {
+      const v = Math.max(2, Math.min(20, Number(e.target.value) || 6));
+      cfg.hero.interval = v;
+    });
+    $("#hs-add")?.addEventListener("click", () => { hsTarget = -1; hsFile.value = ""; hsFile.click(); });
+
+    hsFile?.addEventListener("change", async () => {
+      const f = hsFile.files && hsFile.files[0];
+      if (!f) return;
+      note("Загружаем медиа…", true);
+      try {
+        const d = await hsUpload(f);
+        if (hsTarget >= 0 && cfg.hero.slides[hsTarget]) {
+          cfg.hero.slides[hsTarget].src = d.url;
+          cfg.hero.slides[hsTarget].type = d.kind;
+        } else {
+          cfg.hero.slides.push({ type: d.kind, src: d.url, title_ru: "", title_uz: "", title_en: "", sub_ru: "", sub_uz: "", sub_en: "", href: "", align: "", scale: 100 });
+        }
+        renderSlides();
+        note("Медиа загружено. Не забудьте «Сохранить».", true);
+      } catch (ex) {
+        note(ex.message === "format_not_allowed" ? "Формат не поддерживается (JPG/PNG/WebP/MP4/WebM)."
+          : ex.message === "too_large" ? "Файл больше 64 МБ."
+          : "Не удалось загрузить файл.");
+      }
+    });
+
+    function hsField(inp, s) {
+      const val = inp.isContentEditable
+        ? (inp.textContent.trim()
+            ? rSanitize(inp.innerHTML).replace(/\u200B/g, "").replace(/&nbsp;/g, " ").replace(/^(\s|<br>)+|(\s|<br>)+$/g, "")
+            : "")
+        : inp.value.trim();
+      if (inp.dataset.hst !== undefined) s["title_" + inp.dataset.hst] = val;
+      else if (inp.dataset.hss !== undefined) s["sub_" + inp.dataset.hss] = val;
+      else s.href = val;
+    }
+
+    hsList.addEventListener("mousedown", (e) => {
+      if (e.target.closest("[data-hsfmt]")) e.preventDefault(); /* не терять выделение */
+    });
+
+    hsList.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && e.target.closest("[data-hst],[data-hss]")) {
+        e.preventDefault();
+        document.execCommand("insertHTML", false, "<br>\u200B");
+      }
+    });
+
+    hsList.addEventListener("change", (e) => {
+      const sc = e.target.closest("[data-hsscale]");
+      if (!sc) return;
+      const s = cfg.hero.slides[Number(sc.closest(".hsrow").dataset.i)];
+      if (s) s.scale = Number(sc.value) || 100;
+    });
+
+        hsList.addEventListener("click", (e) => {
+      const row = e.target.closest(".hsrow");
+      if (!row) return;
+      const i = Number(row.dataset.i);
+      const mv = e.target.closest("[data-hsmv]");
+      if (mv) {
+        const j = i + Number(mv.dataset.hsmv);
+        const s = cfg.hero.slides;
+        if (j >= 0 && j < s.length) { [s[i], s[j]] = [s[j], s[i]]; renderSlides(); }
+      }
+      const fmt = e.target.closest("[data-hsfmt]");
+      if (fmt) {
+        const cmd = fmt.dataset.hsfmt;
+        if (cmd === "clear") document.execCommand("removeFormat");
+        else document.execCommand(cmd);
+        const ed = document.activeElement;
+        const sl = cfg.hero.slides[i];
+        if (sl && ed && ed.closest && ed.closest(".hsrow") === row && (ed.dataset.hst !== undefined || ed.dataset.hss !== undefined)) hsField(ed, sl);
+        return;
+      }
+      const al = e.target.closest("[data-hsalign]");
+      if (al) {
+        const sl = cfg.hero.slides[i];
+        if (sl) { sl.align = al.dataset.hsalign === "left" ? "" : al.dataset.hsalign; renderSlides(); }
+        return;
+      }
+      if (e.target.closest("[data-hsrep]")) { hsTarget = i; hsFile.value = ""; hsFile.click(); }
+      if (e.target.closest("[data-hsdel]")) { cfg.hero.slides.splice(i, 1); renderSlides(); }
+    });
+
+    hsList.addEventListener("input", (e) => {
+      const inp = e.target.closest("[data-hst],[data-hss],[data-hsl]");
+      if (!inp) return;
+      const row = e.target.closest(".hsrow");
+      const s = cfg.hero.slides[Number(row.dataset.i)];
+      if (!s) return;
+      hsField(inp, s);
+    });
+  }
+
+  /* ---------- типографика ---------- */
+  const TY_FIELDS = ["base", "lh", "hscale", "hweight", "hspacing", "hcase", "font"];
+
+  function renderTypo() {
+    TY_FIELDS.forEach((k) => {
+      const el = $("#ty-" + k);
+      if (el) el.value = cfg.typography[k] ?? "";
+    });
+    const upRow = $("#ty-fontup-row");
+    if (upRow) {
+      upRow.hidden = cfg.typography.font !== "custom";
+      $("#ty-fontname").textContent = cfg.typography.fontName ? "Файл: " + cfg.typography.fontName : "Файл не загружен";
+    }
+    typoPreview();
+  }
+
+  function typoFamily() {
+    const t = cfg.typography;
+    if (t.font === "system-sans") return '"Helvetica Neue", Arial, sans-serif';
+    if (t.font === "system-serif") return 'Georgia, "Times New Roman", serif';
+    if (t.font === "custom" && t.fontUrl) {
+      if (!typoFamily.loaded || typoFamily.loaded !== t.fontUrl) {
+        try {
+          const ff = new FontFace("TyCustomPreview", "url(" + t.fontUrl + ")");
+          ff.load().then((f) => { document.fonts.add(f); typoPreview(); }).catch(() => {});
+          typoFamily.loaded = t.fontUrl;
+        } catch {}
+      }
+      return '"TyCustomPreview", "Lato", sans-serif';
+    }
+    return '"Lato", "Helvetica Neue", Arial, sans-serif';
+  }
+
+  function typoPreview() {
+    const p = $("#ty-preview");
+    if (!p) return;
+    const t = cfg.typography;
+    const h = p.querySelector(".typreview__h");
+    const txt = p.querySelector(".typreview__t");
+    p.style.fontFamily = typoFamily();
+    const scale = t.hscale ? Number(t.hscale) / 100 : 1;
+    h.style.fontSize = (30 * scale) + "px";
+    h.style.fontWeight = t.hweight || "300";
+    h.style.letterSpacing = (t.hspacing || "0.01") + "em";
+    h.style.textTransform = t.hcase || "none";
+    txt.style.fontSize = (t.base || 14) + "px";
+    txt.style.lineHeight = t.lh || "1.6";
+  }
+
+  TY_FIELDS.forEach((k) => {
+    $("#ty-" + k)?.addEventListener("change", (e) => {
+      const v = e.target.value;
+      if (v === "") delete cfg.typography[k];
+      else cfg.typography[k] = v;
+      if (k === "font") renderTypo();
+      typoPreview();
+    });
+  });
+
+  $("#ty-fontup")?.addEventListener("click", () => $("#ty-fontfile").click());
+  $("#ty-fontfile")?.addEventListener("change", async () => {
+    const f = $("#ty-fontfile").files && $("#ty-fontfile").files[0];
+    if (!f) return;
+    note("Загружаем шрифт…", true);
+    try {
+      const r = await fetch("/api/admin/upload", { method: "POST", body: await f.arrayBuffer() });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || d.kind !== "font") throw new Error(d.error || "font");
+      cfg.typography.font = "custom";
+      cfg.typography.fontUrl = d.url;
+      cfg.typography.fontName = f.name;
+      typoFamily.loaded = null;
+      renderTypo();
+      note("Шрифт загружен. Не забудьте «Сохранить».", true);
+    } catch (ex) {
+      note(ex.message === "format_not_allowed" ? "Это не файл шрифта (нужен WOFF2/WOFF/TTF/OTF)." : "Не удалось загрузить шрифт.");
+    }
+  });
+
+  /* ---------- загрузка / сохранение ---------- */
+  async function load() {
+    try {
+      const [settings, ru, uz, en] = await Promise.all([
+        fetch("/api/admin/settings").then((r) => r.json()),
+        fetch("/lang/ru.json").then((r) => r.json()),
+        fetch("/lang/uz.json").then((r) => r.json()),
+        fetch("/lang/en.json").then((r) => r.json()),
+      ]);
+      defaults = { ru, uz, en };
+      if (settings.site_config) {
+        try {
+          const saved = JSON.parse(settings.site_config);
+          cfg = {
+            sections: { order: saved.sections?.order || [], hidden: saved.sections?.hidden || [] },
+            texts: { ru: saved.texts?.ru || {}, uz: saved.texts?.uz || {}, en: saved.texts?.en || {} },
+            hero: { slides: Array.isArray(saved.hero?.slides) ? saved.hero.slides : [], interval: Number(saved.hero?.interval) || 6 },
+            typography: saved.typography || {},
+          };
+        } catch {}
+      }
+      const movable = SECTIONS.filter(([, , m]) => m).map(([id]) => id);
+      const saved = (cfg.sections.order || []).filter((id) => movable.includes(id));
+      order = [...saved, ...movable.filter((id) => !saved.includes(id))];
+      renderSections();
+      renderTexts();
+      renderSlides();
+      if ($("#hs-interval")) $("#hs-interval").value = cfg.hero.interval || 6;
+      renderTypo();
+    } catch {
+      note("Не удалось загрузить настройки конструктора.");
+    }
+  }
+
+  $("#b-save").addEventListener("click", async () => {
+    note("");
+    const btn = $("#b-save");
+    btn.disabled = true;
+    try {
+      cfg.sections.order = order.slice();
+      const r = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ site_config: JSON.stringify(cfg) }),
+      });
+      if (!r.ok) throw new Error();
+      note("Сохранено. Обновите сайт, чтобы увидеть изменения.", true);
+    } catch {
+      note("Не удалось сохранить. Проверьте соединение.");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $("#b-reset").addEventListener("click", async () => {
+    if (!confirm("Вернуть все секции и тексты к стандартным?")) return;
+    cfg = { sections: { order: [], hidden: [] }, texts: { ru: {}, uz: {}, en: {} }, hero: { slides: [] }, typography: {} };
+    order = SECTIONS.filter(([, , m]) => m).map(([id]) => id);
+    try {
+      const r = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ site_config: "" }),
+      });
+      if (!r.ok) throw new Error();
+      renderSections();
+      renderTexts();
+      renderSlides();
+      if ($("#hs-interval")) $("#hs-interval").value = 6;
+      renderTypo();
+      note("Сброшено к стандартному виду.", true);
+    } catch {
+      note("Не удалось сбросить.");
+    }
+  });
+
+  document.addEventListener("DOMContentLoaded", load);
+  if (document.readyState !== "loading") load();
 })();
