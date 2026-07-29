@@ -4902,6 +4902,46 @@ const api = {
     }));
   },
 
+  /* Compatibility response for an already-open, cached admin page.
+     Product description generation is removed and this route never calls AI. */
+  "POST /api/admin/products/describe": async (req, res) => {
+    const b = await readJson(req, 32e3);
+    const model = str(b.model_no, 40);
+    const variant = str(b.variant, 60);
+    const name = str(b.name, 120);
+    let stored = null;
+    if (model || variant || name) {
+      if (postgresCatalog) {
+        const result = await postgresCatalog.list({
+          search: model || variant || name,
+          limit: 100,
+          offset: 0,
+        });
+        stored = result.rows.find((row) => (
+          (!model || row.model_no === model)
+          && (!variant || row.variant === variant)
+          && (!name || row.name === name)
+        )) || null;
+      } else {
+        const fields = [["model_no", model], ["variant", variant], ["name", name]].filter(([, value]) => value);
+        stored = db.prepare(
+          `SELECT * FROM products WHERE ${fields.map(([field]) => `${field}=?`).join(" AND ")} ORDER BY id DESC LIMIT 1`
+        ).get(...fields.map(([, value]) => value)) || null;
+      }
+    }
+    const product = stored ? rowToProduct(stored) : null;
+    send(res, 200, {
+      ok: true,
+      disabled: true,
+      product_type: product?.product_type || "",
+      desc: product?.desc || {
+        ru: str(b.desc?.ru, 5000),
+        uz: str(b.desc?.uz, 5000),
+        en: str(b.desc?.en, 5000),
+      },
+    });
+  },
+
   "POST /api/admin/products": async (req, res) => {
     const b = await readJson(req);
     let v;

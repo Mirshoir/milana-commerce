@@ -779,12 +779,18 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.doesNotMatch(adminScript, /\/api\/admin\/products\/describe/);
   assert.doesNotMatch(adminScript, /generatePhotoDescription/);
   assert.match(adminScript, /desc:\s*\{\s*ru:\s*\$\("#f-desc-ru"\)\.value,\s*uz:\s*\$\("#f-desc-uz"\)\.value,\s*en:\s*\$\("#f-desc-en"\)\.value\s*\}/);
-  const removedDescriptionGenerator = await json(
+  const retiredDescriptionGenerator = await json(
     app.base + "/api/admin/products/describe",
     { images: ["/assets/img/hero.jpg"] },
     { headers: { Cookie: cookie, Origin: app.base } },
   );
-  assert.equal(removedDescriptionGenerator.status, 404);
+  assert.equal(retiredDescriptionGenerator.status, 200);
+  assert.deepEqual(await retiredDescriptionGenerator.json(), {
+    ok: true,
+    disabled: true,
+    product_type: "",
+    desc: { ru: "", uz: "", en: "" },
+  });
 
   const woff = Buffer.alloc(128);
   woff.write("wOFF", 0, "latin1");
