@@ -29,6 +29,7 @@ npm run postgres:migrate:dry
 | Адрес | Что это |
 |---|---|
 | http://localhost:4173 | Лендинг |
+| http://localhost:4173/preview | Локальный концепт нового storefront (не заменяет текущий сайт) |
 | http://localhost:4173/shop | Каталог (фильтры, поиск, сортировка) |
 | http://localhost:4173/p/`slug` | Страница товара |
 | http://localhost:4173/signin | Вход / регистрация клиента |
@@ -36,6 +37,10 @@ npm run postgres:migrate:dry
 
 Порт меняется переменной окружения: `PORT=80 npm start`.
 Папку с базой и загрузками можно вынести отдельно: `DATA_DIR=/var/lib/milana npm start`.
+
+Новый storefront сначала проверяется изолированно на `/preview`. Его checkout
+работает как безопасная локальная демонстрация и не создаёт заказ. Текущий
+публичный лендинг остаётся без изменений, пока концепт не будет явно одобрен.
 
 ## Источник каталога
 
@@ -126,19 +131,26 @@ export DATABASE_URL=postgres://milana:milana_dev_password@127.0.0.1:5432/milana
 npm run postgres:schema
 npm run postgres:migrate:dry
 npm run postgres:migrate
+npm run postgres:verify
+# Enable only after verification succeeds:
+export CATALOG_DB_DRIVER=postgres
+npm start
 ```
 
 Файлы:
 
-- `postgres/schema.sql` — future PostgreSQL schema для products, customers, orders,
-  payments, support, audit, payment webhook idempotency и ERP events.
+- `postgres/schema.sql` — PostgreSQL schema для каталога, клиентов, заказов,
+  промокодов, отзывов, чата, payments, support, audit и ERP events.
 - `tools/apply-postgres-schema.js` — применяет schema к `DATABASE_URL`.
 - `tools/migrate-sqlite-to-postgres.js` — переносит текущие данные из
-  `data/milana.db` в PostgreSQL с сохранением ID.
+  `data/milana.db` в PostgreSQL пакетами с сохранением ID.
+- `tools/verify-postgres-migration.js` — проверяет количество строк, покрытие
+  колонок и ключевые агрегаты после переноса.
 - `.env.postgres.example` — пример `DATABASE_URL`.
 
-Сейчас production читает SQLite. PostgreSQL-файлы нужны для будущей миграции,
-когда будет принято решение переносить сайт на общий Postgres-backed API.
+По умолчанию сайт читает SQLite. После успешной проверки каталог можно безопасно
+переключить на PostgreSQL через `CATALOG_DB_DRIVER=postgres`; production нельзя
+переключать до прохождения staging/canary-проверок из `docs/postgres-rollout.md`.
 
 ## Как устроено хранение сейчас
 
@@ -148,9 +160,24 @@ npm run postgres:migrate
 data/
   milana.db        ← база SQLite (товары, заказы, настройки, сессии)
   uploads/         ← загруженные фотографии товаров
+    originals/     ← исходники загруженных фото/видео для восстановления
 ```
 
 **Бэкап = скопировать папку `data/`.** Перенос на сервер — тоже.
+
+Admin upload automatically keeps the original media and creates a storefront
+optimized version when `cwebp`/`ffmpeg` are available. Images become high-quality WebP
+(`MEDIA_IMAGE_QUALITY`, default `92`; `MEDIA_IMAGE_MAX_EDGE`, default `3200`).
+Videos become Safari-friendly MP4/H.264 (`MEDIA_VIDEO_CRF`, default `22`;
+`MEDIA_VIDEO_MAX_EDGE`, default `1920`). Set `MEDIA_OPTIMIZE_ENABLED=0` to
+disable this.
+
+Existing product media can be checked with:
+
+```bash
+npm run optimize:media
+npm run optimize:media -- --apply
+```
 
 Подписки из формы в футере сохраняются в таблицу `subscribers`.
 Клиенты сохраняются в `customers`, их сессии — в `customer_sessions`.
@@ -166,6 +193,12 @@ data/
 | GET | `/api/settings` | Публичные контакты, валюта, дизайн |
 | GET | `/api/products` | Живой Supabase-каталог с фильтрами `gender`, `category`, `tag`, `q`, `sort`, `limit` |
 | GET | `/api/products/:slug` | Карточка товара + похожие товары |
+
+Catalog list endpoints also support `page`, `offset`, and `meta=1`. Without
+`meta=1`, the response remains the legacy array used by the current storefront
+and mobile app. With `meta=1`, the response is `{ items, meta }`, including the
+total, page count, and `has_more`. See `docs/scaling-plan.md` for the staged
+2-million-product architecture.
 | POST | `/api/orders` | Создание заказа, сумма считается на сервере |
 | POST | `/api/newsletter` | Подписка e-mail, повторная подписка идемпотентна |
 | GET | `/api/auth/config` | Режим авторизации и публичный Firebase web config |
