@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS products (
   fabric_en TEXT NOT NULL DEFAULT '',
   fabric_ru TEXT NOT NULL DEFAULT '',
   fabric_uz TEXT NOT NULL DEFAULT '',
+  copy_manual BOOLEAN NOT NULL DEFAULT false,
   price NUMERIC(12, 2) NOT NULL CHECK (price >= 0),
   old_price NUMERIC(12, 2),
   sizes JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -42,6 +43,7 @@ CREATE TABLE IF NOT EXISTS products (
 ALTER TABLE products ADD COLUMN IF NOT EXISTS catalog_panel TEXT NOT NULL DEFAULT '';
 ALTER TABLE products ADD COLUMN IF NOT EXISTS product_type TEXT NOT NULL DEFAULT '';
 ALTER TABLE products ADD COLUMN IF NOT EXISTS collection TEXT NOT NULL DEFAULT '';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS copy_manual BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_products_catalog_panel ON products(active, catalog_panel, sort DESC, id DESC);
 UPDATE products
 SET catalog_panel = CASE

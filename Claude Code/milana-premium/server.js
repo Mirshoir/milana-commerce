@@ -195,6 +195,7 @@ db.exec(`
     name TEXT NOT NULL,
     desc_en TEXT DEFAULT '', desc_ru TEXT DEFAULT '', desc_uz TEXT DEFAULT '',
     fabric_en TEXT DEFAULT '', fabric_ru TEXT DEFAULT '', fabric_uz TEXT DEFAULT '',
+    copy_manual INTEGER NOT NULL DEFAULT 0,
     price REAL NOT NULL,
     old_price REAL,
     sizes TEXT DEFAULT '[]',
@@ -943,6 +944,7 @@ function inferProductType(product = {}) {
   if (!cols.includes("like_count")) db.exec("ALTER TABLE products ADD COLUMN like_count INTEGER DEFAULT 0");
   if (!cols.includes("collection")) db.exec("ALTER TABLE products ADD COLUMN collection TEXT DEFAULT ''");
   if (!cols.includes("views")) db.exec("ALTER TABLE products ADD COLUMN views INTEGER DEFAULT 0");
+  if (!cols.includes("copy_manual")) db.exec("ALTER TABLE products ADD COLUMN copy_manual INTEGER NOT NULL DEFAULT 0");
   db.exec("UPDATE products SET wholesale_price=price WHERE COALESCE(wholesale_price,0)<=0");
   db.exec("UPDATE products SET retail_price=price WHERE COALESCE(retail_price,0)<=0");
   /* минимальный заказ = число размеров модели: пачка содержит по 1 изделию на размер */
@@ -3295,16 +3297,31 @@ function defaultProductDescription(p, lang) {
 }
 
 function normalizeProductLocalizedCopy(p) {
-  p.desc = {
-    en: defaultProductDescription(p, "en"),
-    ru: defaultProductDescription(p, "ru"),
-    uz: defaultProductDescription(p, "uz"),
-  };
-  p.fabric = {
-    en: localizedMaterial(p, "en"),
-    ru: localizedMaterial(p, "ru"),
-    uz: localizedMaterial(p, "uz"),
-  };
+  const manual = p.copy_manual === true || Number(p.copy_manual) === 1;
+  p.copy_manual = manual;
+  if (manual) {
+    p.desc = {
+      en: String(p.desc?.en || ""),
+      ru: String(p.desc?.ru || ""),
+      uz: String(p.desc?.uz || ""),
+    };
+    p.fabric = {
+      en: String(p.fabric?.en || ""),
+      ru: String(p.fabric?.ru || ""),
+      uz: String(p.fabric?.uz || ""),
+    };
+  } else {
+    p.desc = {
+      en: defaultProductDescription(p, "en"),
+      ru: defaultProductDescription(p, "ru"),
+      uz: defaultProductDescription(p, "uz"),
+    };
+    p.fabric = {
+      en: localizedMaterial(p, "en"),
+      ru: localizedMaterial(p, "ru"),
+      uz: localizedMaterial(p, "uz"),
+    };
+  }
   p.care = {
     en: localizedCare(p, "en"),
     ru: localizedCare(p, "ru"),
@@ -3335,6 +3352,7 @@ function rowToProduct(r, lite = false) {
     like_count: r.like_count || 0,
     sizes: arrayValue(r.sizes), images: arrayValue(r.images),
     tag: r.tag, collection: r.collection || "", size_chart: r.size_chart || "", color: r.color || "", country: r.country || "", material: r.material || "", season: r.season || "", composition: r.composition || "", rating: r.rating, reviews: r.reviews, views: r.views || 0, active: !!r.active, sort: r.sort,
+    copy_manual: r.copy_manual === true || Number(r.copy_manual) === 1,
   });
   if (lite) {
     p.images = p.images.slice(0, 2);
@@ -3398,6 +3416,7 @@ function validateProduct(b) {
     sizes: JSON.stringify(sizes), images: JSON.stringify(images),
     desc_en: str(b.desc?.en, 5000), desc_ru: str(b.desc?.ru, 5000), desc_uz: str(b.desc?.uz, 5000),
     fabric_en: str(b.fabric?.en, 300), fabric_ru: str(b.fabric?.ru, 300), fabric_uz: str(b.fabric?.uz, 300),
+    copy_manual: 1,
     active: b.active ? 1 : 0,
     sort: Math.max(-1e6, Math.min(1e6, Math.round(Number(b.sort) || 0))),
   };

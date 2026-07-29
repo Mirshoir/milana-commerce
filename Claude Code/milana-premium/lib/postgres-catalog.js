@@ -7,7 +7,7 @@ const PRODUCT_COLUMNS = new Set([
   "tag", "collection", "rating", "reviews", "wholesale_price", "wholesale_moq",
   "retail_enabled", "retail_price", "retail_stock", "available_qop", "sizes",
   "images", "desc_en", "desc_ru", "desc_uz", "fabric_en", "fabric_ru",
-  "fabric_uz", "active", "sort",
+  "fabric_uz", "copy_manual", "active", "sort",
 ]);
 
 function productValue(column, value) {
@@ -17,7 +17,7 @@ function productValue(column, value) {
     }
     return JSON.stringify(Array.isArray(value) ? value : []);
   }
-  if (column === "active" || column === "retail_enabled") return Boolean(value);
+  if (column === "active" || column === "retail_enabled" || column === "copy_manual") return Boolean(value);
   return value;
 }
 
@@ -34,6 +34,32 @@ class PostgresCatalog {
       application_name: options.applicationName || "milana-storefront",
     });
     this.pool.on("error", (error) => console.error("PostgreSQL pool error:", error.message));
+    this.copyManualSchemaPromise = null;
+  }
+
+  async ensureCopyManualSchema() {
+    if (!this.copyManualSchemaPromise) {
+      this.copyManualSchemaPromise = (async () => {
+        const result = await this.pool.query(`
+          SELECT EXISTS (
+            SELECT 1
+            FROM pg_attribute
+            WHERE attrelid='products'::regclass
+              AND attname='copy_manual'
+              AND NOT attisdropped
+          ) AS present
+        `);
+        if (!result.rows[0]?.present) {
+          await this.pool.query(
+            "ALTER TABLE products ADD COLUMN copy_manual BOOLEAN NOT NULL DEFAULT false",
+          );
+        }
+      })().catch((error) => {
+          this.copyManualSchemaPromise = null;
+          throw error;
+        });
+    }
+    await this.copyManualSchemaPromise;
   }
 
   async health() {
@@ -95,6 +121,7 @@ class PostgresCatalog {
   }
 
   async create(slug, values) {
+    await this.ensureCopyManualSchema();
     const columns = Object.keys(values).filter((column) => PRODUCT_COLUMNS.has(column));
     const params = [slug, ...columns.map((column) => productValue(column, values[column]))];
     const names = ["slug", ...columns].map((column) => `"${column}"`).join(",");
@@ -104,6 +131,7 @@ class PostgresCatalog {
   }
 
   async update(id, slug, values) {
+    await this.ensureCopyManualSchema();
     const columns = Object.keys(values).filter((column) => PRODUCT_COLUMNS.has(column));
     const params = [slug, ...columns.map((column) => productValue(column, values[column])), id];
     const sets = ["slug=$1", ...columns.map((column, index) => `"${column}"=$${index + 2}`)];

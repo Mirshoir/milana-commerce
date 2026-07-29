@@ -783,7 +783,17 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(servedFont.status, 200);
   assert.match(servedFont.headers.get("content-type"), /^font\/woff/);
 
-  const adminProductRes = await json(app.base + "/api/admin/products", {
+  const manualDescription = {
+    en: "MANUAL-EN: Soft lounge set with a relaxed silhouette.",
+    ru: "MANUAL-RU: Мягкий комплект свободного силуэта.",
+    uz: "MANUAL-UZ: Erkin bichimli yumshoq to‘plam.",
+  };
+  const manualFabric = {
+    en: "MANUAL-FABRIC-EN: Cotton jersey",
+    ru: "MANUAL-FABRIC-RU: Хлопковый трикотаж",
+    uz: "MANUAL-FABRIC-UZ: Paxta trikotaj",
+  };
+  const galleryProductPayload = {
     name: "Gallery Product",
     model_no: "GP-2026",
     variant: "black-print",
@@ -799,19 +809,42 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     sizes: ["44", "46", "48", "50", "52", "54"],
     images: ["/assets/img/hero.jpg", "/assets/img/about.jpg", "/assets/img/factory-1.jpg", "/assets/img/factory-2.jpg"],
     colors: ["black + print"],
-    desc: {
-      en: "",
-      ru: "Gallery Product — лаунж-сеты, женский. Модель OLD-100. Размеры: 44, 46, 48, 50, 52, 54. Оптовый заказ от 1 Qadoq (6 шт., по 1 на размер) или 1 Qop (60 шт., по 10 на размер); финальную доступность и отправку подтверждает менеджер.",
-      uz: "",
-    },
-    fabric: { en: "Cotton jersey", ru: "Хлопковый трикотаж", uz: "Paxta trikotaj" },
+    desc: manualDescription,
+    fabric: manualFabric,
     active: true,
     sort: 2000,
-  }, { headers: { Cookie: cookie, Origin: app.base } });
+  };
+  const adminProductRes = await json(
+    app.base + "/api/admin/products",
+    galleryProductPayload,
+    { headers: { Cookie: cookie, Origin: app.base } },
+  );
   assert.equal(adminProductRes.status, 201);
   const adminProduct = await adminProductRes.json();
+  assert.equal(adminProduct.copy_manual, true);
+  assert.deepEqual(adminProduct.desc, manualDescription);
+  assert.deepEqual(adminProduct.fabric, manualFabric);
   assert.equal(adminProduct.wholesale_moq, 6);
-  assert.equal(sqlite.prepare("SELECT wholesale_moq FROM products WHERE id=?").get(adminProduct.id).wholesale_moq, 6);
+  const storedProduct = sqlite.prepare(`
+    SELECT wholesale_moq, copy_manual, desc_en, desc_ru, desc_uz, fabric_en, fabric_ru, fabric_uz
+    FROM products WHERE id=?
+  `).get(adminProduct.id);
+  assert.equal(storedProduct.wholesale_moq, 6);
+  assert.equal(storedProduct.copy_manual, 1);
+  assert.deepEqual(
+    { en: storedProduct.desc_en, ru: storedProduct.desc_ru, uz: storedProduct.desc_uz },
+    manualDescription,
+  );
+  assert.deepEqual(
+    { en: storedProduct.fabric_en, ru: storedProduct.fabric_ru, uz: storedProduct.fabric_uz },
+    manualFabric,
+  );
+  const adminProductsAfterCreate = await (
+    await fetch(app.base + "/api/admin/products?limit=250", { headers: { Cookie: cookie } })
+  ).json();
+  const reloadedAdminProduct = adminProductsAfterCreate.find((row) => row.id === adminProduct.id);
+  assert.deepEqual(reloadedAdminProduct.desc, manualDescription);
+  assert.deepEqual(reloadedAdminProduct.fabric, manualFabric);
   const publicProductsAfterCreate = await (await fetch(app.base + "/api/products?limit=1000")).json();
   const publicAdminProduct = publicProductsAfterCreate.find((row) => row.id === adminProduct.id);
   assert.ok(publicAdminProduct);
@@ -822,13 +855,59 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   ]);
   assert.deepEqual(publicAdminProduct.images, adminProduct.images);
   assert.deepEqual(publicAdminProduct.colors, ["black-print"]);
-  assert.ok(publicAdminProduct.desc.en.length > 20);
-  assert.ok(publicAdminProduct.desc.ru.length > 20);
-  assert.ok(publicAdminProduct.desc.uz.length > 20);
-  assert.doesNotMatch(publicAdminProduct.desc.en, /OLD-100/);
-  assert.doesNotMatch(publicAdminProduct.desc.ru, /OLD-100/);
-  assert.doesNotMatch(publicAdminProduct.desc.uz, /OLD-100/);
-  assert.match(publicAdminProduct.fabric.uz, /Paxta/);
+  assert.deepEqual(publicAdminProduct.desc, manualDescription);
+  assert.deepEqual(publicAdminProduct.fabric, manualFabric);
+
+  const editedDescription = {
+    en: "EDITED-EN: Updated product description saved by an administrator.",
+    ru: "EDITED-RU: Обновлённое описание, сохранённое администратором.",
+    uz: "EDITED-UZ: Administrator saqlagan yangilangan mahsulot tavsifi.",
+  };
+  const editedFabric = {
+    en: "EDITED-FABRIC-EN: Brushed cotton",
+    ru: "EDITED-FABRIC-RU: Хлопок с мягкой обработкой",
+    uz: "EDITED-FABRIC-UZ: Yumshoq ishlov berilgan paxta",
+  };
+  const updateProductRes = await json(
+    app.base + "/api/admin/products/" + adminProduct.id,
+    { ...galleryProductPayload, slug: adminProduct.slug, desc: editedDescription, fabric: editedFabric, sort: 2001 },
+    { method: "PUT", headers: { Cookie: cookie, Origin: app.base } },
+  );
+  assert.equal(updateProductRes.status, 200);
+  const updatedAdminProduct = await updateProductRes.json();
+  assert.deepEqual(updatedAdminProduct.desc, editedDescription);
+  assert.deepEqual(updatedAdminProduct.fabric, editedFabric);
+  const storedUpdatedProduct = sqlite.prepare(`
+    SELECT copy_manual, desc_en, desc_ru, desc_uz, fabric_en, fabric_ru, fabric_uz
+    FROM products WHERE id=?
+  `).get(adminProduct.id);
+  assert.equal(storedUpdatedProduct.copy_manual, 1);
+  assert.deepEqual(
+    { en: storedUpdatedProduct.desc_en, ru: storedUpdatedProduct.desc_ru, uz: storedUpdatedProduct.desc_uz },
+    editedDescription,
+  );
+  assert.deepEqual(
+    { en: storedUpdatedProduct.fabric_en, ru: storedUpdatedProduct.fabric_ru, uz: storedUpdatedProduct.fabric_uz },
+    editedFabric,
+  );
+  const publicUpdatedProduct = await (await fetch(app.base + "/api/products/" + adminProduct.slug)).json();
+  assert.deepEqual(publicUpdatedProduct.desc, editedDescription);
+  assert.deepEqual(publicUpdatedProduct.fabric, editedFabric);
+
+  sqlite.prepare(`
+    UPDATE products
+    SET copy_manual=0, desc_en='LEGACY-EN', desc_ru='LEGACY-RU', desc_uz='LEGACY-UZ'
+    WHERE id=?
+  `).run(adminProduct.id);
+  const legacyFallbackProduct = await (await fetch(app.base + "/api/products/" + adminProduct.slug)).json();
+  assert.doesNotMatch(legacyFallbackProduct.desc.en, /LEGACY-EN/);
+  assert.doesNotMatch(legacyFallbackProduct.desc.ru, /LEGACY-RU/);
+  assert.doesNotMatch(legacyFallbackProduct.desc.uz, /LEGACY-UZ/);
+  sqlite.prepare(`
+    UPDATE products
+    SET copy_manual=1, desc_en=?, desc_ru=?, desc_uz=?
+    WHERE id=?
+  `).run(editedDescription.en, editedDescription.ru, editedDescription.uz, adminProduct.id);
 
   const seoResponse = await fetch(app.base + "/p/" + adminProduct.slug, {
     headers: { Accept: "text/html" },

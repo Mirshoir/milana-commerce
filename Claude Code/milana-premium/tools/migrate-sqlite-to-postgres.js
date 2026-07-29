@@ -46,6 +46,7 @@ const JSON_COLUMNS = new Set([
 const BOOLEAN_COLUMNS = new Set([
   "products.active",
   "products.retail_enabled",
+  "products.copy_manual",
   "customers.phone_verified",
   "promo_codes.active",
   "reviews.verified_purchase",
