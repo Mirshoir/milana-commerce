@@ -6,7 +6,7 @@
   <title>Админ — MILANA PREMIUM</title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230C0C0C'/%3E%3Ctext x='32' y='44' font-family='Helvetica,Arial,sans-serif' font-size='32' letter-spacing='2' fill='%23FFFFFF' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/css/admin.css?v=20260727-restore">
+  <link rel="stylesheet" href="/css/admin.css?v=20260728-dict2">
 </head>
 <body>
 
@@ -23,6 +23,7 @@
         <button data-view="support">Поддержка <i class="side__badge" id="support-badge" hidden></i></button>
         <button data-view="design">Дизайн</button>
         <button data-view="builder">Конструктор</button>
+        <button data-view="dict">Справочники</button>
         <button data-view="settings">Настройки</button>
       </nav>
       <div class="side__foot">
@@ -73,7 +74,8 @@
             <h3>Основное</h3>
             <div class="frow frow--4">
               <label>Номер модели <input class="ainput" id="f-model" maxlength="40" placeholder="MP-1001"></label>
-              <label>Вариант (цвет) <input class="ainput" id="f-variant" maxlength="60" placeholder="Burgundy"></label>
+              <label>Вариант <input class="ainput" id="f-variant" maxlength="60" placeholder="V-4607"></label>
+              <label>Цвет <input class="ainput" id="f-color" maxlength="60" placeholder="Бордовый"></label>
               <label>Название <input class="ainput" id="f-name" maxlength="120"></label>
               <label>Slug (URL) <input class="ainput" id="f-slug" maxlength="80" placeholder="автоматически"></label>
             </div>
@@ -112,10 +114,6 @@
                 </select>
               </label>
             </div>
-            <div class="frow frow--2">
-              <label>Цена <input class="ainput" id="f-price" type="number" min="0" step="0.01"></label>
-              <label>Старая цена <input class="ainput" id="f-old" type="number" min="0" step="0.01" placeholder="—"></label>
-            </div>
             <div class="frow frow--4">
               <label>Тег
                 <select class="ainput" id="f-tag">
@@ -123,9 +121,24 @@
                   <option value="new">Новинка</option><option value="sale">Скидка</option>
                 </select>
               </label>
-              <label>Размеры (через запятую) <input class="ainput" id="f-sizes" placeholder="XS, S, M, L"></label>
+              <label>Размерный ряд
+                <select class="ainput" id="f-sizes" data-dict="sizes"><option value="">—</option></select>
+              </label>
               <label>Рейтинг <input class="ainput" id="f-rating" type="number" min="0" max="5" step="0.1"></label>
               <label>Отзывов <input class="ainput" id="f-reviews" type="number" min="0" step="1"></label>
+              <label>Страна производства <input class="ainput" id="f-country" placeholder="Узбекистан"></label>
+              <label>Полотно (материал)
+                <select class="ainput" id="f-material" data-dict="material"><option value="">—</option></select>
+              </label>
+              <label>Состав ткани
+                <select class="ainput" id="f-composition" data-dict="composition"><option value="">—</option></select>
+              </label>
+              <label>Сезон
+                <select class="ainput" id="f-season" data-dict="season"><option value="">—</option></select>
+              </label>
+              <label class="afull">Размерная сетка (по строке на размер: <b>размер | обхват груди | длина изделия | длина рукава</b>)
+                <textarea class="ainput" id="f-size-chart" rows="6" placeholder="48 | 96 | 72 | 22&#10;50 | 100 | 73 | 22&#10;52 | 104 | 74 | 23"></textarea>
+              </label>
               <label>Коллекция
                 <select class="ainput" id="f-collection">
                   <option value="">—</option>
@@ -134,9 +147,10 @@
               </label>
             </div>
             <div class="frow frow--4">
-              <label>Опт. цена <input class="ainput" id="f-wholesale-price" type="number" min="0" step="0.01"></label>
-              <label>MOQ: Qadoq (дона) <input class="ainput" id="f-wholesale-moq" type="number" min="6" step="6" value="6" readonly></label>
-              <label>Розница цена <input class="ainput" id="f-retail-price" type="number" min="0" step="0.01"></label>
+              <label>Оптовая цена за штуку, $ <input class="ainput" id="f-wholesale-price" type="number" min="0" step="0.01"></label>
+              <label>Розничная цена за штуку, $ <input class="ainput" id="f-retail-price" type="number" min="0" step="0.01"></label>
+              <label>Старая цена <input class="ainput" id="f-old" type="number" min="0" step="0.01" placeholder="—"></label>
+              <label>Пачка, шт (по числу размеров) <input class="ainput" id="f-wholesale-moq" type="number" value="6" readonly title="Считается автоматически: по 1 изделию на каждый размер"></label>
               <label>Склад (qop) <input class="ainput" id="f-available-qop" type="number" min="0" step="1" placeholder="—"></label>
             </div>
             <div class="frow frow--4">
@@ -374,6 +388,19 @@
       </section>
 
       <!-- ===== SETTINGS ===== -->
+      <section class="view" id="view-dict" hidden>
+        <header class="vhead">
+          <h1>Справочники</h1>
+          <div class="vhead__end">
+            <span class="dict__state" id="dict-state" hidden>есть несохранённые правки</span>
+            <button class="abtn abtn--primary" id="dict-save">Сохранить</button>
+          </div>
+        </header>
+        <p class="formerr formerr--ok" id="dict-msg" hidden></p>
+        <p class="hint" style="margin:-6px 0 16px">Из этих списков менеджер выбирает значения в карточке товара — набирать руками ничего не нужно. Рядом со значением показано, сколько товаров его используют. Если переименовать значение, которое уже используется, оно обновится и во всех этих товарах.</p>
+        <div class="dictgrid" id="dict-grid"></div>
+      </section>
+
       <section class="view" id="view-settings" hidden>
         <header class="vhead">
           <h1>Настройки</h1>
@@ -391,6 +418,9 @@
             <div class="frow frow--3">
               <label>Telegram (без @) <input class="ainput" id="s-telegram"></label>
               <label>Instagram (без @) <input class="ainput" id="s-instagram"></label>
+              <label>Наценка на пачку, % (розничная цена = оптовая + наценка) <input class="ainput" id="s-pack_markup" type="number" step="1" min="0" max="200" placeholder="20"></label>
+              <label>Предзаказ: минимум мешков <input class="ainput" id="s-preorder_min" type="number" min="1" step="1" placeholder="10"></label>
+              <label>Предзаказ: максимум мешков <input class="ainput" id="s-preorder_max" type="number" min="1" step="1" placeholder="20"></label>
               <label>Hero: сдвиг нижней строки (em, минус — ближе; пусто = авто) <input class="ainput" id="s-hero_gap" type="number" step="0.05" min="-2" max="2" placeholder="-0.62"></label>
               <label>E-mail <input class="ainput" id="s-email"></label>
             </div>
@@ -500,7 +530,7 @@
   </div>
 
   <div class="atoast" id="atoast"></div>
-  <script src="/js/admin.js?v=20260727-about2" defer></script>
+  <script src="/js/admin.js?v=20260728-free" defer></script>
   <script src="/js/admin-locale.js?v=20260724-photo-names" defer></script>
 </body>
 </html>

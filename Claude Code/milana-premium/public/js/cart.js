@@ -7,6 +7,18 @@
 
   const KEY = "ml-cart";
   const BAG_SIZE = () => (window.I18N && I18N.BAG_SIZE) || 60;
+  const PACK_SIZE = () => (window.I18N && I18N.PACK_SIZE) || 6;
+  /* единица продажи строки: "pachka" — пачка (6 шт), "qop" — мешок (60 шт) */
+  const packOf = (i) => (i && i.pack === "pachka" ? "pachka" : "qop");
+  /* пачка = 1 изделие на размер, поэтому её объём равен размерному ряду позиции */
+  const packSize = (i) => {
+    if (packOf(i) !== "pachka") return BAG_SIZE();
+    const n = Number(i?.pack_pieces) || (Array.isArray(i?.sizes) ? i.sizes.length : 0);
+    /* один размер — пачка обычная, 6 изделий одного размера */
+    return n > 1 ? n : PACK_SIZE();
+  };
+  const packShort = (i) => t(packOf(i) === "pachka" ? "cart.packShort" : "cart.bagShort");
+  const packTotalLabel = (i) => t(packOf(i) === "pachka" ? "cart.packTotal" : "cart.bagTotal");
   let items = [];
   try { items = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch {}
   if (!Array.isArray(items)) items = [];
@@ -15,17 +27,39 @@
   const save = () => { localStorage.setItem(KEY, JSON.stringify(items)); updateBadges(); };
   const count = () => items.reduce((s, i) => s + i.qty, 0);
   const pendingPrice = (i) => i.price_visible === false || i.price_pending === true;
-  const unitPrice = (i) => orderMode() === "retail" ? Number(i.retail_price || i.price || 0) : Number(i.price || 0);
-  const lineTotal = (i) => pendingPrice(i) ? 0 : unitPrice(i) * (orderMode() === "retail" ? 1 : BAG_SIZE()) * i.qty;
+  /* мешок — оптовая цена; пачка — розничная либо оптовая + наценка из настроек */
+  const packMarkup = () => {
+    const v = Number((window.I18N?.settings || {}).pack_markup);
+    return Number.isFinite(v) && v >= 0 ? v : 20;
+  };
+  const unitPrice = (i) => {
+    const base = Number(i.price || 0);
+    if (orderMode() === "retail") return Number(i.retail_price || base || 0);
+    if (packOf(i) !== "pachka") return base;
+    const retail = Number(i.retail_price || 0);
+    return retail > base ? retail : Math.round(base * (1 + packMarkup() / 100) * 100) / 100;
+  };
+  const lineTotal = (i) => pendingPrice(i) ? 0 : unitPrice(i) * (orderMode() === "retail" ? 1 : packSize(i)) * i.qty;
   const total = () => items.reduce((s, i) => s + lineTotal(i), 0);
   const hasPendingTotal = () => items.some(pendingPrice);
   const t = (k, v) => window.I18N ? I18N.t(k, v) : k;
   const fmt = (n) => window.I18N ? I18N.fmtPrice(n) : "$" + n;
   const priceText = (i, amount = unitPrice(i)) => pendingPrice(i) ? t("price.manager") : fmt(amount);
-  const mix = (sizes = []) => sizes.slice(0, 6).filter(Boolean);
-  const mixText = (sizes = []) => {
-    const list = mix(sizes);
-    return list.length ? list.map((s) => esc(s) + " × 10").join(", ") : t("cart.defaultMix");
+  /* пачка — по 1 на размер; мешок — 60 изделий, разложенных по ряду (остаток в первые размеры) */
+  const mixList = (i) => {
+    const list = (Array.isArray(i && i.sizes) ? i.sizes : []).filter(Boolean);
+    if (!list.length) return [];
+    if (packOf(i) === "pachka") {
+      return list.length === 1 ? [{ s: list[0], q: packSize(i) }] : list.map((s) => ({ s, q: 1 }));
+    }
+    const base = Math.floor(BAG_SIZE() / list.length);
+    let rest = BAG_SIZE() - base * list.length;
+    return list.map((s) => ({ s, q: base + (rest-- > 0 ? 1 : 0) }));
+  };
+  const mixText = (i) => {
+    const list = mixList(i);
+    const label = (v) => (window.I18N ? I18N.sizeLabel(v) : v);
+    return list.length ? list.map((x) => esc(label(x.s)) + " × " + x.q).join(", ") : t("cart.defaultMix");
   };
 
   /* ---------------- drawer skeleton ---------------- */
@@ -143,10 +177,10 @@
         <div class="citem__info">
           <a class="citem__name" href="/p/${it.slug}">${esc(window.I18N?.productName ? I18N.productName(it) : it.name)}</a>
           <p class="citem__size">${t("cart.unitPrice")}: ${priceText(it)}</p>
-          ${mode === "retail" ? `<p class="citem__size">Retail pieces</p>` : `<p class="citem__size">${t("cart.sizeMix")}: ${mixText(it.sizes)}</p><p class="citem__size">${t("cart.bagTotal")}: ${priceText(it, it.price * BAG_SIZE())}</p>`}
+          ${mode === "retail" ? `<p class="citem__size">Retail pieces</p>` : `<p class="citem__size">${t("cart.sizeMix")}: ${mixText(it)}</p><p class="citem__size">${packTotalLabel(it)}: ${priceText(it, unitPrice(it) * packSize(it))} <i class="citem__unit">${packSize(it)} ${t("cart.pcs")}</i></p>`}
           <div class="citem__row">
             <div class="citem__qty">
-              <button type="button" data-qty="${idx}:-1" aria-label="−">−</button><span>${it.qty} ${mode === "retail" ? "pcs" : t("cart.bagShort")}</span><button type="button" data-qty="${idx}:1" aria-label="+">+</button>
+              <button type="button" data-qty="${idx}:-1" aria-label="−">−</button><span>${it.qty} ${mode === "retail" ? "pcs" : packShort(it)}</span><button type="button" data-qty="${idx}:1" aria-label="+">+</button>
             </div>
             <strong>${priceText(it, lineTotal(it))}</strong>
           </div>
@@ -219,7 +253,7 @@
           items: items.map((i) => ({
             id: i.id,
             qty: i.qty,
-            unit_type: orderMode() === "retail" ? "piece" : "qop",
+            unit_type: orderMode() === "retail" ? "piece" : packOf(i),
           })),
           lang: window.I18N ? I18N.lang : "en",
           source: "website",
@@ -268,12 +302,14 @@
     toastTimer = setTimeout(() => el.classList.remove("is-on"), 2200);
   }
 
-  function add({ id, slug, name, image, price, retail_price, price_visible = true, price_label = "", sizes = [], qty = 1 }) {
+  function add({ id, slug, name, image, price, retail_price, price_visible = true, price_label = "", sizes = [], qty = 1, pack = "qop" }) {
     qty = Math.max(1, Math.round(Number(qty) || 1));
     sizes = Array.isArray(sizes) ? sizes.slice(0, 12) : [];
-    const same = items.find((i) => i.id === id);
+    pack = pack === "pachka" ? "pachka" : "qop";
+    /* пачка и мешок одного товара — отдельные строки */
+    const same = items.find((i) => i.id === id && packOf(i) === pack);
     if (same) same.qty = Math.min(20, same.qty + qty);
-    else items.push({ id, slug, name, image, price, retail_price, price_visible: price_visible !== false, price_label, sizes, qty });
+    else items.push({ id, slug, name, image, price, retail_price, price_visible: price_visible !== false, price_label, sizes, qty, pack });
     save();
     toast(t("prod.added"));
     const btn = document.querySelector("[data-cart-open]");

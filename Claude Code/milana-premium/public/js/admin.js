@@ -243,13 +243,18 @@
     });
   });
   function switchView(name) {
-    ["products", "edit", "customers", "managers", "orders", "reviews", "chat", "support", "settings", "design", "builder"].forEach((v) => { $("#view-" + v).hidden = v !== name; });
+    ["products", "edit", "customers", "managers", "orders", "reviews", "chat", "support", "settings", "design", "builder", "dict"].forEach((v) => { $("#view-" + v).hidden = v !== name; });
     if (name === "customers") loadCustomers();
     if (name === "managers") loadManagers();
     if (name === "orders") loadOrders();
     if (name === "reviews") loadReviews();
     if (name === "chat") loadChat();
     if (name === "support") loadSupport();
+    if (name === "dict") loadDictView();
+    else if (dictDirty && !confirm("В справочниках есть несохранённые правки. Уйти без сохранения?")) {
+      document.querySelectorAll(".side__nav button").forEach((x) => x.classList.toggle("is-on", x.dataset.view === "dict"));
+      return switchView("dict");
+    }
     if (name === "settings") loadSettings();
     if (name === "design") loadDesign();
   }
@@ -406,21 +411,27 @@
     $("#f-slug").value = p?.slug || "";
     $("#f-model").value = p?.model_no || "";
     $("#f-variant").value = p?.variant || "";
+    $("#f-color").value = p?.color || "";
     $("#f-gender").value = p?.gender || "women";
     $("#f-cat").value = p?.category || "pajamas";
     $("#f-catalog-panel").value = p?.catalog_panel || "pajamas";
     $("#f-product-type").value = p?.product_type || "";
-    $("#f-price").value = p?.price ?? "";
     $("#f-old").value = p?.old_price ?? "";
     $("#f-wholesale-price").value = p?.wholesale_price ?? p?.price ?? "";
-    $("#f-wholesale-moq").value = 6;
+    syncRetailFromWholesale();
     $("#f-available-qop").value = p?.available_qop ?? "";
     $("#f-retail-price").value = p?.retail_price ?? p?.price ?? "";
     $("#f-retail-stock").value = p?.retail_stock ?? 0;
     $("#f-retail-enabled").checked = p ? !!p.retail_enabled : true;
     $("#f-tag").value = p?.tag || "";
     $("#f-collection").value = p?.collection || "";
-    $("#f-sizes").value = (p?.sizes || []).join(", ");
+    $("#f-size-chart").value = p?.size_chart || "";
+    $("#f-country").value = p?.country || "";
+    fillDictSelect($("#f-material"), p?.material || "");
+    fillDictSelect($("#f-composition"), p?.composition || "");
+    fillDictSelect($("#f-season"), p?.season || "");
+    fillDictSelect($("#f-sizes"), (p?.sizes || []).join(", "));
+    syncMoqFromSizes();
     $("#f-rating").value = p?.rating ?? 0;
     $("#f-reviews").value = p?.reviews ?? 0;
     $("#f-active").checked = p ? !!p.active : true;
@@ -458,7 +469,7 @@
   function updateEditChecklist() {
     const items = [
       { ok: $("#f-name").value.trim().length >= 2, label: "Название" },
-      { ok: Number($("#f-price").value) > 0, label: "Цена" },
+      { ok: Number($("#f-wholesale-price").value) > 0, label: "Цена" },
       { ok: ($("#f-sizes").value || "").split(",").map((s) => s.trim()).filter(Boolean).length > 0, label: "Размеры" },
       { ok: editImages.length > 0, label: "Фото" },
       { ok: $("#f-desc-ru").value.trim().length > 20 || $("#f-desc-uz").value.trim().length > 20 || $("#f-desc-en").value.trim().length > 20, label: "Описание" },
@@ -569,7 +580,7 @@
       updateEditChecklist();
     });
   });
-  ["#f-price", "#f-sizes", "#f-desc-ru", "#f-desc-uz", "#f-desc-en"].forEach((sel) => {
+  ["#f-wholesale-price", "#f-sizes", "#f-desc-ru", "#f-desc-uz", "#f-desc-en"].forEach((sel) => {
     $(sel).addEventListener("input", updateEditChecklist);
   });
 
@@ -592,6 +603,7 @@
           name: $("#f-name").value,
           model_no: $("#f-model").value,
           variant: $("#f-variant").value,
+      color: $("#f-color").value.trim(),
           category: $("#f-cat").value,
           gender: $("#f-gender").value,
         },
@@ -634,16 +646,21 @@
       category: $("#f-cat").value,
       catalog_panel: $("#f-catalog-panel").value,
       product_type: $("#f-product-type").value,
-      price: Number($("#f-price").value),
+      price: Number($("#f-wholesale-price").value),   /* столбец price хранит ту же оптовую цену */
       old_price: $("#f-old").value === "" ? null : Number($("#f-old").value),
-      wholesale_price: Number($("#f-wholesale-price").value || $("#f-price").value),
-      wholesale_moq: 6,
+      wholesale_price: Number($("#f-wholesale-price").value),
+      wholesale_moq: Number($("#f-wholesale-moq").value) || 6,
       available_qop: $("#f-available-qop").value === "" ? null : Number($("#f-available-qop").value || 0),
       retail_enabled: $("#f-retail-enabled").checked,
-      retail_price: Number($("#f-retail-price").value || $("#f-price").value),
+      retail_price: Number($("#f-retail-price").value || $("#f-wholesale-price").value),
       retail_stock: Number($("#f-retail-stock").value || 0),
       tag: $("#f-tag").value,
       collection: $("#f-collection").value,
+      size_chart: $("#f-size-chart").value.trim(),
+      country: $("#f-country").value.trim(),
+      material: $("#f-material").value.trim(),
+      composition: $("#f-composition").value.trim(),
+      season: $("#f-season").value.trim(),
       sizes: $("#f-sizes").value.split(",").map((s) => s.trim()).filter(Boolean),
       rating: Number($("#f-rating").value) || 0,
       reviews: Number($("#f-reviews").value) || 0,
@@ -985,12 +1002,254 @@
     } catch (ex) { toast("Ошибка: " + ex.message); }
   });
 
+  /* розничная цена (за штуку в пачке) = оптовая + наценка из настроек */
+  let packMarkup = 20;
+  function syncRetailFromWholesale(force) {
+    const w = Number(String($("#f-wholesale-price").value).replace(",", "."));
+    const r = $("#f-retail-price");
+    if (!Number.isFinite(w) || w <= 0) return;
+    if (!force && r.dataset.touched === "1") return;
+    r.value = Math.round(w * (1 + packMarkup / 100) * 100) / 100;
+  }
+  document.addEventListener("input", (e) => {
+    if (e.target.id === "f-wholesale-price") syncRetailFromWholesale();
+    if (e.target.id === "f-retail-price") e.target.dataset.touched = "1";
+  });
+
+  /* ================= СПРАВОЧНИКИ ================= */
+  const DICT_KINDS = ["material", "composition", "season", "sizes"];
+  const DICT_META = {
+    material: { title: "Полотно (материал)", ph: "Например: Штапель" },
+    composition: { title: "Состав ткани", ph: "Например: 100% хлопок" },
+    season: { title: "Сезон", ph: "Например: Всесезонный" },
+    sizes: { title: "Размерный ряд", ph: "Например: 46, 48, 50, 52, 54" },
+  };
+  const EMPTY_DICT = () => ({ material: [], composition: [], season: [], sizes: [] });
+  let dicts = EMPTY_DICT();
+  let dictUsage = EMPTY_DICT();
+  let dictDraft = null;          /* {kind: [{value, orig}]} — orig нужен, чтобы отличить правку от нового значения */
+  let dictDirty = false;
+
+  const natCmp = (a, b) => String(a).localeCompare(String(b), "ru", { numeric: true, sensitivity: "base" });
+  /* ряд из одного значения («Свободный размер») — пачка стандартная, 6 изделий */
+  const dictPack = (v) => {
+    const n = String(v).split(",").map((x) => x.trim()).filter(Boolean).length;
+    return n > 1 ? n : 6;
+  };
+  function dictNormalize(kind, v) {
+    const value = String(v ?? "").replace(/\s+/g, " ").trim();
+    return kind === "sizes" ? value.split(",").map((x) => x.trim()).filter(Boolean).join(", ") : value;
+  }
+
+  /* значение товара, которого нет в списке, добавляем отдельным пунктом — иначе оно потеряется */
+  function fillDictSelect(el, current) {
+    if (!el) return;
+    const value = String(current ?? "");
+    const list = dicts[el.dataset.dict] || [];
+    const values = value && !list.includes(value) ? [value, ...list] : list;
+    el.innerHTML = `<option value="">—</option>` + values.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
+    el.value = value;
+  }
+
+  function applyDicts(res) {
+    dicts = EMPTY_DICT();
+    dictUsage = EMPTY_DICT();
+    DICT_KINDS.forEach((k) => {
+      dicts[k] = Array.isArray(res?.[k]) ? res[k] : [];
+      dictUsage[k] = (res?.usage || {})[k] || {};
+    });
+    dictDraft = Object.fromEntries(DICT_KINDS.map((k) => [k, dicts[k].map((v) => ({ value: v, orig: v }))]));
+    setDictDirty(false);
+  }
+
+  function setDictDirty(on) {
+    dictDirty = !!on;
+    const el = $("#dict-state");
+    if (el) el.hidden = !dictDirty;
+  }
+
+  async function loadDicts() {
+    try { applyDicts(await api("/api/admin/dictionaries")); }
+    catch (ex) { toast("Справочники недоступны: " + ex.message); applyDicts({}); }
+  }
+
+  function dictRowHtml(kind, row, i, used) {
+    const n = used[row.orig || row.value] || 0;
+    const pack = kind === "sizes" && row.value ? `<i class="dictrow__pack">пачка ${dictPack(row.value)} шт</i>` : "";
+    return `<div class="dictrow" data-i="${i}">
+      <input class="ainput dictrow__in" value="${esc(row.value)}" data-dict-edit="${kind}">
+      ${pack}
+      <i class="dictrow__use${n ? "" : " is-zero"}">${n ? n + " тов." : "не исп."}</i>
+      <button class="dictrow__b" type="button" data-dict-move="up" data-kind="${kind}" title="Выше">↑</button>
+      <button class="dictrow__b" type="button" data-dict-move="down" data-kind="${kind}" title="Ниже">↓</button>
+      <button class="dictrow__b dictrow__b--del" type="button" data-dict-del="${kind}" title="Удалить">✕</button>
+    </div>`;
+  }
+
+  function renderDicts() {
+    const grid = $("#dict-grid");
+    if (!grid) return;
+    if (!dictDraft) dictDraft = Object.fromEntries(DICT_KINDS.map((k) => [k, []]));
+    grid.innerHTML = DICT_KINDS.map((kind) => {
+      const rows = dictDraft[kind];
+      const used = dictUsage[kind] || {};
+      const orphans = Object.keys(used).filter((v) => !rows.some((r) => dictNormalize(kind, r.value) === v));
+      return `<div class="card dictcard" data-kind="${kind}">
+        <h3>${esc(DICT_META[kind].title)} <i class="dictcard__n">${rows.length}</i></h3>
+        <div class="dictlist">${rows.map((r, i) => dictRowHtml(kind, r, i, used)).join("")
+          || `<p class="hint" style="margin:6px 0">Список пуст — добавьте первое значение.</p>`}</div>
+        <div class="dictadd">
+          <input class="ainput" data-dict-new="${kind}" placeholder="${esc(DICT_META[kind].ph)}">
+          <button class="abtn" type="button" data-dict-add="${kind}">Добавить</button>
+          <button class="abtn" type="button" data-dict-sort="${kind}">Сортировать</button>
+        </div>
+        ${orphans.length ? `<p class="hint dictcard__warn">В каталоге используется ${orphans.length} значение(й) не из списка: ${esc(orphans.slice(0, 3).join(", "))}${orphans.length > 3 ? "…" : ""}</p>` : ""}
+      </div>`;
+    }).join("");
+  }
+
+  function loadDictView() { renderDicts(); }
+
+  function dictAdd(kind, raw) {
+    const value = dictNormalize(kind, raw);
+    if (!value) return false;
+    if (dictDraft[kind].some((r) => dictNormalize(kind, r.value).toLowerCase() === value.toLowerCase())) {
+      toast("Такое значение уже есть в списке");
+      return false;
+    }
+    dictDraft[kind].push({ value, orig: "" });
+    setDictDirty(true);
+    return true;
+  }
+
+  $("#dict-grid")?.addEventListener("click", (e) => {
+    const add = e.target.closest("[data-dict-add]");
+    if (add) {
+      const kind = add.dataset.dictAdd;
+      const input = $(`[data-dict-new="${kind}"]`);
+      if (dictAdd(kind, input.value)) { input.value = ""; renderDicts(); $(`[data-dict-new="${kind}"]`)?.focus(); }
+      return;
+    }
+    const sort = e.target.closest("[data-dict-sort]");
+    if (sort) {
+      const kind = sort.dataset.dictSort;
+      dictDraft[kind].sort((a, b) => natCmp(a.value, b.value));
+      setDictDirty(true); renderDicts();
+      return;
+    }
+    const del = e.target.closest("[data-dict-del]");
+    if (del) {
+      const kind = del.dataset.dictDel;
+      const i = Number(del.closest(".dictrow").dataset.i);
+      dictDraft[kind].splice(i, 1);
+      setDictDirty(true); renderDicts();
+      return;
+    }
+    const move = e.target.closest("[data-dict-move]");
+    if (move) {
+      const kind = move.dataset.kind;
+      const i = Number(move.closest(".dictrow").dataset.i);
+      const j = move.dataset.dictMove === "up" ? i - 1 : i + 1;
+      const list = dictDraft[kind];
+      if (j < 0 || j >= list.length) return;
+      [list[i], list[j]] = [list[j], list[i]];
+      setDictDirty(true); renderDicts();
+    }
+  });
+
+  /* правка идёт в черновик без перерисовки, иначе поле теряет фокус на каждом символе */
+  $("#dict-grid")?.addEventListener("input", (e) => {
+    const edit = e.target.closest("[data-dict-edit]");
+    if (edit) {
+      dictDraft[edit.dataset.dictEdit][Number(edit.closest(".dictrow").dataset.i)].value = edit.value;
+      setDictDirty(true);
+    }
+  });
+  $("#dict-grid")?.addEventListener("change", (e) => {
+    if (e.target.closest("[data-dict-edit]")) renderDicts();
+  });
+  $("#dict-grid")?.addEventListener("keydown", (e) => {
+    const input = e.target.closest("[data-dict-new]");
+    if (input && e.key === "Enter") {
+      e.preventDefault();
+      const kind = input.dataset.dictNew;
+      if (dictAdd(kind, input.value)) { input.value = ""; renderDicts(); $(`[data-dict-new="${kind}"]`)?.focus(); }
+    }
+  });
+
+  async function saveDicts() {
+    const values = {};
+    const renames = [];
+    for (const kind of DICT_KINDS) {
+      const seen = new Set();
+      const out = [];
+      for (const row of dictDraft[kind]) {
+        const v = dictNormalize(kind, row.value);
+        if (!v || seen.has(v.toLowerCase())) continue;
+        seen.add(v.toLowerCase());
+        out.push(v);
+        if (row.orig && row.orig !== v && (dictUsage[kind] || {})[row.orig]) renames.push({ kind, from: row.orig, to: v });
+      }
+      values[kind] = out;
+    }
+
+    /* значения, которые остаются в товарах, но пропадают из списка */
+    const lost = [];
+    for (const kind of DICT_KINDS) {
+      for (const [v, n] of Object.entries(dictUsage[kind] || {})) {
+        if (values[kind].includes(v)) continue;
+        if (renames.some((r) => r.kind === kind && r.from === v)) continue;
+        lost.push(`${DICT_META[kind].title}: ${v} — ${n} тов.`);
+      }
+    }
+    if (lost.length && !confirm(
+      "Эти значения используются в товарах, но их не будет в списке:\n\n"
+      + lost.slice(0, 12).join("\n") + (lost.length > 12 ? `\n…и ещё ${lost.length - 12}` : "")
+      + "\n\nВ товарах они останутся, но выбрать их заново будет нельзя. Продолжить?"
+    )) return;
+
+    const btn = $("#dict-save");
+    btn.disabled = true;
+    try {
+      let renamed = 0;
+      for (const r of renames) {
+        const res = await api("/api/admin/dictionaries/rename", { method: "POST", body: r });
+        renamed += Number(res.renamed) || 0;
+      }
+      applyDicts(await api("/api/admin/dictionaries", { method: "PUT", body: values }));
+      renderDicts();
+      const m = $("#dict-msg");
+      m.className = "formerr formerr--ok";
+      m.textContent = renamed ? `Сохранено ✓ Обновлено товаров: ${renamed}` : "Сохранено ✓";
+      m.hidden = false;
+      setTimeout(() => (m.hidden = true), 3500);
+    } catch (ex) {
+      const m = $("#dict-msg");
+      m.className = "formerr";
+      m.textContent = "Не удалось сохранить: " + ex.message;
+      m.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  $("#dict-save")?.addEventListener("click", saveDicts);
+
+  /* пачка = число размеров выбранного ряда */
+  function syncMoqFromSizes() {
+    const n = ($("#f-sizes")?.value || "").split(",").map((v) => v.trim()).filter(Boolean).length;
+    const el = $("#f-wholesale-moq");
+    if (el) el.value = n > 1 ? n : 6;
+  }
+  $("#f-sizes")?.addEventListener("change", () => { syncMoqFromSizes(); updateEditChecklist(); });
+
   /* ================= SETTINGS ================= */
-  const S_KEYS = ["phone", "whatsapp", "telegram", "instagram", "email", "address_ru", "address_uz", "address_en", "currency", "currency_pos", "hero_gap", "admin_user"];
+  const S_KEYS = ["phone", "whatsapp", "telegram", "instagram", "email", "address_ru", "address_uz", "address_en", "currency", "currency_pos", "hero_gap", "pack_markup", "preorder_min", "preorder_max", "admin_user"];
 
   async function loadSettings() {
     const s = await api("/api/admin/settings");
     S_KEYS.forEach((k) => { const el = $("#s-" + k); if (el) el.value = s[k] ?? ""; });
+    packMarkup = Number(s.pack_markup) || 20;
     if ($("#s-currency")) $("#s-currency").value = "$";
     if ($("#s-currency_pos")) $("#s-currency_pos").value = "before";
   }
@@ -1119,6 +1378,7 @@
     try {
       const me = await fetch("/api/me").then((r) => r.json());
       if (!me.admin) { location.replace("/admin"); return; }
+      await loadDicts();
       showApp();
     } catch { location.replace("/admin"); }
   })();
@@ -1201,6 +1461,7 @@
       ["shop.search", "Плейсхолдер поиска"]]],
     ["О нас — факты о производстве", [
       ["mai.t1", "Заголовок раздела"], ["mai.text", "Описание компании", 1],
+      ["about.quote", "Акцентная фраза", 1],
       ["about.s1n", "Цифра 1"], ["about.s1l", "Подпись 1"],
       ["about.s2n", "Цифра 2"], ["about.s2l", "Подпись 2"],
       ["about.s3n", "Цифра 3"], ["about.s3l", "Подпись 3"],
@@ -1210,6 +1471,11 @@
       ["about.c1t", "Карточка 1 — заголовок"], ["about.c1d", "Карточка 1 — текст", 1],
       ["about.c2t", "Карточка 2 — заголовок"], ["about.c2d", "Карточка 2 — текст", 1],
       ["about.c3t", "Карточка 3 — заголовок"], ["about.c3d", "Карточка 3 — текст", 1],
+      ["about.c4t", "Карточка 4 — заголовок"], ["about.c4d", "Карточка 4 — текст", 1],
+      ["about.c5t", "Карточка 5 — заголовок"], ["about.c5d", "Карточка 5 — текст", 1],
+      ["about.c6t", "Карточка 6 — заголовок"], ["about.c6d", "Карточка 6 — текст", 1],
+      ["about.factT", "Производства — заголовок"],
+      ["about.f1", "Фабрика 1"], ["about.f2", "Фабрика 2"], ["about.f3", "Фабрика 3"],
       ["about.exportT", "География поставок — заголовок"], ["about.countries", "Список стран", 1]]],
     ["Подвал", [
       ["foot.tag", "Описание под логотипом", 1], ["foot.nl", "Заголовок рассылки"], ["foot.nlNote", "Подпись рассылки"]]],

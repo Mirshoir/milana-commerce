@@ -37,7 +37,7 @@
 
   let all = [];          // full catalog (detail rows)
   const state = {
-    panel: "", genders: new Set(), cats: new Set(), q: "", sort: "default",
+    panel: "", genders: new Set(), cats: new Set(), q: "", sort: "default", stock: "all",
     sizes: new Set(), tags: new Set(), collections: new Set(), min: null, max: null,
     pStart: 1, pEnd: 1,
   };
@@ -46,7 +46,7 @@
   const PAGER_ROWS = 10;
   const pageSize = () => (window.innerWidth < 700 ? 2 : window.innerWidth < 1080 ? 3 : 4) * PAGER_ROWS;
   let lastSig = "";
-  const filterSig = () => [state.panel, [...state.genders].sort().join(","), [...state.cats].sort().join(","), state.q, state.sort,
+  const filterSig = () => [state.panel, [...state.genders].sort().join(","), [...state.cats].sort().join(","), state.q, state.sort, state.stock,
     [...state.sizes].join(","), [...state.tags].sort().join(","), [...state.collections].sort().join(","), state.min, state.max].join("|");
   function renderPager(total, ps) {
     const wrap = $("#shop-pager");
@@ -73,8 +73,10 @@
   if (PANELS.includes(sp.get("panel"))) state.panel = sp.get("panel");
   (sp.get("gender") || "").split(",").filter((g) => GENDERS.includes(g)).forEach((g) => state.genders.add(g));
   (sp.get("category") || "").split(",").filter((c) => CATS.includes(c)).forEach((c) => state.cats.add(c));
+  if (sp.get("wish") === "1") state.wish = true;
   if (sp.get("q")) state.q = sp.get("q");
   if (["new", "price-asc", "price-desc", "popular"].includes(sp.get("sort"))) state.sort = sp.get("sort");
+  if (["in", "pre"].includes(sp.get("stock"))) state.stock = sp.get("stock");
   (sp.get("tag") || "").split(",").filter((t) => TAGS.includes(t)).forEach((t) => state.tags.add(t));
   (sp.get("collection") || "").split(",").filter((c) => COLLECTIONS.includes(c)).forEach((c) => state.collections.add(c));
 
@@ -85,8 +87,10 @@
     if (state.cats.size) p.set("category", [...state.cats].join(","));
     if (state.q) p.set("q", state.q);
     if (state.sort !== "default") p.set("sort", state.sort);
+    if (state.stock !== "all") p.set("stock", state.stock);
     if (state.tags.size) p.set("tag", [...state.tags].join(","));
     if (state.collections.size) p.set("collection", [...state.collections].join(","));
+    if (state.wish) p.set("wish", "1");   /* режим «Избранное» переживает обновление страницы */
     history.replaceState(null, "", "/shop" + (p.toString() ? "?" + p : ""));
   }
 
@@ -130,8 +134,16 @@
 
   function filtered() {
     const lang = I18N.lang;
+    /* режим «Избранное»: только отмеченные товары, прочие фильтры не применяются */
+    if (state.wish) {
+      const ids = new Set((window.MilanaState?.wishlist?.all?.() || []).map((w) => Number(w.id)));
+      return all.filter((p) => ids.has(Number(p.id)));
+    }
     const qOn = !!state.q; /* поиск — по всем товарам, фильтры не сужают выдачу */
+    const stockOk = (p) => state.stock === "all"
+      || (state.stock === "in" ? p.in_stock !== false : p.in_stock === false);
     let list = all.map((p) => ({ p, score: qOn ? smartScore(p, state.q, lang) : 0 })).filter(({ p, score }) => {
+      if (!stockOk(p)) return false;   /* наличие действует поверх остальных фильтров и поиска */
       if (qOn) return score > 0 && (!state.panel || p.catalog_panel === state.panel);
       if (state.panel && p.catalog_panel !== state.panel) return false;
       if (state.genders.size && !state.genders.has(p.gender)) return false;
@@ -167,9 +179,15 @@
     return `<p class="product__price">${I18N.fmtPrice(p.price)} ${p.old_price ? `<s>${I18N.fmtPrice(p.old_price)}</s>` : ""}</p>`;
   }
 
+  /* пятизвёздочный рейтинг; показываем, когда задана оценка — отзывы не обязательны */
   function ratingHtml(p) {
-    if (!(Number(p.reviews) > 0 && Number(p.rating) > 0)) return "";
-    return `<p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} ${I18N.t("best.reviews")}${p.like_count ? ` · ${p.like_count} saved` : ""})</span></p>`;
+    const r = Number(p.rating) || 0;
+    if (!(r > 0)) return "";
+    const pct = Math.max(0, Math.min(100, (r / 5) * 100)).toFixed(1);
+    const n = Number(p.reviews) || 0;
+    return `<p class="product__rating" title="${r.toFixed(1)} / 5">`
+      + `<span class="stars" style="--r:${pct}%" aria-hidden="true"><i>★★★★★</i><b>★★★★★</b></span>`
+      + `<em>${r.toFixed(1)}</em>${n > 0 ? ` <span>(${n})</span>` : ""}</p>`;
   }
 
   function card(p, i) {
@@ -183,19 +201,51 @@
         <a class="product__go" href="/p/${p.slug}"><figure>${mediaTag(p.images[0] || "", nm, i < 9)}</figure></a>
         <div class="product__quick">
           <div class="product__sizes">${p.sizes.map((s) => `<span data-size="${esc(s)}">${esc(s)}</span>`).join("")}</div>
-          <button class="product__add" data-add="${p.id}"><svg class="ic"><use href="#i-cart"/></svg><span>${I18N.t("best.add")}</span></button>
+          ${p.in_stock === false
+            ? `<a class="product__add product__add--pre" href="/p/${p.slug}"><span>${esc(I18N.t("shop.stockPre"))}</span></a>`
+            : `<button class="product__add" data-add="${p.id}"><svg class="ic"><use href="#i-cart"/></svg><span>${I18N.t("best.add")}</span></button>`}
         </div>
       </div>
       <div class="product__info">
         <div class="product__row"><h3><a href="/p/${p.slug}">${esc(nm)}</a></h3>
-          ${priceHtml(p)}${tagChip(p)}</div>
+          ${priceHtml(p)}${tagChip(p)}${p.in_stock === false ? `<span class="product__pre">${esc(I18N.t("shop.stockPre"))}</span>` : ""}</div>
         <p class="product__fab">${esc(fabric)}</p>
         ${ratingHtml(p)}
       </div>
     </article>`;
   }
 
+  /* полоса режима «Избранное» с явным выходом */
+  function renderWishBar() {
+    const grid = document.querySelector(".product-grid");
+    if (!grid) return;
+    let bar = document.querySelector(".shop-wishbar");
+    if (!state.wish) { if (bar) bar.remove(); return; }
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.className = "shop-wishbar";
+      grid.parentNode.insertBefore(bar, grid);
+    }
+    const n = (window.MilanaState?.wishlist?.all?.() || []).length;
+    bar.innerHTML = `<span><svg class="ic"><use href="#i-heart"/></svg>${esc(I18N.t("shop.wishTitle"))} · ${n}</span>`
+      + `<button type="button" data-wish-exit>${esc(I18N.t("shop.wishExit"))}</button>`;
+  }
+
+  function renderStockBar() {
+    const box = $("#shop-stock");
+    if (!box) return;
+    const n = { all: all.length, in: all.filter((p) => p.in_stock !== false).length, pre: all.filter((p) => p.in_stock === false).length };
+    box.querySelectorAll("[data-stock]").forEach((b) => {
+      b.classList.toggle("is-on", b.dataset.stock === state.stock);
+      const badge = b.querySelector("i");
+      if (badge) badge.textContent = n[b.dataset.stock] ?? "";
+    });
+    box.hidden = !n.pre;   /* пока товаров под заказ нет, переключатель не нужен */
+  }
+
   function render() {
+    renderWishBar();
+    renderStockBar();
     const list = filtered();
     const sig = filterSig();
     if (sig !== lastSig) { lastSig = sig; state.pStart = 1; state.pEnd = 1; }
@@ -288,6 +338,12 @@
 
   /* ---------- events ---------- */
   document.addEventListener("click", async (e) => {
+    /* выход из «Избранного» при любом действии с фильтрами */
+    if (state.wish && e.target.closest("[data-panel-card],[data-gender],[data-cat],[data-fsize],[data-ftag],[data-fcoll],[data-fheight],#catalog-panel-clear")) {
+      state.wish = false;
+    }
+    const wishExit = e.target.closest("[data-wish-exit]");
+    if (wishExit) { state.wish = false; buildFilters(); renderCatalogPanels(); render(); return; }
     const panelCard = e.target.closest("[data-panel-card]");
     if (panelCard) {
       state.panel = state.panel === panelCard.dataset.panelCard ? "" : panelCard.dataset.panelCard;
@@ -372,12 +428,22 @@
 
   let qTimer;
   $("#shop-q").addEventListener("input", (e) => {
+      state.wish = false;
+
     clearTimeout(qTimer);
     qTimer = setTimeout(() => { state.q = e.target.value.trim(); render(); }, 250);
   });
-  $("#shop-sort").addEventListener("change", (e) => { state.sort = e.target.value; render(); });
-  $("#f-min").addEventListener("change", (e) => { state.min = e.target.value === "" ? null : Number(e.target.value); render(); });
-  $("#f-max").addEventListener("change", (e) => { state.max = e.target.value === "" ? null : Number(e.target.value); render(); });
+  $("#shop-stock")?.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-stock]");
+    if (!b) return;
+    state.wish = false;
+    state.stock = b.dataset.stock;
+    render();
+  });
+
+  $("#shop-sort").addEventListener("change", (e) => { state.wish = false; state.sort = e.target.value; render(); });
+  $("#f-min").addEventListener("change", (e) => { state.wish = false; state.min = e.target.value === "" ? null : Number(e.target.value); render(); });
+  $("#f-max").addEventListener("change", (e) => { state.wish = false; state.max = e.target.value === "" ? null : Number(e.target.value); render(); });
   $("#catalog-panel-clear")?.addEventListener("click", () => {
     state.panel = "";
     renderCatalogPanels();

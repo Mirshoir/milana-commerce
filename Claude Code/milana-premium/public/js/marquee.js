@@ -54,12 +54,43 @@
     const apply = () => { track.style.transform = `translate3d(${offset.toFixed(2)}px,0,0)`; };
     apply();
 
-    function frame() {
-      const drift = (paused || reduce) ? 0 : speed * dir;
-      offset += drift + boost;
+    /* шаг-пауза: лента стоит HOLD мс, затем плавно проезжает одну карточку */
+    const HOLD = 3000;   /* пауза, мс */
+    const GLIDE = 900;   /* длительность проезда, мс */
+    let phase = "hold", phaseStart = performance.now(), from = offset, to = offset;
+
+    const stepSize = () => {
+      const first = originals[0];
+      if (!first) return 240;
+      const st = getComputedStyle(track);
+      const gap = parseFloat(st.columnGap || st.gap || 0) || 0;
+      return first.getBoundingClientRect().width + gap;
+    };
+
+    function frame(now) {
+      if (!reduce && !paused) {
+        if (phase === "hold") {
+          if (now - phaseStart >= HOLD) {
+            from = offset;
+            to = offset + stepSize() * dir;
+            phase = "glide";
+            phaseStart = now;
+          }
+        } else {
+          const p = Math.min(1, (now - phaseStart) / GLIDE);
+          const eased = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;  /* мягкий старт и остановка */
+          offset = from + (to - from) * eased;
+          if (p >= 1) { phase = "hold"; phaseStart = now; }
+        }
+      } else if (paused && phase === "glide") {
+        /* если увели курсор во время проезда — доводим шаг до конца при возврате */
+        phaseStart = now - GLIDE * 0.999;
+      }
+
+      offset += boost;
       boost *= 0.86; if (Math.abs(boost) < 0.03) boost = 0;
-      while (offset <= -W) offset += W;
-      while (offset > 0) offset -= W;
+      while (offset <= -W) { offset += W; from += W; to += W; }
+      while (offset > 0) { offset -= W; from -= W; to -= W; }
       apply();
       requestAnimationFrame(frame);
     }

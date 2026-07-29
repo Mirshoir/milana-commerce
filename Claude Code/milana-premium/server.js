@@ -732,25 +732,45 @@ function defaultOrderSizes(gender, category) {
   return ["44", "46", "48", "50", "52", "54"];
 }
 
-function orderSizeMix(sizes, gender, category) {
+/* реальный размерный ряд модели; шаблон подставляем, только если у товара размеров нет вовсе */
+function orderSizes(sizes, gender, category) {
   const seen = new Set();
-  const merged = [...(Array.isArray(sizes) ? sizes : []), ...defaultOrderSizes(gender, category)]
+  const own = (Array.isArray(sizes) ? sizes : [])
     .map((s) => str(s, 8))
     .filter(Boolean)
-    .filter((s) => (seen.has(s) ? false : (seen.add(s), true)))
-    .slice(0, ORDER_BAG_SIZE_COUNT);
-  return merged.map((size) => ({ size, qty: ORDER_SIZE_QTY }));
+    .filter((s) => (seen.has(s) ? false : (seen.add(s), true)));
+  return (own.length ? own : defaultOrderSizes(gender, category)).slice(0, 12);
+}
+
+/* пачка — по одному изделию на каждый размер модели.
+   «Свободный размер» (ряд из одного значения) — исключение: пачка обычная, 6 изделий одного размера */
+function packPieces(sizes, gender, category) {
+  const n = orderSizes(sizes, gender, category).length;
+  return n > 1 ? n : ORDER_PACHKA_SIZE;
+}
+
+/* мешок — всегда 60 изделий, разложенных по реальным размерам (остаток идёт в первые) */
+function orderSizeMix(sizes, gender, category) {
+  const list = orderSizes(sizes, gender, category);
+  if (!list.length) return [];
+  const base = Math.floor(ORDER_BAG_SIZE / list.length);
+  let rest = ORDER_BAG_SIZE - base * list.length;
+  return list.map((size) => ({ size, qty: base + (rest-- > 0 ? 1 : 0) }));
 }
 
 function packageSizeMix(sizes, gender, category, packageSize) {
   if (packageSize === ORDER_BAG_SIZE) return orderSizeMix(sizes, gender, category);
-  const seen = new Set();
-  const merged = [...(Array.isArray(sizes) ? sizes : []), ...defaultOrderSizes(gender, category)]
-    .map((s) => str(s, 8))
-    .filter(Boolean)
-    .filter((s) => (seen.has(s) ? false : (seen.add(s), true)))
-    .slice(0, packageSize);
-  return merged.map((size) => ({ size, qty: 1 }));
+  const list = orderSizes(sizes, gender, category);
+  if (list.length <= 1) return list.map((size) => ({ size, qty: packageSize }));
+  return list.slice(0, packageSize).map((size) => ({ size, qty: 1 }));
+}
+
+function orderUnitsFor(p = {}) {
+  const n = packPieces(p.sizes, p.gender, p.category);
+  return [
+    { unit_type: "pachka", label: "Qadoq", pieces: n, per_size: 1, min_qty: 1 },
+    { unit_type: "qop", label: "Qop", pieces: ORDER_BAG_SIZE, per_size: Math.floor(ORDER_BAG_SIZE / n), min_qty: 1 },
+  ];
 }
 
 function paymentProvider(method) {
@@ -773,6 +793,54 @@ const SETTINGS_LEGACY_REFRESH = {
 for (const [k, [legacy, next]] of Object.entries(SETTINGS_LEGACY_REFRESH)) {
   if (getSetting(k) === legacy) setSetting(k, next);
 }
+
+/* ============ справочники: полотно, состав, сезон, размерный ряд ============
+   заполняются в админке, товар выбирает значение из готового списка         */
+const DICT_KINDS = ["material", "composition", "season", "sizes"];
+db.exec(`CREATE TABLE IF NOT EXISTS dictionaries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL,
+  value TEXT NOT NULL,
+  sort INTEGER DEFAULT 0
+)`);
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS dictionaries_kind_value ON dictionaries(kind, value)");
+
+function dictList(kind) {
+  return db.prepare("SELECT value FROM dictionaries WHERE kind=? ORDER BY sort, value").all(kind).map((r) => r.value);
+}
+const DICT_COLUMN = { material: "material", composition: "composition", season: "season" };
+
+/* размерный ряд товара в том же виде, в каком он лежит в справочнике */
+function sizeRunOf(rawSizes) {
+  try { return (JSON.parse(rawSizes || "[]") || []).map((x) => String(x).trim()).filter(Boolean).join(", "); }
+  catch (e) { return ""; }
+}
+
+function dictUsage() {
+  const usage = { material: {}, composition: {}, season: {}, sizes: {} };
+  for (const [kind, col] of Object.entries(DICT_COLUMN)) {
+    for (const r of db.prepare(`SELECT TRIM(${col}) v, COUNT(*) n FROM products WHERE TRIM(COALESCE(${col},'')) <> '' GROUP BY 1`).all()) {
+      usage[kind][r.v] = r.n;
+    }
+  }
+  for (const r of db.prepare("SELECT sizes FROM products WHERE COALESCE(sizes,'') <> ''").all()) {
+    const key = sizeRunOf(r.sizes);
+    if (key) usage.sizes[key] = (usage.sizes[key] || 0) + 1;
+  }
+  return usage;
+}
+
+function dictAll() {
+  return { ...Object.fromEntries(DICT_KINDS.map((k) => [k, dictList(k)])), usage: dictUsage() };
+}
+function dictReplace(kind, values) {
+  const clean = [...new Set((Array.isArray(values) ? values : []).map((v) => String(v ?? "").slice(0, 200).trim()).filter(Boolean))].slice(0, 400);
+  db.prepare("DELETE FROM dictionaries WHERE kind=?").run(kind);
+  const ins = db.prepare("INSERT OR IGNORE INTO dictionaries (kind, value, sort) VALUES (?,?,?)");
+  clean.forEach((v, i) => ins.run(kind, v, i));
+  return clean;
+}
+
 
 const seedMod = require("./seed.js");
 
@@ -833,6 +901,12 @@ function inferProductType(product = {}) {
   if (!cols.includes("variant")) db.exec("ALTER TABLE products ADD COLUMN variant TEXT DEFAULT ''");
   if (!cols.includes("gender")) db.exec("ALTER TABLE products ADD COLUMN gender TEXT DEFAULT ''");
   if (!cols.includes("catalog_panel")) db.exec("ALTER TABLE products ADD COLUMN catalog_panel TEXT NOT NULL DEFAULT ''");
+  if (!cols.includes("size_chart")) db.exec("ALTER TABLE products ADD COLUMN size_chart TEXT DEFAULT ''");
+  if (!cols.includes("color")) db.exec("ALTER TABLE products ADD COLUMN color TEXT DEFAULT ''");
+  if (!cols.includes("country")) db.exec("ALTER TABLE products ADD COLUMN country TEXT DEFAULT ''");
+  if (!cols.includes("material")) db.exec("ALTER TABLE products ADD COLUMN material TEXT DEFAULT ''");
+  if (!cols.includes("season")) db.exec("ALTER TABLE products ADD COLUMN season TEXT DEFAULT ''");
+  if (!cols.includes("composition")) db.exec("ALTER TABLE products ADD COLUMN composition TEXT DEFAULT ''");
   if (!cols.includes("product_type")) db.exec("ALTER TABLE products ADD COLUMN product_type TEXT NOT NULL DEFAULT ''");
   if (!cols.includes("wholesale_price")) db.exec("ALTER TABLE products ADD COLUMN wholesale_price REAL DEFAULT 0");
   if (!cols.includes("wholesale_moq")) db.exec("ALTER TABLE products ADD COLUMN wholesale_moq INTEGER DEFAULT 6");
@@ -842,9 +916,48 @@ function inferProductType(product = {}) {
   if (!cols.includes("available_qop")) db.exec("ALTER TABLE products ADD COLUMN available_qop INTEGER");
   if (!cols.includes("like_count")) db.exec("ALTER TABLE products ADD COLUMN like_count INTEGER DEFAULT 0");
   if (!cols.includes("collection")) db.exec("ALTER TABLE products ADD COLUMN collection TEXT DEFAULT ''");
+  if (!cols.includes("views")) db.exec("ALTER TABLE products ADD COLUMN views INTEGER DEFAULT 0");
   db.exec("UPDATE products SET wholesale_price=price WHERE COALESCE(wholesale_price,0)<=0");
   db.exec("UPDATE products SET retail_price=price WHERE COALESCE(retail_price,0)<=0");
-  db.exec("UPDATE products SET wholesale_moq=6 WHERE COALESCE(wholesale_moq,0)!=6");
+  /* минимальный заказ = число размеров модели: пачка содержит по 1 изделию на размер */
+  for (const r of db.prepare("SELECT id, sizes, wholesale_moq FROM products").all()) {
+    let n = 0;
+    try { n = (JSON.parse(r.sizes || "[]") || []).filter(Boolean).length; } catch (e) { n = 0; }
+    n = n || ORDER_PACHKA_SIZE;
+    if (Number(r.wholesale_moq) !== n) db.prepare("UPDATE products SET wholesale_moq=? WHERE id=?").run(n, r.id);
+  }
+
+/* первое наполнение — из того, что уже заведено в каталоге */
+(function seedDictionaries() {
+  const column = { material: "material", composition: "composition", season: "season" };
+  for (const kind of Object.keys(column)) {
+    if (dictList(kind).length) continue;
+    const rows = db.prepare(`SELECT DISTINCT TRIM(${column[kind]}) v FROM products WHERE TRIM(COALESCE(${column[kind]},'')) <> ''`).all();
+    dictReplace(kind, rows.map((r) => r.v).sort((a, b) => a.localeCompare(b, "ru")));
+  }
+  if (dictList("sizes").length) return;
+  const runs = new Set();
+  for (const r of db.prepare("SELECT sizes FROM products WHERE COALESCE(sizes,'') <> ''").all()) {
+    try {
+      const list = (JSON.parse(r.sizes) || []).map((x) => String(x).trim()).filter(Boolean);
+      if (list.length) runs.add(list.join(", "));
+    } catch (e) { /* строка не разобралась — пропускаем */ }
+  }
+  dictReplace("sizes", [...runs].sort((a, b) => a.localeCompare(b, "ru")));
+})();
+
+/* полотно и сезон в карточках ещё не заполнены — даём стартовые списки, их можно править в админке */
+(function seedDictionaryDefaults() {
+  if (!dictList("material").length) dictReplace("material", [
+    "Бамбуковая ткань", "Хлопковая ткань", "Вискозная ткань", "Шёлковая ткань", "Атласная ткань",
+    "Муслин", "Ткань модал", "Велюр", "Трикотаж с начёсом", "Трикотаж супрем", "Трикотаж лапша",
+    "Штапель", "Двухниточный трикотаж", "Трёхниточный трикотаж", "Трикотаж", "Полиэстеровая ткань",
+  ]);
+  if (!dictList("season").length) dictReplace("season", ["Всесезонный", "Лето", "Демисезон", "Зима"]);
+  if (!db.prepare("SELECT 1 FROM dictionaries WHERE kind='sizes' AND value='Свободный размер'").get()) {
+    db.prepare("INSERT OR IGNORE INTO dictionaries (kind, value, sort) VALUES ('sizes','Свободный размер',-1)").run();
+  }
+})();
 
   // backfill any row lacking a gender (old single-category data or imports)
   const stale = db.prepare("SELECT id, slug, category FROM products WHERE gender IS NULL OR gender=''").all();
@@ -2172,7 +2285,8 @@ function likeCount(productId, slug) {
 }
 
 function productColors(p) {
-  const raw = Array.isArray(p.colors) ? p.colors : String(p.variant || "").split(/[,;|]/);
+  /* приоритет: отдельное поле «Цвет», затем массив, затем вариант (совместимость со старыми записями) */
+  const raw = p.color ? [p.color] : (Array.isArray(p.colors) && p.colors.length ? p.colors : String(p.variant || "").split(/[,;|]/));
   return raw.map((color) => str(color, 80)).filter(Boolean).slice(0, 12);
 }
 
@@ -2191,12 +2305,14 @@ function decorateProduct(p) {
     price: wholesale,
     colors,
     wholesale_price: wholesale,
-    wholesale_moq: ORDER_PACHKA_SIZE,
+    wholesale_moq: packPieces(p.sizes, p.gender, p.category),
+    in_stock: p.active !== false && Number(p.active) !== 0,   /* false — товар под заказ */
     retail_enabled: p.retail_enabled !== false && Number(p.retail_enabled) !== 0,
     retail_price: retail,
     retail_stock: Math.max(0, Math.round(Number(p.retail_stock) || 0)),
     available_qop: p.available_qop == null || p.available_qop === "" ? null : Math.max(0, Math.round(Number(p.available_qop) || 0)),
     like_count: likeCount(p.id, p.slug),
+    views: Math.max(0, Number(p.views) || 0),
     rating,
     reviews,
   };
@@ -2414,15 +2530,36 @@ function smartProductScore(p, query) {
   return { score, reasons: [...new Set(reasons)].slice(0, 3) };
 }
 
+/* другие варианты той же модели: TJ-2182 → V-4607, V-4608, V-4609 */
+function modelVariants(product) {
+  const model = String(product?.model_no || "").trim();
+  if (!model) return [];
+  const rows = db.prepare(
+    `SELECT id, slug, variant, color, images, active FROM products
+     WHERE LOWER(TRIM(model_no)) = LOWER(?) AND ${CATALOG_VISIBLE_SQL}
+     ORDER BY TRIM(variant), id LIMIT 24`
+  ).all(model);
+  if (rows.length < 2) return [];
+  return rows.map((r) => {
+    let images = [];
+    try { images = JSON.parse(r.images || "[]") || []; } catch (e) { images = []; }
+    return {
+      id: r.id,
+      slug: r.slug,
+      variant: r.variant || "",
+      color: r.color || "",
+      image: images[0] || "",
+      in_stock: !!r.active,
+    };
+  });
+}
+
 function publicProductCard(p, extra = {}) {
   return {
     ...p,
     images: (p.images || []).slice(0, 12),
     fabric: p.fabric,
-    order_units: [
-      { unit_type: "pachka", label: "Qadoq", pieces: ORDER_PACHKA_SIZE, per_size: 1, min_qty: 1 },
-      { unit_type: "qop", label: "Qop", pieces: ORDER_BAG_SIZE, per_size: ORDER_SIZE_QTY, min_qty: 1 },
-    ],
+    order_units: orderUnitsFor(p),
     ...extra,
   };
 }
@@ -2460,10 +2597,14 @@ function smartRecommendProducts(products, seed, limit = 4) {
     .map((row) => publicProductCard(row.p, { smart_score: row.score }));
 }
 
+/* «Скрыт» в админке = предзаказ на витрине. В каталог такие товары попадают,
+   только если у них есть фото — иначе карточка выглядела бы пустой. */
+const CATALOG_VISIBLE_SQL = "(active=1 OR (COALESCE(images,'[]') NOT IN ('', '[]', 'null')))";
+
 async function activeProductsForCatalog(forceCatalogRefresh = false) {
   const localProducts = postgresCatalog
     ? (await postgresCatalog.list({ activeOnly: true, limit: 1000, offset: 0 })).rows.map((r) => rowToProduct(r))
-    : db.prepare("SELECT * FROM products WHERE active=1 ORDER BY sort DESC, id DESC LIMIT 1000").all().map((r) => rowToProduct(r));
+    : db.prepare(`SELECT * FROM products WHERE ${CATALOG_VISIBLE_SQL} ORDER BY sort DESC, id DESC LIMIT 2000`).all().map((r) => rowToProduct(r));
   if (CATALOG_SOURCE_ENABLED) {
     try {
       const seen = new Set(localProducts.map((p) => p.slug));
@@ -2509,7 +2650,7 @@ function jsonForHtml(value) {
 async function activeProductBySlug(slug) {
   const row = postgresCatalog
     ? await postgresCatalog.getBySlug(slug, true)
-    : db.prepare("SELECT * FROM products WHERE slug=? AND active=1").get(slug);
+    : db.prepare(`SELECT * FROM products WHERE slug=? AND ${CATALOG_VISIBLE_SQL}`).get(slug);
   if (row) return rowToProduct(row);
   if (!CATALOG_SOURCE_ENABLED) return null;
   try {
@@ -3035,7 +3176,7 @@ function rowToProduct(r, lite = false) {
     available_qop: r.available_qop,
     like_count: r.like_count || 0,
     sizes: arrayValue(r.sizes), images: arrayValue(r.images),
-    tag: r.tag, collection: r.collection || "", rating: r.rating, reviews: r.reviews, active: !!r.active, sort: r.sort,
+    tag: r.tag, collection: r.collection || "", size_chart: r.size_chart || "", color: r.color || "", country: r.country || "", material: r.material || "", season: r.season || "", composition: r.composition || "", rating: r.rating, reviews: r.reviews, views: r.views || 0, active: !!r.active, sort: r.sort,
   });
   if (lite) {
     p.images = p.images.slice(0, 2);
@@ -3050,6 +3191,12 @@ function rowToProduct(r, lite = false) {
 
 function validateProduct(b) {
   const name = str(b.name, 120);
+  const size_chart = str(b.size_chart, 4000);
+  const color = str(b.color, 60);
+  const country = str(b.country, 60);
+  const material = str(b.material, 120);
+  const season = str(b.season, 60);
+  const composition = str(b.composition, 200);
   if (name.length < 2) throw new Error("name");
   if (!CATS.includes(b.category)) throw new Error("category");
   const gender = GENDERS.includes(b.gender) ? b.gender : "unisex";
@@ -3061,11 +3208,10 @@ function validateProduct(b) {
     : inferProductType(b);
   const model_no = str(b.model_no, 40);
   const variant = str(b.variant, 60);
-  const price = Number(b.price);
+  /* цена одна: столбец price оставлен для совместимости и хранит ту же оптовую цену */
+  const price = Number(b.wholesale_price || b.price);
   if (!(price > 0 && price < 1e9)) throw new Error("price");
-  const wholesale_price = Number(b.wholesale_price || b.price);
-  if (!(wholesale_price > 0 && wholesale_price < 1e9)) throw new Error("wholesale_price");
-  const wholesale_moq = ORDER_PACHKA_SIZE;
+  const wholesale_price = price;
   const retail_enabled = b.retail_enabled === false ? 0 : 1;
   const retail_price = Number(b.retail_price || b.price);
   if (retail_enabled && !(retail_price > 0 && retail_price < 1e9)) throw new Error("retail_price");
@@ -3076,6 +3222,7 @@ function validateProduct(b) {
   let old_price = b.old_price === null || b.old_price === "" || b.old_price === undefined ? null : Number(b.old_price);
   if (old_price !== null && !(old_price > 0 && old_price < 1e9)) throw new Error("old_price");
   const sizes = Array.isArray(b.sizes) ? b.sizes.map((s) => str(s, 8)).filter(Boolean).slice(0, 12) : [];
+  const wholesale_moq = packPieces(sizes, gender, b.category);
   const images = (Array.isArray(b.images) ? b.images : [])
     .map((u) => str(u, 300))
     .filter((u) => (
@@ -3088,7 +3235,7 @@ function validateProduct(b) {
   const rating = Math.min(5, Math.max(0, Number(b.rating) || 0));
   const reviews = Math.min(1e6, Math.max(0, Math.round(Number(b.reviews) || 0)));
   return {
-    name, model_no, variant, gender, category: b.category, catalog_panel, product_type, price: wholesale_price, old_price, tag, collection, rating, reviews,
+    name, size_chart, color, country, material, season, composition, model_no, variant, gender, category: b.category, catalog_panel, product_type, price: wholesale_price, old_price, tag, collection, rating, reviews,
     wholesale_price, wholesale_moq, retail_enabled, retail_price, retail_stock, available_qop,
     sizes: JSON.stringify(sizes), images: JSON.stringify(images),
     desc_en: str(b.desc?.en, 5000), desc_ru: str(b.desc?.ru, 5000), desc_uz: str(b.desc?.uz, 5000),
@@ -3101,7 +3248,8 @@ function validateProduct(b) {
 const PUBLIC_SETTING_KEYS = ["phone", "whatsapp", "telegram", "instagram", "email",
   "address_en", "address_ru", "address_uz", "currency", "currency_pos",
   "hero_type", "hero_image", "hero_video", "hero_poster", "accent", "accent_dark",
-  "hero_gap", "site_config"];
+  "hero_gap",
+  "pack_markup", "preorder_min", "preorder_max", "site_config"];
 const allSettings = () => {
   const settings = Object.fromEntries(PUBLIC_SETTING_KEYS.map((k) => [k, getSetting(k) ?? ""]));
   settings.currency = "$";
@@ -3119,6 +3267,14 @@ const SETTING_VALIDATORS = {
   hero_poster: (v) => (mediaPathOk(v) ? v : null),
   accent: (v) => (hexOk(v) ? v : null),
   accent_dark: (v) => (hexOk(v) ? v : null),
+  // минимальная партия предзаказа, мешков
+  preorder_min: (v) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= 1 && n <= 999 ? String(n) : null; },
+  preorder_max: (v) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= 1 && n <= 999 ? String(n) : null; },
+  pack_markup: (v) => { // наценка на пачку, % от оптовой цены (0…200)
+    if (v === "") return "";
+    const n = Number(String(v).replace(",", "."));
+    return Number.isFinite(n) && n >= 0 && n <= 200 ? String(n) : null;
+  },
   hero_gap: (v) => {
     if (v === "") return "";
     const n = Number(String(v).replace(",", "."));
@@ -3675,7 +3831,7 @@ const api = {
         .map((product) => publicProductCard(productForCustomer(product, customer)));
       return sendPage(res, items, { ...paging, total: result.total }, q);
     }
-    let where = " FROM products WHERE active=1";
+    let where = ` FROM products WHERE ${CATALOG_VISIBLE_SQL}`;
     const args = [];
     if (CATALOG_PANELS.includes(q.get("panel"))) { where += " AND catalog_panel=?"; args.push(q.get("panel")); }
     if (CATS.includes(q.get("category"))) { where += " AND category=?"; args.push(q.get("category")); }
@@ -3732,18 +3888,18 @@ const api = {
     const customer = await customerFromRequest(req);
     const row = postgresCatalog
       ? await postgresCatalog.getBySlug(m.slug, true)
-      : db.prepare("SELECT * FROM products WHERE slug=? AND active=1").get(m.slug);
+      : db.prepare(`SELECT * FROM products WHERE slug=? AND ${CATALOG_VISIBLE_SQL}`).get(m.slug);
     if (row) {
       const localProduct = rowToProduct(row);
       const related = smartRecommendProducts(await activeProductsForCatalog(), localProduct, 4).map((p) => publicProductCard(productForCustomer(p, customer)));
-      return send(res, 200, { ...productForCustomer(localProduct, customer), related });
+      return send(res, 200, { ...publicProductCard(productForCustomer(localProduct, customer)), related, variants: modelVariants(localProduct) });
     }
     if (CATALOG_SOURCE_ENABLED) {
       try {
         const product = await catalogProductBySlug(m.slug);
         if (product && product.active !== false) {
           const related = smartRecommendProducts(await activeProductsForCatalog(), product, 4).map((p) => publicProductCard(productForCustomer(p, customer)));
-          return send(res, 200, { ...productForCustomer(product, customer), related });
+          return send(res, 200, { ...publicProductCard(productForCustomer(product, customer)), related });
         }
       } catch (e) {
         catalogCache.error = e.message;
@@ -3778,6 +3934,17 @@ const api = {
       };
     }));
     send(res, 200, { likes: rows });
+  },
+
+  /* просмотр карточки: один засчитанный просмотр на посетителя в час */
+  "POST /api/products/:id/view": async (req, res, u, m) => {
+    const id = Number(m.id);
+    if (!id) return fail(res, 400, "product");
+    if (!rateLimit(`view:${ipOf(req)}:${id}`, 1, 3600e3)) return send(res, 200, { ok: true, counted: false });
+    const r = db.prepare("UPDATE products SET views = COALESCE(views, 0) + 1 WHERE id=?").run(id);
+    if (!r.changes) return fail(res, 404, "not_found");
+    const views = db.prepare("SELECT views FROM products WHERE id=?").get(id)?.views || 0;
+    send(res, 200, { ok: true, counted: true, views });
   },
 
   "POST /api/products/:id/like": async (req, res, u, m) => {
@@ -3857,16 +4024,17 @@ const api = {
         break;
       }
     }
-    if (!orderId) return fail(res, 403, "verified_purchase_required");
+    /* отзыв оставляет любой авторизованный клиент; покупка отмечается флагом, а не запретом */
+    const verified = orderId ? 1 : 0;
     const created = postgresCommerce ? await postgresCommerce.createReview({
-      productId, productSlug, customerId: customer.id, orderId, rating, comment, photoUrl: photo,
+      productId, productSlug, customerId: customer.id, orderId: orderId || null, rating, comment, photoUrl: photo,
     }) : null;
     const r = created ? null : db.prepare(`
       INSERT INTO reviews (product_id, product_slug, customer_id, order_id, rating, comment, photo_url, verified_purchase, status)
       VALUES (?,?,?,?,?,?,?,?, 'pending')
-    `).run(productId || null, productSlug, customer.id, orderId, rating, comment, photo, 1);
+    `).run(productId || null, productSlug, customer.id, orderId || null, rating, comment, photo, verified);
     const reviewId = created ? created.id : r.lastInsertRowid;
-    audit("customer", "review.created", { id: reviewId, product_id: productId, status: "pending" });
+    audit("customer", "review.created", { id: reviewId, product_id: productId, status: "pending", verified });
     send(res, 201, { id: reviewId, status: "pending" });
   },
 
@@ -4067,7 +4235,7 @@ const api = {
         try { product = await localStoreProductById(Number(it.id)); } catch (e) { console.error("Local upstream product lookup failed:", e.message); }
       }
       if (product && product.active === false) product = null;
-      const row = product ? null : db.prepare("SELECT * FROM products WHERE id=? AND active=1").get(Number(it.id));
+      const row = product ? null : db.prepare(`SELECT * FROM products WHERE id=? AND ${CATALOG_VISIBLE_SQL}`).get(Number(it.id));
       if (!product && !row) return fail(res, 400, "item_unavailable");
       const sizes = product ? product.sizes : JSON.parse(row.sizes || "[]");
       const images = product ? product.images : JSON.parse(row.images || "[]");
@@ -4089,7 +4257,7 @@ const api = {
       if (!Number.isInteger(rawQty) || rawQty < 1) return fail(res, 400, "invalid_qty");
       const requestedUnitType = str(it.unit_type || it.unit || "", 20).toLowerCase();
       const wholesaleUnitType = ORDER_PACKAGE_ALIASES[requestedUnitType] || (ORDER_PACKAGE_UNITS.has(requestedUnitType) ? requestedUnitType : "qop");
-      const packagePieces = wholesaleUnitType === "pachka" ? ORDER_PACHKA_SIZE : ORDER_BAG_SIZE;
+      const packagePieces = wholesaleUnitType === "pachka" ? packPieces(sizes, gender, category) : ORDER_BAG_SIZE;
       const maxQty = orderType === "retail" ? 99 : Math.max(1, Math.floor((20 * ORDER_BAG_SIZE) / packagePieces));
       if (rawQty > maxQty) return fail(res, 400, "qty_limit");
       const wholesalePieces = rawQty * packagePieces;
@@ -4760,6 +4928,49 @@ const api = {
     else db.prepare("UPDATE payments SET status=?, reference=?, updated_at=datetime('now') WHERE id=?").run(b.status, reference, id);
     audit("admin", "payment.status_changed", { id, order_id: existing.order_id, from: existing.status, to: b.status });
     send(res, 200, { ok: true });
+  },
+
+  "GET /api/admin/dictionaries": (req, res) => send(res, 200, dictAll()),
+
+  "PUT /api/admin/dictionaries": async (req, res) => {
+    const b = await readJson(req, 128e3);
+    const touched = [];
+    for (const k of DICT_KINDS) if (Array.isArray(b[k])) { dictReplace(k, b[k]); touched.push(k); }
+    audit("admin", "dictionaries.updated", { kinds: touched });
+    send(res, 200, dictAll());
+  },
+
+  "POST /api/admin/dictionaries/rename": async (req, res) => {
+    const b = await readJson(req, 8e3);
+    const kind = str(b.kind, 20);
+    const from = str(b.from, 200).trim();
+    const to = str(b.to, 200).trim();
+    if (!DICT_KINDS.includes(kind) || !from || !to || from === to) return fail(res, 400, "bad_request");
+
+    let touched = 0;
+    if (kind === "sizes") {
+      const list = to.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 12);
+      if (!list.length) return fail(res, 400, "bad_request");
+      const moq = packPieces(list, "", "");
+      const upd = db.prepare("UPDATE products SET sizes=?, wholesale_moq=? WHERE id=?");
+      const payload = JSON.stringify(list);
+      for (const r of db.prepare("SELECT id, sizes FROM products").all()) {
+        if (sizeRunOf(r.sizes) !== from) continue;
+        upd.run(payload, moq, r.id);
+        touched += 1;
+      }
+    } else {
+      const col = DICT_COLUMN[kind];
+      touched = db.prepare(`UPDATE products SET ${col}=? WHERE TRIM(COALESCE(${col},'')) = ?`).run(to, from).changes;
+    }
+
+    /* если новое имя уже есть в справочнике — старую строку просто убираем, иначе ловим unique */
+    const exists = db.prepare("SELECT 1 FROM dictionaries WHERE kind=? AND value=?").get(kind, to);
+    if (exists) db.prepare("DELETE FROM dictionaries WHERE kind=? AND value=?").run(kind, from);
+    else db.prepare("UPDATE dictionaries SET value=? WHERE kind=? AND value=?").run(to, kind, from);
+
+    audit("admin", "dictionaries.renamed", { kind, from, to, products: touched });
+    send(res, 200, { ...dictAll(), renamed: touched });
   },
 
   "GET /api/admin/settings": (req, res) =>

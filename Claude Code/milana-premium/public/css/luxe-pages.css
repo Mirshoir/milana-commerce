@@ -1718,3 +1718,750 @@ body.mlx-lock { overflow: hidden; }
   color: var(--ink);
   max-width: 62ch;
 }
+
+/* ============================================================
+   «О нас» v2 — акцентная фраза, счётчики, карточки технологий
+   ============================================================ */
+.about-quote {
+  margin: 0 0 clamp(30px, 4vw, 50px);
+  font-family: "Anticva", "Prata", Georgia, serif;
+  font-weight: 400;
+  font-size: clamp(22px, 2.6vw, 38px);
+  line-height: 1.2;
+  letter-spacing: .01em;
+  max-width: 24ch;
+}
+.about-stats > div {
+  position: relative;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+  transition: border-color .35s var(--ease, ease);
+}
+.about-stats > div:hover { border-left-color: var(--ink); }
+.about-stats b { font-variant-numeric: tabular-nums; transition: color .35s var(--ease, ease); }
+
+/* карточки технологий */
+.about-cards { grid-template-columns: repeat(3, 1fr); }
+.about-cards article {
+  position: relative;
+  padding: clamp(20px, 2vw, 26px) clamp(18px, 1.8vw, 24px);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: #fff;
+  transition: transform .4s var(--ease, ease), box-shadow .4s var(--ease, ease), border-color .4s var(--ease, ease);
+}
+.about-cards article:hover {
+  transform: translateY(-4px);
+  border-color: rgba(18, 18, 18, .28);
+  box-shadow: 0 14px 34px rgba(18, 18, 18, .09);
+}
+.about-cards__n {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 11px;
+  letter-spacing: .18em;
+  color: var(--ink-3);
+  transition: color .35s var(--ease, ease);
+}
+.about-cards article:hover .about-cards__n { color: var(--ink); }
+
+/* производства */
+.about-plants {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 12px clamp(20px, 3vw, 40px);
+  padding-top: clamp(24px, 3vw, 36px);
+}
+.about-plants h4 {
+  margin: 0; font-size: 11px; font-weight: 600;
+  letter-spacing: .2em; text-transform: uppercase; color: var(--ink-3);
+}
+.about-plants ul {
+  display: flex; flex-wrap: wrap; gap: 8px 10px;
+  margin: 0; padding: 0; list-style: none;
+}
+.about-plants li {
+  padding: 7px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 13.5px;
+  transition: border-color .3s var(--ease, ease), background .3s var(--ease, ease), color .3s var(--ease, ease);
+}
+.about-plants li:hover { border-color: var(--ink); background: var(--ink); color: #fff; }
+
+.about-export { border-top: 1px solid var(--line); margin-top: clamp(24px, 3vw, 36px); }
+
+@media (max-width: 900px) {
+  .about-cards { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 620px) {
+  .about-cards { grid-template-columns: 1fr; }
+  .about-quote { max-width: none; }
+}
+
+/* якорные переходы (#maison, #faq, #map) — не заезжать под липкую шапку */
+#maison, #faq, #map, #categories, #bestsellers, #types, #lookbook {
+  scroll-margin-top: calc(var(--header-h, 148px) + 18px);
+}
+
+/* ============================================================
+   ШАПКА: промо-строка статична, стекло 90%, слои над контентом
+   ============================================================ */
+/* 1. верхняя промо-строка уезжает при прокрутке — закреплённой остаётся только навигация */
+.promo {
+  max-height: 60px;
+  overflow: hidden;
+  transition: max-height .4s var(--ease), padding .4s var(--ease), opacity .3s var(--ease);
+}
+.header.is-solid .promo,
+.header.is-glass .promo {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+}
+
+/* 2. при прокрутке и раскрытой навигации — 90% непрозрачности вместо 50% */
+.header.is-glass,
+.header.is-clear:hover,
+.header.is-clear:focus-within {
+  background: rgba(255, 255, 255, .9);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+}
+/* раскрытое меню (мега-панель, мобильное меню, открытый выбор языка) — плотный фон */
+.header.is-mega,
+.header:has(.navitem:hover .mega),
+.header:has(.langsel.is-open),
+body.menu-open .header {
+  background: rgba(255, 255, 255, .96) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+}
+
+/* 3. шапка поверх содержимого страницы (карта Leaflet поднимала свои слои до 1000) */
+.header { z-index: 1200; }
+#map, .leaflet-container, .map-embed { position: relative; z-index: 0; isolation: isolate; }
+/* собственные оверлеи сайта остаются НАД шапкой */
+.menu { z-index: 1300; }
+/* только контейнер: подложка и панель лежат в DOM-порядке, панель должна быть сверху */
+.drawer { z-index: 1350; }
+.hsearch { z-index: 1400; }
+.chat-widget { z-index: 1450; }
+.preloader { z-index: 1500; }
+
+/* шапка и выпадающая панель — единое стекло 90% */
+.header.is-glass,
+.header.is-clear:hover,
+.header.is-clear:focus-within,
+.header.is-mega,
+.header:has(.navitem:hover .mega),
+.header:has(.langsel.is-open),
+body.menu-open .header {
+  background: rgba(255, 255, 255, .9) !important;
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+}
+.mega {
+  background: rgba(255, 255, 255, .9);
+  -webkit-backdrop-filter: blur(18px) saturate(1.3);
+  backdrop-filter: blur(18px) saturate(1.3);
+}
+
+/* ============================================================
+   Промо-строка — бегущая новостная лента
+   ============================================================ */
+/* отменяем прежнее сворачивание при прокрутке: лента видна всегда */
+.header.is-solid .promo,
+.header.is-glass .promo {
+  max-height: 60px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  opacity: 1;
+}
+.promo--ticker {
+  padding-inline: 0;
+  overflow: hidden;
+  text-overflow: clip;
+  position: relative;
+}
+/* исходный текст остаётся в DOM как источник для перевода, но не показывается */
+.promo--ticker > [data-i18n] {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.promo__track {
+  display: flex;
+  width: max-content;
+  animation: promo-scroll var(--ticker-dur, 30s) linear infinite;
+  will-change: transform;
+}
+.promo__run { display: flex; }
+.promo__item {
+  font-style: normal;
+  white-space: nowrap;
+  padding-right: clamp(40px, 6vw, 90px);
+}
+.promo__item::after {
+  content: "·";
+  margin-left: clamp(20px, 3vw, 45px);
+  opacity: .5;
+}
+@keyframes promo-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.promo--ticker:hover .promo__track { animation-play-state: paused; }
+@media (prefers-reduced-motion: reduce) {
+  .promo__track { animation: none; }
+}
+
+/* ============================================================
+   ТИПОГРАФИКА v3 — Regular / Medium / SemiBold
+   Раньше: Thin 100 / Light 300 / Regular 400.
+   Правило `* { font-weight: 400 !important }` в luxe.css перебивало
+   все объявления 500 и 600 в проекте — теперь они реально работают.
+   ============================================================ */
+@font-face {
+  font-family: "Lato";
+  src: url("/fonts/lato-medium.woff2") format("woff2");
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Lato";
+  src: url("/fonts/lato-semibold.woff2") format("woff2");
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+
+/* базовый уровень: интерфейс, меню, кнопки, подписи — SemiBold */
+* { font-weight: 600 !important; }
+
+/* читаемый текст — Medium */
+body, p, .lead, .about-lead, .product__fab, .footer__tag, .footer ul,
+.pd__desc, .pd__care, .materials__body p, .order-step p,
+.services__item p, .story__points p, .lookbook__sub,
+.about-cards p, .about-stats span, .mega a, .drawer__body,
+.hsearch__form input, .pd__name, .logo, .preloader__logo,
+.drawer__total strong {
+  font-weight: 500 !important;
+}
+
+/* крупный дисплейный текст — Regular */
+.t-xxl { font-weight: 400 !important; }
+
+/* фирменные шрифты без Medium/SemiBold — держим их собственный вес,
+   иначе браузер подделает жирный и смажет засечки */
+.t-display, .t-display span, .t-display i,
+.typestrip__title, .typestrip__title span, .typestrip__title i,
+.catstrip__label, .catalog-title, .about-quote, .about-cards h3,
+.about-stats b, .hero__title, .hero__title .line, .hero__title .line__in,
+.hero__title .line:first-child .line__in {
+  font-weight: 400 !important;
+}
+.hero__title .line:last-child .line__in i { font-weight: 300 !important; }
+
+/* меню: размер увеличен вдвое (11px → 22px), разрядка и промежутки
+   уменьшены — иначе строка не помещается на экранах уже 1600px */
+.header__nav { gap: clamp(8px, 1.2vw, 24px); }
+.header__nav a {
+  font-size: clamp(14px, 1.45vw, 22px);
+  letter-spacing: .07em;
+  padding-left: 4px; padding-right: 4px;
+}
+@media (max-width: 1100px) {
+  .header__nav a { letter-spacing: .05em; }
+}
+
+/* ============================================================
+   Читаемые размеры в шапке и выпадающей панели
+   ============================================================ */
+/* пункты меню — 20px (было 22px); правило больше не задевает панель */
+.header__nav .navitem > a { font-size: clamp(13px, 1.3vw, 20px); }
+
+/* логотип крупнее — был мельче пунктов меню */
+.header .logo { font-size: clamp(20px, 1.9vw, 30px); }
+
+/* поиск и переключатель языка */
+.header__search span { font-size: clamp(12px, .9vw, 14px); letter-spacing: .1em; }
+.langsel__btn { font-size: 13px; }
+
+/* выпадающая панель: заголовки колонок и ссылки */
+.header__nav .mega__col h4 {
+  font-size: 13px; letter-spacing: .16em; color: var(--ink-2);
+}
+.header__nav .mega__col a { font-size: 16px; letter-spacing: .01em; }
+
+/* подписи под плитками */
+.header__nav .mega__tile b { font-size: 13px; letter-spacing: .12em; }
+.header__nav .mega__tile span,
+.header__nav .mega__tile a { font-size: 12px; letter-spacing: .08em; }
+
+/* меню в одну строку: узбекские пункты длиннее русских почти в полтора раза,
+   поэтому для них размер немного меньше — иначе строка переносится */
+.header__nav .navitem > a { white-space: nowrap; }
+html[lang="uz"] .header__nav .navitem > a { font-size: clamp(11px, 1.02vw, 17px); letter-spacing: .05em; }
+html[lang="uz"] .header__nav { gap: clamp(6px, .9vw, 18px); }
+html[lang="en"] .header__nav .navitem > a { font-size: clamp(12px, 1.2vw, 19px); }
+
+/* ============================================================
+   1. Шапка и выпадающая панель — сплошной белый, без прозрачности
+   ============================================================ */
+.header,
+.header.is-glass,
+.header.is-clear,
+.header.is-clear:hover,
+.header.is-clear:focus-within,
+.header.is-clear:not(:hover):not(:focus-within),
+.header.is-mega,
+.header:has(.navitem:hover .mega),
+.header:has(.langsel.is-open),
+body.menu-open .header,
+.mega {
+  background: #fff !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  border-bottom-color: var(--line);
+}
+/* над Hero текст шапки был белым — на белом фоне возвращаем тёмный */
+.header.is-clear:not(:hover):not(:focus-within) .logo,
+.header.is-clear:not(:hover):not(:focus-within) .header__search,
+.header.is-clear:not(:hover):not(:focus-within) .iconbtn,
+.header.is-clear:not(:hover):not(:focus-within) .lang button,
+.header.is-clear:not(:hover):not(:focus-within) .langsel__btn,
+.header.is-clear:not(:hover):not(:focus-within) .header__nav .navitem > a {
+  color: var(--ink);
+}
+.header.is-clear:not(:hover):not(:focus-within) .burger i { background: var(--ink); }
+.header.is-clear:not(:hover):not(:focus-within) .header__nav { border-top-color: var(--line); }
+.header.is-clear:not(:hover):not(:focus-within) .header__nav .navitem > a::after { background: var(--ink); }
+.header.is-clear:not(:hover):not(:focus-within) [data-cart-count] { background: var(--ink); color: #fff; }
+
+/* ============================================================
+   3. Карточка товара: подпись крупнее, теги крупнее и цветные
+   ============================================================ */
+.product__fab { font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+
+/* теги-плашки: крупнее и цветные (перекрываем серый текстовый вариант из luxe.css) */
+.product__info .product__tag,
+.product__row .product__tag,
+.product__media .product__tag {
+  font-size: 12.5px !important;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: none;
+  padding: 4px 11px !important;
+  border: 0 !important;
+  border-radius: 999px;
+  line-height: 1.5;
+  background: #1E7A46 !important;   /* Хит продаж — зелёный */
+  color: #fff !important;
+}
+.product__info .product__tag--new,
+.product__row .product__tag--new,
+.product__media .product__tag--new { background: #1F4FA8 !important; }   /* Новинка — синий */
+
+.product__info .product__tag--sale,
+.product__row .product__tag--sale,
+.product__media .product__tag--sale { background: #C42B1C !important; }  /* Акция — красный */
+
+/* ============================================================
+   Рейтинг — пять звёзд с частичным заполнением
+   ============================================================ */
+.product__rating { display: flex; align-items: center; gap: 6px; margin: 5px 0 0; font-size: 13px; }
+.product__rating .stars {
+  position: relative; display: inline-block;
+  font-size: 14px; line-height: 1; letter-spacing: 1px;
+  color: #DCDCDC;                      /* незаполненные */
+  white-space: nowrap;
+}
+.product__rating .stars i,
+.product__rating .stars b { font-style: normal; font-weight: 400 !important; }
+.product__rating .stars b {
+  position: absolute; left: 0; top: 0;
+  width: var(--r, 0%); overflow: hidden;
+  color: #E8A33D;                      /* заполненные */
+}
+.product__rating em { font-style: normal; font-weight: 600; color: var(--ink); font-size: 13px; }
+.product__rating span { color: var(--ink-3); font-weight: 400; font-size: 12px; }
+/* в карточке рейтинг стоит справа во второй строке — не прячем подпись целиком */
+.product__info .product__rating span { display: inline; }
+
+/* каталог: заголовок скрыт визуально (остаётся для поисковиков и скринридеров) —
+   его дублируют хлебные крошки; счётчик остаётся справа */
+.shop-hero__row .catalog-title {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden; clip-path: inset(50%);
+  white-space: nowrap;
+}
+.shop-hero__row { justify-content: flex-end; }
+
+/* подписи под круглыми категориями — крупнее */
+.catalog-panel-card__meta b { font-size: 15px !important; line-height: 1.3; }
+@media (max-width: 900px) { .catalog-panel-card__meta b { font-size: 13px !important; } }
+/* заголовок убран — освободившийся отступ тоже убираем */
+.shop-hero { padding-bottom: 6px; }
+.shop-hero__row { margin-top: -6px; }
+
+/* ============================================================
+   Вверху страницы (над Hero) шапка снова прозрачная;
+   при прокрутке и наведении — сплошной белый
+   ============================================================ */
+.header.is-clear:not(:hover):not(:focus-within) {
+  background: transparent !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  border-bottom-color: transparent;
+  box-shadow: none;
+}
+.header.is-clear:not(:hover):not(:focus-within) .logo,
+.header.is-clear:not(:hover):not(:focus-within) .header__search,
+.header.is-clear:not(:hover):not(:focus-within) .header__search span,
+.header.is-clear:not(:hover):not(:focus-within) .iconbtn,
+.header.is-clear:not(:hover):not(:focus-within) .lang button,
+.header.is-clear:not(:hover):not(:focus-within) .langsel__btn,
+.header.is-clear:not(:hover):not(:focus-within) .header__nav .navitem > a {
+  color: #fff;
+}
+.header.is-clear:not(:hover):not(:focus-within) .burger i { background: #fff; }
+.header.is-clear:not(:hover):not(:focus-within) .header__nav { border-top-color: rgba(255, 255, 255, .28); }
+.header.is-clear:not(:hover):not(:focus-within) .header__nav .navitem > a::after { background: #fff; }
+.header.is-clear:not(:hover):not(:focus-within) [data-cart-count] { background: #fff; color: var(--ink); }
+.header.is-clear:not(:hover):not(:focus-within) .langsel__btn { border-color: rgba(255, 255, 255, .5); }
+
+/* наведение вверху — как при прокрутке: белый непрозрачный */
+.header.is-clear:hover,
+.header.is-clear:focus-within {
+  background: #fff !important;
+  border-bottom-color: var(--line);
+}
+
+/* размер меню — 18px (пропорционально уменьшены английский и узбекский,
+   у них пункты длиннее и иначе не помещаются в одну строку) */
+.header__nav .navitem > a { font-size: clamp(13px, 1.2vw, 18px); }
+html[lang="en"] .header__nav .navitem > a { font-size: clamp(12px, 1.1vw, 17px); }
+html[lang="uz"] .header__nav .navitem > a { font-size: clamp(11px, .95vw, 16px); }
+
+/* ============================================================
+   Страница товара: единица продажи, итог, размерная сетка, липкая панель
+   ============================================================ */
+.pd__unit { margin: 18px 0 14px; }
+.pd__unit-cap { display: block; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 9px; }
+.pd__unit-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pd__unit-btn {
+  text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 4px;
+  background: #fff; cursor: pointer; transition: border-color .2s, box-shadow .2s, background .2s;
+}
+.pd__unit-btn b { display: block; font-size: 15px; }
+.pd__unit-btn i { display: block; margin-top: 3px; font-style: normal; font-size: 12px; color: var(--ink-2); }
+.pd__unit-btn:hover { border-color: rgba(18,18,18,.4); }
+.pd__unit-btn.is-on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+
+.pd__total { margin: 14px 0 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.pd__total span { font-size: 12px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3); }
+.pd__total b { font-size: 26px; font-weight: 600; }
+.pd__total i { font-style: normal; font-size: 13px; color: var(--ink-2); }
+
+.pd__sc-open {
+  margin-left: 12px; background: none; border: 0; cursor: pointer;
+  font-size: 12px; color: var(--ink-2); border-bottom: 1px solid currentColor; padding: 0 0 2px;
+}
+.pd__sc-open:hover { color: var(--ink); }
+
+/* окно размерной сетки */
+.pd-sc { position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; padding: 20px; }
+.pd-sc[hidden] { display: none; }
+.pd-sc__veil { position: absolute; inset: 0; background: rgba(12,12,12,.55); backdrop-filter: blur(4px); }
+.pd-sc__box {
+  position: relative; background: #fff; border-radius: 6px; padding: 28px;
+  width: min(560px, 100%); max-height: 86vh; overflow: auto;
+  box-shadow: 0 30px 80px rgba(0,0,0,.25);
+}
+.pd-sc__box h3 { margin: 0 0 16px; font-family: "Anticva", Georgia, serif; font-weight: 400 !important; font-size: 22px; }
+.pd-sc__x { position: absolute; top: 14px; right: 16px; border: 0; background: none; font-size: 18px; cursor: pointer; line-height: 1; }
+.pd-sc__table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.pd-sc__table th, .pd-sc__table td { padding: 9px 8px; text-align: left; border-bottom: 1px solid var(--line); }
+.pd-sc__table th { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.pd-sc__table tbody tr:hover { background: var(--surface, #faf9f7); }
+.pd-sc__note { margin: 14px 0 0; font-size: 12.5px; color: var(--ink-2); }
+
+/* липкая панель покупки (мобильный) */
+.pd-sticky {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1250;
+  background: rgba(255,255,255,.97); border-top: 1px solid var(--line);
+  padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 26px rgba(18,18,18,.10);
+}
+.pd-sticky[hidden] { display: none; }
+.pd-sticky__in { display: flex; align-items: center; gap: 12px; max-width: 640px; margin: 0 auto; }
+.pd-sticky__price { flex: 1; min-width: 0; line-height: 1.2; }
+.pd-sticky__price b { display: block; font-size: 19px; font-weight: 600; }
+.pd-sticky__price i { display: block; font-style: normal; font-size: 12px; color: var(--ink-2); }
+.pd-sticky .btn { flex: 0 0 auto; padding: 0 26px; }
+@media (min-width: 901px) { .pd-sticky { display: none !important; } }
+@media (max-width: 520px) {
+  .pd__unit-opts { grid-template-columns: 1fr; }
+}
+
+/* пустой состав не показываем */
+#pd-fabric:empty, .pd__fabric:empty { display: none; }
+
+/* ============================================================
+   Страница товара v2: галерея-сетка, характеристики, замеры
+   ============================================================ */
+/* галерея: крупные кадры в колонке, как у премиальных витрин */
+.pd__gallery--grid {
+  position: relative;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.pd__gallery--grid .pd__shot { margin: 0; position: relative; overflow: hidden; background: var(--surface, #f6f5f3); cursor: zoom-in; }
+.pd__gallery--grid .pd__shot--lead { grid-column: 1 / -1; }
+.pd__gallery--grid.is-single .pd__shot { grid-column: 1 / -1; }
+.pd__gallery--grid .pd__shot img,
+.pd__gallery--grid .pd__shot video { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .6s var(--ease, ease); }
+.pd__gallery--grid .pd__shot--lead img { aspect-ratio: 3 / 4; }
+.pd__gallery--grid .pd__shot:not(.pd__shot--lead) img { aspect-ratio: 3 / 4; }
+.pd__gallery--grid .pd__shot:hover img { transform: scale(1.02); }
+.pd__gallery--grid .pd__expand { position: sticky; bottom: 16px; margin-left: auto; }
+
+/* правая колонка держится при прокрутке кадров */
+@media (min-width: 901px) {
+  .pd__info { position: sticky; top: calc(var(--header-h, 148px) + 16px); align-self: start; }
+}
+
+/* артикул и лайки */
+.pd__sku { margin: 0 0 6px; display: flex; gap: 14px; align-items: baseline; font-size: 12px; color: var(--ink-3); letter-spacing: .06em; }
+.pd__sku i { font-style: normal; }
+
+/* цены за упаковку */
+.pd__tiers { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 4px; }
+.pd__tier {
+  text-align: left; padding: 11px 13px; border: 1px solid var(--line); border-radius: 4px;
+  background: #fff; cursor: pointer; transition: border-color .2s, box-shadow .2s;
+}
+.pd__tier b { display: block; font-size: 19px; font-weight: 600; }
+.pd__tier i { display: block; margin-top: 2px; font-style: normal; font-size: 12px; color: var(--ink-2); }
+.pd__tier:hover { border-color: rgba(18,18,18,.35); }
+.pd__tier.is-on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+
+/* характеристики: выноски точками */
+.pd__specs, .pd__measure { margin-top: clamp(26px, 3vw, 40px); }
+.pd__specs h3, .pd__measure h3 {
+  margin: 0 0 14px; font-family: "Anticva", Georgia, serif; font-weight: 400 !important;
+  font-size: 17px; text-transform: uppercase; letter-spacing: .1em;
+}
+.pd__specs dl { margin: 0; }
+.pd__specs dl > div { display: flex; align-items: baseline; gap: 8px; padding: 7px 0; }
+.pd__specs dt { color: var(--ink-2); font-size: 13.5px; white-space: nowrap; }
+.pd__specs dd {
+  margin: 0 0 0 auto; text-align: right; font-size: 13.5px; font-weight: 600;
+  max-width: 62%;
+}
+.pd__specs dl > div::after {
+  content: ""; order: 1; flex: 1 1 auto; min-width: 18px;
+  border-bottom: 1px dotted var(--line); transform: translateY(-3px);
+}
+.pd__specs dd { order: 2; }
+.pd__measure-note { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-2); }
+
+@media (max-width: 900px) {
+  .pd__gallery--grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .pd__tiers { grid-template-columns: 1fr; }
+  .pd__specs dd { max-width: 55%; }
+}
+
+/* плашка цены = выбор упаковки: цена, количество и состав микса */
+.pd__tier u { display: block; margin-top: 3px; text-decoration: none; font-size: 11.5px; color: var(--ink-3); line-height: 1.35; }
+.pd__tiers { margin: 14px 0 16px; }
+
+/* галерея больше не липкая (липкая теперь правая колонка) —
+   снимаем унаследованный top, иначе кадры съезжают вниз на высоту шапки */
+.pd__gallery--grid { position: relative; top: auto; bottom: auto; }
+
+/* переключатель языка — без рамки */
+.langsel__btn { border: 0 !important; padding: 9px 6px; }
+.langsel__btn:hover { background: none; opacity: .6; }
+
+/* избранное в шапке — счётчик как у корзины */
+[data-wish-count] {
+  position: absolute; top: 3px; right: 1px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--ink); color: #fff;
+  font-size: 9.5px; font-weight: 600; border-radius: 9px;
+  transition: transform var(--t-fast) var(--ease);
+}
+[data-wish-count].is-zero { transform: scale(0); }
+[data-wish-link] { position: relative; }
+.header.is-clear:not(:hover):not(:focus-within) [data-wish-count] { background: #fff; color: var(--ink); }
+
+/* полоса режима «Избранное» в каталоге */
+.shop-wishbar {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 16px; margin-bottom: 18px;
+  border: 1px solid var(--line); border-radius: 4px; background: var(--surface, #faf9f7);
+}
+.shop-wishbar span { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; }
+.shop-wishbar .ic { width: 16px; height: 16px; fill: var(--ink); }
+.shop-wishbar button {
+  background: none; border: 0; cursor: pointer; font-size: 13px;
+  border-bottom: 1px solid currentColor; padding: 0 0 2px; color: var(--ink-2);
+}
+.shop-wishbar button:hover { color: var(--ink); }
+
+/* ============================================================
+   Галерея товара: стрелки на главном кадре + лента в полноэкранном режиме
+   ============================================================ */
+/* стрелки поверх главного кадра, проявляются при наведении */
+.pd__gallery--grid .pd__shot--lead { position: relative; }
+.pd__arrow {
+  position: absolute; top: 50%; z-index: 4;
+  width: 46px; height: 46px; display: grid; place-items: center;
+  border: 0; padding: 0; border-radius: 50%; cursor: pointer;
+  background: rgba(255, 255, 255, .88); color: var(--ink, #17110f);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .14);
+  opacity: 0; pointer-events: none; transform: translateY(-50%);
+  transition: opacity .2s var(--ease, ease), background .15s var(--ease, ease), transform .15s var(--ease, ease);
+}
+.pd__arrow--prev { left: 14px; }
+.pd__arrow--next { right: 14px; }
+.pd__shot--lead:hover .pd__arrow,
+.pd__arrow:focus-visible { opacity: 1; pointer-events: auto; }
+.pd__arrow:hover { background: #fff; }
+.pd__arrow:active { transform: translateY(-50%) scale(.94); }
+.pd__arrow svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+/* на сенсорных экранах наведения нет — показываем сразу */
+@media (hover: none) {
+  .pd__arrow { opacity: 1; pointer-events: auto; background: rgba(255, 255, 255, .74); width: 40px; height: 40px; }
+}
+
+/* полноэкранный режим: колонка миниатюр слева, лента кадров по центру */
+.mlx--feed { display: flex; align-items: stretch; }
+
+.mlx--feed .mlx__rail {
+  flex: none; width: 104px; padding: 18px 12px 28px;
+  display: flex; flex-direction: column; gap: 8px;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+}
+.mlx--feed .mlx__rail::-webkit-scrollbar { display: none; }
+.mlx--feed .mlx__rail button {
+  flex: none; width: 100%; aspect-ratio: 3 / 4; padding: 0; border: 0; border-radius: 3px;
+  overflow: hidden; background: rgba(255, 255, 255, .08); cursor: pointer;
+  opacity: .5; outline: 1.5px solid transparent; outline-offset: -1.5px;
+  transition: opacity .15s var(--ease, ease), outline-color .15s var(--ease, ease);
+}
+.mlx--feed .mlx__rail button:hover { opacity: .85; }
+.mlx--feed .mlx__rail button.is-on { opacity: 1; outline-color: #fff; }
+.mlx--feed .mlx__rail button img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.mlx--feed .mlx__feed {
+  flex: 1 1 auto; min-width: 0; padding: 16px 0 48px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+}
+.mlx--feed .mlx__feed::-webkit-scrollbar { display: none; }
+.mlx__item {
+  margin: 0; flex: none; width: min(620px, 44vw); overflow: hidden;
+  background: rgba(255, 255, 255, .04);
+}
+.mlx__item img, .mlx__item video {
+  width: 100%; display: block; cursor: zoom-in;
+  transition: transform .35s var(--ease, ease);
+}
+.mlx__item.is-zoomed img { transform: scale(2); cursor: zoom-out; }
+.mlx__item video { cursor: default; }
+
+@media (max-width: 900px) {
+  .mlx--feed .mlx__rail { display: none; }
+  .mlx--feed .mlx__feed { padding: 0 0 32px; gap: 4px; }
+  .mlx__item { width: 100vw; }
+}
+
+/* верхняя панель не должна перекрывать ленту: счётчик — рядом с крестиком */
+.mlx--feed .mlx__bar { justify-content: flex-end; gap: 14px; pointer-events: none; }
+.mlx--feed .mlx__bar .mlx__btn { pointer-events: auto; }
+
+/* ================= Фильтр наличия в каталоге ================= */
+.stockfilter { display: flex; gap: 6px; align-items: center; margin-right: 18px; }
+.stockfilter[hidden] { display: none; }
+.stockfilter button {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 15px; border: 1px solid var(--line, #e6e1d9); background: transparent;
+  font: inherit; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-2, #4a423a); cursor: pointer; white-space: nowrap;
+  transition: border-color .18s var(--ease, ease), background .18s var(--ease, ease), color .18s var(--ease, ease);
+}
+.stockfilter button:hover { border-color: var(--ink, #17110f); }
+.stockfilter button.is-on { background: var(--ink, #17110f); border-color: var(--ink, #17110f); color: #fff; }
+.stockfilter button i {
+  font-style: normal; font-size: 11px; letter-spacing: 0;
+  color: var(--ink-3, #8d8377); font-variant-numeric: tabular-nums;
+}
+.stockfilter button.is-on i { color: rgba(255, 255, 255, .72); }
+.stockfilter button i:empty { display: none; }
+
+/* метка «Предзаказ» на карточке товара */
+.product__pre {
+  display: inline-block; margin-left: 8px; padding: 3px 9px;
+  font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: #7a5a12; background: rgba(196, 148, 32, .14); border: 1px solid rgba(196, 148, 32, .32);
+  white-space: nowrap;
+}
+.pd__label .is-pre { color: #7a5a12; }
+
+@media (max-width: 900px) {
+  .stockfilter { margin: 10px 0 0; width: 100%; order: 3; }
+  .stockfilter button { flex: 1 1 0; justify-content: center; padding: 8px 6px; font-size: 11px; letter-spacing: .04em; }
+}
+
+/* ================= Предзаказ ================= */
+.pd__prenote {
+  margin: 0 0 18px; padding: 12px 15px;
+  background: rgba(196, 148, 32, .09); border-left: 2px solid rgba(196, 148, 32, .55);
+  font-size: 13px; line-height: 1.55; color: #6f5312;
+}
+.pd__prenote[hidden] { display: none; }
+.pd__mgr { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+.pd__mgr[hidden], #pd-sticky-manager[hidden] { display: none; }
+.pd__buy .pd__mgr { flex: 1 1 auto; }
+.product__add--pre {
+  display: inline-flex; align-items: center; justify-content: center; text-decoration: none;
+  background: rgba(196, 148, 32, .16); color: #6f5312;
+}
+.product__add--pre:hover { background: rgba(196, 148, 32, .26); }
+
+.pd__tiers.is-single { grid-template-columns: 1fr; }
+
+/* цена и ссылка на таблицу размеров — в одной строке */
+.pd__pricerow { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+.pd__pricerow .pd__price { margin: 0; }
+.pd__pricerow .pd__sc-open { flex: none; margin-left: auto; }
+
+/* ================= Варианты модели ================= */
+.pd__variants { margin: 0 0 20px; }
+.pd__variants[hidden] { display: none; }
+.pd__variants .pd__label { margin: 0 0 10px; }
+.pd__variants .pd__label i { font-style: normal; color: var(--ink-3, #8d8377); text-transform: none; letter-spacing: 0; }
+.pd__varrow { display: flex; flex-wrap: wrap; gap: 8px; }
+.pd__var {
+  position: relative; display: block; width: 58px; aspect-ratio: 3 / 4;
+  overflow: hidden; background: var(--surface, #f6f5f3); text-decoration: none;
+  outline: 1px solid var(--line, #e6e1d9); outline-offset: -1px;
+  transition: outline-color .16s var(--ease, ease), transform .16s var(--ease, ease);
+}
+.pd__var img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pd__var span {
+  display: grid; place-items: center; width: 100%; height: 100%;
+  font-size: 11px; letter-spacing: .04em; color: var(--ink-2, #4a423a);
+}
+.pd__var:hover { outline-color: var(--ink, #17110f); }
+.pd__var.is-on { outline: 2px solid var(--ink, #17110f); outline-offset: -2px; }
+.pd__var.is-pre::after {
+  content: ""; position: absolute; inset: auto 0 0 0; height: 3px;
+  background: rgba(196, 148, 32, .8);
+}
+@media (max-width: 900px) { .pd__var { width: 52px; } }
+
+/* рейтинг под вариантами — кликабельный переход к отзывам */
+.pd__rating--link { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 20px; text-decoration: none; color: inherit; cursor: pointer; }
+.pd__rating--link[hidden] { display: none; }
+.pd__rating--link u { text-decoration: none; border-bottom: 1px solid currentColor; font-size: 12px; letter-spacing: .06em; color: var(--ink-3, #8d8377); transition: color .16s var(--ease, ease), border-color .16s var(--ease, ease); }
+.pd__rating--link:hover u { color: var(--ink, #17110f); }

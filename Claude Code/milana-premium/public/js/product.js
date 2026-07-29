@@ -14,6 +14,32 @@
 
   let p = null;
   let qty = 1;
+  let unit = "qop";                       /* "pachka" — пачка (6 шт), "qop" — мешок (60 шт) */
+  /* временно скрыты строка «Размеры в мешке» и плитки размеров: поставить true, чтобы вернуть */
+  const SHOW_SIZE_CHIPS = false;
+
+  const BAG = 60;
+  let PACK = 6;                           /* пачка = 1 изделие на каждый размер модели */
+  const syncPack = () => {
+    const u = (p?.order_units || []).find((x) => x.unit_type === "pachka");
+    const n = Array.isArray(p?.sizes) ? p.sizes.length : 0;
+    /* один размер («Свободный размер») — пачка стандартная, 6 изделий одного размера */
+    PACK = Number(u?.pieces) || (n > 1 ? n : 6);
+  };
+  const oneSize = () => (Array.isArray(p?.sizes) ? p.sizes.length : 0) === 1;
+  const unitSize = () => (unit === "pachka" ? PACK : BAG);
+  /* мешок — оптовая цена; пачка — розничная, а если она не задана,
+     наценка берётся из настроек сайта (Настройки → «Наценка на пачку, %») */
+  const packMarkup = () => {
+    const v = Number((window.I18N?.settings || {}).pack_markup);
+    return Number.isFinite(v) && v >= 0 ? v : 20;
+  };
+  const pieceCost = (u = unit) => {
+    const base = Number(p?.price || 0);
+    if (u !== "pachka") return base;
+    const retail = Number(p?.retail_price || 0);
+    return retail > base ? retail : Math.round(base * (1 + packMarkup() / 100) * 100) / 100;
+  };
   let imgIdx = 0;
   let reviewState = { reviews: [], summary: { count: 0, avg: 0 } };
   let reviewRating = 5;
@@ -99,24 +125,172 @@
     jsonLd.textContent = JSON.stringify(schema);
   }
 
+  /* стрелки на главном кадре — появляются при наведении */
+  const galleryArrows = () => [["prev", "M15 5l-7 7 7 7", "prod.prev"], ["next", "M9 5l7 7-7 7", "prod.next"]]
+    .map(([dir, d, key]) => `<button class="pd__arrow pd__arrow--${dir}" type="button" data-dir="${dir}" aria-label="${esc(I18N.t(key))}">`
+      + `<svg viewBox="0 0 24 24"><path d="${d}"/></svg></button>`).join("");
+
   function renderGallery() {
     const displayName = I18N.productName(p);
-    const cur = p.images[imgIdx] || "";
+    const box = $("#pd-gallery");
+    if (!box) return;
     const poster = p.images.find((u) => !isVideo(u)) || "";
-    const main = isVideo(cur)
-      ? `<video src="${esc(cur)}" controls autoplay muted loop playsinline preload="metadata"${poster ? ` poster="${esc(poster)}"` : ""}></video>`
-      : `<img src="${esc(cur)}" alt="${esc(displayName)}" decoding="async" fetchpriority="high" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`;
-    const expand = isVideo(cur) ? "" : `<button class="pd__expand" type="button" aria-label="${esc(I18N.t("prod.zoom"))}"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>`;
-    $("#pd-main").innerHTML = tagChip(p) + main + expand;
-    $("#pd-thumbs").innerHTML = p.images.map((u, i) => {
-      const vid = isVideo(u);
-      const thumb = vid ? (poster ? `<img src="${esc(poster)}" alt="" loading="lazy" decoding="async" onerror="this.classList.add('is-broken');this.removeAttribute('src')">` : "") : `<img src="${esc(u)}" alt="" loading="lazy" decoding="async" onerror="this.classList.add('is-broken');this.removeAttribute('src')">`;
-      return `<button data-img="${i}" class="${i === imgIdx ? "is-on" : ""}${vid ? " is-video" : ""}" aria-label="Media ${i + 1}">${thumb}</button>`;
-    }).join("");
+    const many = p.images.length > 1;
+    box.classList.toggle("is-single", !many);
+    if (imgIdx >= p.images.length || imgIdx < 0) imgIdx = 0;
+    /* главный кадр выбирается стрелками, остальные идут следом в своём порядке */
+    const order = [imgIdx, ...p.images.map((_, i) => i).filter((i) => i !== imgIdx)];
+    box.innerHTML = order.map((n, pos) => {
+      const u = p.images[n];
+      const lead = pos === 0;
+      const media = isVideo(u)
+        ? `<video src="${esc(u)}" ${lead ? "autoplay muted loop playsinline" : "controls muted playsinline"} preload="metadata"${poster ? ` poster="${esc(poster)}"` : ""}></video>`
+        : `<img src="${esc(u)}" alt="${esc(displayName)}" ${lead ? 'decoding="async" fetchpriority="high"' : 'loading="lazy" decoding="async"'} onerror="this.classList.add('is-broken');this.removeAttribute('src')">`;
+      /* первый кадр — во всю ширину колонки, остальные — парами */
+      return `<figure class="pd__shot${lead ? " pd__shot--lead" : ""}" data-img="${n}">${lead ? tagChip(p) + (many ? galleryArrows() : "") : ""}${media}</figure>`;
+    }).join("") + `<button class="pd__expand" type="button" aria-label="${esc(I18N.t("prod.zoom"))}"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>`;
     window.MilanaState?.wireImages?.($("#pd"));
   }
 
+  /* артикул и отметки «нравится» рядом с названием */
+  /* клик по звёздам ведёт к отзывам внизу страницы */
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest("#pd-rating");
+    if (!link) return;
+    const box = document.querySelector("#reviews");
+    if (!box) return;
+    e.preventDefault();
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+
+  /* другие варианты той же модели — миниатюрами, как выбор цвета у брендов */
+  function renderVariants() {
+    const box = $("#pd-variants");
+    if (!box) return;
+    const list = Array.isArray(p?.variants) ? p.variants : [];
+    if (list.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
+    const thumb = (u) => (window.MilanaThumb ? window.MilanaThumb(u) : u);
+    const current = list.find((v) => v.slug === p.slug) || {};
+    const head = [I18N.t("prod.variantLabel"), current.variant || ""].filter(Boolean).join(": ");
+    box.innerHTML = `<p class="pd__label"><span>${esc(head)}</span>${current.color ? `<i>${esc(current.color)}</i>` : ""}</p>`
+      + `<div class="pd__varrow">` + list.map((v) => {
+        const on = v.slug === p.slug;
+        const title = [v.variant, v.color].filter(Boolean).join(" · ");
+        return `<a class="pd__var${on ? " is-on" : ""}${v.in_stock ? "" : " is-pre"}" href="/p/${esc(v.slug)}" title="${esc(title)}"${on ? ' aria-current="true"' : ""}>`
+          + (v.image ? `<img src="${esc(thumb(v.image))}" alt="${esc(title)}" loading="lazy">` : `<span>${esc(v.variant || "?")}</span>`)
+          + `</a>`;
+      }).join("") + `</div>`;
+    box.hidden = false;
+  }
+
+  /* русское склонение: 1 просмотр, 2–4 просмотра, 5+ просмотров */
+  function pluralKey(n) {
+    const d = n % 10, h = n % 100;
+    if (d === 1 && h !== 11) return "1";
+    if (d >= 2 && d <= 4 && (h < 12 || h > 14)) return "2";
+    return "5";
+  }
+
+  /* строка под названием: модель · вариант · рейтинг · просмотры · лайки */
+  function renderSku() {
+    const el = $("#pd-sku"); if (!el || !p) return;
+    const parts = [];
+    if (p.model_no) parts.push(`${I18N.t("prod.model")} ${p.model_no}`);
+    if (p.variant) parts.push(`${I18N.t("prod.variantLabel")} ${p.variant}`);
+    const reviews = Number(p.reviews) || 0;
+    const rating = Number(p.rating) || 0;
+    if (reviews > 0 && rating > 0) parts.push(`★ ${rating.toFixed(1)} (${reviews})`);
+    const views = Number(p.views) || 0;
+    if (views > 0) parts.push(I18N.t("prod.views" + pluralKey(views), { n: views }));
+    el.textContent = parts.join(" · ");
+
+    const likes = $("#pd-likes");
+    if (likes) {
+      const n = Number(p.like_count) || 0;
+      likes.hidden = n < 1;
+      likes.textContent = n ? `♡ ${n}` : "";
+    }
+  }
+
+  /* просмотр засчитывается один раз за сессию, чтобы обновление страницы не накручивало */
+  function countView() {
+    if (!p?.id) return;
+    const key = "ml-viewed";
+    let seen = [];
+    try { seen = JSON.parse(sessionStorage.getItem(key) || "[]"); } catch (e) { seen = []; }
+    if (seen.includes(p.id)) return;
+    seen.push(p.id);
+    try { sessionStorage.setItem(key, JSON.stringify(seen.slice(-200))); } catch (e) { /* приватный режим */ }
+    fetch(`/api/products/${p.id}/view`, { method: "POST" })
+      .then((r) => r.json())
+      .then((d) => { if (d.counted && d.views) { p.views = d.views; renderSku(); } })
+      .catch(() => {});
+  }
+
+  /* «60 изделий · по 12 на размер» — цифры зависят от длины размерного ряда */
+  function unitNote(kind) {
+    if (oneSize()) return I18N.t(kind === "pachka" ? "prod.packNoteOne" : "prod.bagNoteOne", { n: kind === "pachka" ? PACK : BAG });
+    if (kind === "pachka") return I18N.t("prod.packNote", { n: PACK });
+    const per = Math.floor(BAG / PACK);
+    return BAG % PACK === 0
+      ? I18N.t("prod.bagNote", { n: BAG, q: per })
+      : I18N.t("prod.bagNoteMix", { n: BAG, s: PACK });
+  }
+
+  /* цены за упаковку: пачка и мешок */
+  function renderTiers() {
+    const box = $("#pd-tiers"); if (!box || !p) return;
+    if (p.price_visible === false) { box.innerHTML = ""; return; }
+
+    /* предзаказ считается только мешками — пачку не показываем */
+    const preorder = p.in_stock === false;
+    const rows = [
+      { k: "pachka", n: PACK, label: I18N.t("prod.unitPack") },
+      { k: "qop", n: BAG, label: I18N.t("prod.unitBag") },
+    ].filter((r) => !preorder || r.k === "qop");
+    box.classList.toggle("is-single", rows.length < 2);
+    if (preorder) unit = "qop";
+    box.innerHTML = rows.map((r) => `<button type="button" class="pd__tier${unit === r.k ? " is-on" : ""}" data-unit="${r.k}">`
+      + `<b>${esc(I18N.fmtPrice(pieceCost(r.k) * r.n))}</b>`
+      + `<i>${esc(r.label)} · ${r.n} ${esc(I18N.t("prod.pcs"))}</i>`
+      + `<u>${esc(unitNote(r.k))}</u></button>`).join("");
+  }
+
+  /* характеристики: только заполненные поля */
+  function renderSpecs() {
+    const box = $("#pd-specs"), list = $("#pd-specs-list");
+    if (!box || !list || !p) return;
+    const lang = I18N.lang;
+    const fab = (p.fabric && (p.fabric[lang] || p.fabric.en)) || "";
+    const stub = /не указан|not specified|ko.rsatilmagan/i.test(fab);
+    const rows = [
+      [I18N.t("prod.category"), p.catalog_panel ? I18N.panelName(p.catalog_panel) : I18N.catName(p.category)],
+      [I18N.t("prod.color"), p.color],   /* только заполненное поле «Цвет»: вариант — это код модели, не цвет */
+      [I18N.t("prod.country"), p.country],
+      [I18N.t("prod.material"), p.material || (stub ? "" : (window.MilanaFab || ((x) => x))(fab))],
+      [I18N.t("prod.composition"), p.composition],
+      [I18N.t("prod.season"), p.season],
+      [I18N.t("prod.sizesRow"), (p.sizes || []).map((s) => I18N.sizeLabel(s)).join(" · ")],
+      [I18N.t("prod.wholesaleBag"), `${I18N.t("prod.unitPack")} ${PACK} ${I18N.t("prod.pcs")} · ${I18N.t("prod.unitBag")} ${BAG} ${I18N.t("prod.pcs")}`],
+    ].filter(([, v]) => String(v || "").trim());
+    box.hidden = !rows.length;
+    list.innerHTML = rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("");
+  }
+
+  /* замеры прямо на странице */
+  function renderMeasure() {
+    const box = $("#pd-measure"), body = $("#pd-measure-body");
+    if (!box || !body || !p) return;
+    const rows = p.size_chart ? parseChart(p.size_chart) : defaultChart(p.sizes);
+    box.hidden = !rows.length;
+    if (!rows.length) return;
+    const head = [I18N.t("prod.scSize"), I18N.t("prod.scChest"), I18N.t("prod.scLength"), I18N.t("prod.scSleeve")];
+    body.innerHTML = `<table class="pd-sc__table"><thead><tr>${head.slice(0, rows[0].length).map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>`
+      + `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  }
+
   function render() {
+    syncPack();
     const lang = I18N.lang;
     const displayName = I18N.productName(p);
     const catalogName = p.catalog_panel ? I18N.panelName(p.catalog_panel) : I18N.catName(p.category);
@@ -136,40 +310,75 @@
         : "/shop?" + (p.gender ? "gender=" + encodeURIComponent(p.gender) + "&" : "") + "category=" + encodeURIComponent(p.category);
       const sep = document.getElementById("crumb-cat-sep"); if (sep) sep.hidden = false;
     }
-    $("#pd-cat").textContent = displayName;
+    { const el = $("#pd-cat"); if (el) el.textContent = displayName; }  /* надзаголовок убран из разметки */
     $("#pd-name").textContent = displayName;
     const rating = $("#pd-rating");
-    const hasRating = Number(p.reviews) > 0 && Number(p.rating) > 0;
-    rating.hidden = !hasRating;
-    rating.innerHTML = hasRating ? `<svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} ${I18N.t("best.reviews")})</span>` : "";
+    /* звёзды показываем, когда задана оценка — отзывы не обязательны */
+    const rv = Number(p.rating) || 0;
+    const rn = Number(p.reviews) || 0;
+    rating.hidden = !(rv > 0);
+    rating.innerHTML = rv > 0
+      ? `<span class="stars" style="--r:${((rv / 5) * 100).toFixed(1)}%" aria-hidden="true"><i>★★★★★</i><b>★★★★★</b></span>`
+        + `<em>${rv.toFixed(1)}</em>${rn > 0 ? ` <span>(${rn} ${I18N.t("best.reviews")})</span>` : ""}`
+        + `<u>${esc(I18N.t("prod.readReviews"))}</u>`
+      : "";
+    renderSku();
+    renderTiers();
+    renderSpecs();
+    renderMeasure();
     $("#pd-price").classList.toggle("pd__price--pending", p.price_visible === false);
     $("#pd-price").innerHTML = priceHtml(p);
-    $("#pd-fabric").textContent = (window.MilanaFab || ((x) => x))(p.fabric[lang] || p.fabric.en || "");
-    $("#pd-meta").innerHTML = [
-      [I18N.t("prod.model"), p.model_no || p.variant || p.id],
-      [I18N.t("prod.category"), displayName],
-      [I18N.t("prod.wholesaleBag"), I18N.t("cart.defaultMix")],
-    ].map(([k, v]) => `<span><i>${esc(k)}</i><b>${esc(v)}</b></span>`).join("");
+    /* состав: заглушку «не указан» не показываем — блок скрываем целиком */
+    {
+      /* рамка состава убрана из разметки — состав показывается в «Характеристиках» */
+      const fabEl = $("#pd-fabric");
+      if (fabEl) {
+        const raw = (window.MilanaFab || ((x) => x))(p.fabric[lang] || p.fabric.en || "");
+        const isStub = /не указан|not specified|ko.rsatilmagan|korsatilmagan/i.test(raw);
+        fabEl.textContent = isStub ? "" : raw;
+        const wrap = fabEl.parentElement || fabEl;
+        wrap.hidden = isStub || !raw.trim();
+      }
+    }
+    /* прежняя таблица заменена блоком «Характеристики» */
     $("#pd-desc").textContent = I18N.packageText(p.desc[lang] || p.desc.en || "");
     $("#pd-care").textContent = [
       p.fabric[lang] || p.fabric.en || "",
       p.care?.[lang] || p.care?.en || "",
     ].filter(Boolean).join("\n");
+    /* скрытый в админке товар продаётся как предзаказ */
+    const stockEl = document.querySelector('[data-i18n="prod.inStock"], [data-i18n="prod.preorder"]');
+    if (stockEl) {
+      const pre = p.in_stock === false;
+      stockEl.dataset.i18n = pre ? "prod.preorder" : "prod.inStock";
+      stockEl.textContent = I18N.t(pre ? "prod.preorder" : "prod.inStock");
+      stockEl.classList.toggle("is-pre", pre);
+    }
+    renderPreorder();
     $("#pd").classList.remove("is-loading", "is-error");
     renderQty();
+    renderVariants();
+    countView();
     renderGallery();
     renderWish();
     renderReviews();
 
     /* sizes */
     const wrap = $("#pd-sizes");
-    if (p.sizes.length) {
+    const sizeLabel = document.querySelector('[data-i18n="prod.size"]');
+    if (SHOW_SIZE_CHIPS && p.sizes.length) {
       wrap.innerHTML = p.sizes.map((s) =>
-        `<button type="button" disabled>${esc(s)}</button>`).join("");
+        `<button type="button" disabled>${esc(I18N.sizeLabel(s))}</button>`).join("");
+      wrap.style.display = "";
+      const labelRow = sizeLabel?.closest(".pd__label");
+      if (labelRow) labelRow.style.display = "";
       wrap.parentElement?.classList?.remove("hidden");
     } else {
-      wrap.previousElementSibling.style.display = "none";
+      /* ссылка на таблицу размеров живёт в строке с ценой, поэтому строку с плитками прячем целиком */
+      wrap.innerHTML = "";
       wrap.style.display = "none";
+      const labelRow = sizeLabel?.closest(".pd__label");
+      if (labelRow) labelRow.style.display = "none";
     }
 
     /* related */
@@ -208,16 +417,21 @@
     $("#pd-main").innerHTML = `<div class="pd__unavailable"><p>${esc(navigator.onLine ? I18N.t("prod.unavailable") : I18N.t("shop.offline"))}</p><a class="btn btn--ghost" href="/shop"><span>${esc(I18N.t("prod.back"))}</span></a></div>`;
     $("#pd-thumbs").innerHTML = "";
     $("#pd-name").textContent = I18N.t("prod.unavailableTitle");
-    $("#pd-cat").textContent = "";
+    { const el = $("#pd-cat"); if (el) el.textContent = ""; }
   }
 
   /* ---------------- events ---------------- */
   document.addEventListener("click", (e) => {
-    const th = e.target.closest("[data-img]");
-    if (th) { imgIdx = +th.dataset.img; renderGallery(); return; }
-    /* полноэкранный просмотр: клик по основному фото или кнопке «увеличить» */
-    if (p && (e.target.closest(".pd__expand") || (e.target.tagName === "IMG" && e.target.closest("#pd-main")))) {
-      window.MilanaLightbox?.open(p.images, imgIdx);
+    const arrow = e.target.closest(".pd__arrow");
+    if (arrow && p && p.images.length > 1) {
+      imgIdx = (imgIdx + (arrow.dataset.dir === "next" ? 1 : -1) + p.images.length) % p.images.length;
+      renderGallery();
+      return;
+    }
+    /* полноэкранный просмотр: клик по любому кадру или по кнопке «увеличить» */
+    const shot = e.target.closest(".pd__shot");
+    if (p && (e.target.closest(".pd__expand") || shot)) {
+      window.MilanaLightbox?.open(p.images, shot ? Number(shot.dataset.img) || 0 : imgIdx);
       return;
     }
 
@@ -250,13 +464,134 @@
     }
   });
 
-  function renderQty() { $("#qty-n").textContent = qty + " " + I18N.t("cart.bagShort"); }
+  function renderQty() {
+    $("#qty-n").textContent = qty + " " + I18N.t(unit === "pachka" ? "cart.packShort" : "cart.bagShort");
+    renderTotal();
+  }
+
+  /* живой итог: количество × размер упаковки × цена за штуку */
+  function renderTotal() {
+    const box = $("#pd-total"); if (!box || !p) return;
+    const pieces = unitSize() * qty;
+    if (p.price_visible === false) { box.textContent = I18N.t("price.manager"); syncSticky(); return; }
+    const sum = pieceCost() * pieces;
+    box.innerHTML = `<span>${esc(I18N.t("prod.total"))}</span> <b>${esc(I18N.fmtPrice(sum))}</b>`
+      + ` <i>${pieces} ${esc(I18N.t("prod.pcs"))} · ${esc(I18N.fmtPrice(pieceCost()))} ${esc(I18N.t("prod.perPiece"))}</i>`;
+    syncSticky();
+  }
+
+  /* предзаказ: вместо корзины — обращение к менеджеру, сверху условие по минимальной партии */
+  function managerLink() {
+    const st = (window.I18N?.settings) || {};
+    const model = [p?.model_no, p?.variant].filter(Boolean).join(" · ");
+    const text = I18N.t("prod.preorderMsg", { name: (window.MilanaName ? MilanaName(p) : p?.name) || "", model });
+    if (st.whatsapp) return `https://wa.me/${String(st.whatsapp).replace(/\D/g, "")}?text=${encodeURIComponent(text)}`;
+    if (st.telegram) return `https://t.me/${String(st.telegram).replace(/^@/, "")}`;
+    if (st.phone) return `tel:${String(st.phone).replace(/[^\d+]/g, "")}`;
+    return "/support";
+  }
+
+  function renderPreorder() {
+    const pre = p?.in_stock === false;
+    const note = $("#pd-preorder"), buy = $("#pd-add"), mgr = $("#pd-manager");
+    const qtyBox = document.querySelector(".pd__qty"), total = $("#pd-total");
+    const sMgr = $("#pd-sticky-manager"), sAdd = $("#pd-sticky-add"), sPrice = document.querySelector(".pd-sticky__price");
+    if (note) {
+      const st = (window.I18N?.settings) || {};
+      const min = Number(st.preorder_min) || 10;
+      const max = Number(st.preorder_max) || 20;
+      note.textContent = pre ? I18N.t("prod.preorderNote", { min, max }) : "";
+      note.hidden = !pre;
+    }
+    const href = pre ? managerLink() : "";
+    /* только [hidden] недостаточно: правила .btn / .pd__qty задают display и перебивают его */
+    const show = (el, on) => {
+      if (!el) return;
+      el.hidden = !on;
+      el.style.display = on ? "" : "none";
+    };
+    const label = document.querySelector('[data-i18n="prod.inStock"], [data-i18n="prod.preorder"]')?.closest(".pd__label");
+    show(mgr, pre); show(sMgr, pre);
+    show(buy, !pre); show(sAdd, !pre); show(qtyBox, !pre); show(total, !pre); show(sPrice, !pre);
+    show(label, !pre);
+    if (mgr) mgr.href = href;
+    if (sMgr) sMgr.href = href;
+  }
+
+  function syncSticky() {
+    const t = $("#pd-sticky-total"), u = $("#pd-sticky-unit");
+    if (!t || !p || p.in_stock === false) return;
+    const pieces = unitSize() * qty;
+    t.textContent = p.price_visible === false ? I18N.t("price.manager") : I18N.fmtPrice(pieceCost() * pieces);
+    u.textContent = `${qty} ${I18N.t(unit === "pachka" ? "cart.packShort" : "cart.bagShort")} · ${pieces} ${I18N.t("prod.pcs")}`;
+  }
+
+  /* переключение пачка / мешок */
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-unit]");
+    if (b) (() => {
+      unit = b.dataset.unit === "pachka" ? "pachka" : "qop";
+      document.querySelectorAll("[data-unit]").forEach((x) => x.classList.toggle("is-on", x.dataset.unit === unit));
+      renderQty();
+      renderTiers();
+    })();
+  });
+
+  /* липкая панель покупки на мобильном — появляется, когда основная кнопка ушла вверх */
+  (() => {
+    const bar = $("#pd-sticky"), addBtn = $("#pd-add");
+    if (!bar || !addBtn) return;
+    let btnVisible = false;
+    const sync = () => {
+      /* показываем, когда основная кнопка ушла из виду И страница уже пролистана */
+      bar.hidden = btnVisible || window.innerWidth > 900 || window.scrollY < 360;
+    };
+    const io = new IntersectionObserver(([e]) => { btnVisible = e.isIntersecting; sync(); },
+      { rootMargin: "-70px 0px 0px 0px" });
+    io.observe(addBtn);
+    window.addEventListener("scroll", sync, { passive: true });
+    window.addEventListener("resize", sync);
+    sync();
+    $("#pd-sticky-add").addEventListener("click", () => addBtn.click());
+  })();
+
+  /* ---------- размерная сетка ---------- */
+  function defaultChart(sizes) {
+    /* базовые замеры, если у модели ещё не заполнена своя сетка */
+    return (sizes || []).filter(Boolean).map((sz) => {
+      const n = Number(String(sz).replace(/\D/g, "")) || 0;
+      if (n >= 80) return [sz, Math.round(n * 0.52), Math.round(n * 0.46), Math.round(n * 0.36)];  /* детский рост */
+      const chest = n * 2;
+      return [sz, chest, Math.round(66 + (n - 44) * 0.9), Math.round(18 + (n - 44) * 0.35)];
+    });
+  }
+
+  function parseChart(text) {
+    return String(text || "").split(/\r?\n/).map((l) => l.split("|").map((c) => c.trim()))
+      .filter((r) => r.length >= 2 && r[0]);
+  }
+
+  function renderChart() {
+    const body = $("#pd-sc-body"); if (!body || !p) return;
+    const rows = p.size_chart ? parseChart(p.size_chart) : defaultChart(p.sizes);
+    if (!rows.length) { body.innerHTML = ""; return; }
+    const head = [I18N.t("prod.scSize"), I18N.t("prod.scChest"), I18N.t("prod.scLength"), I18N.t("prod.scSleeve")];
+    body.innerHTML = `<table class="pd-sc__table"><thead><tr>${head.slice(0, rows[0].length).map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead>`
+      + `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+  }
+
+  const scBox = $("#pd-sc");
+  $("#pd-sc-open")?.addEventListener("click", () => { renderChart(); scBox.hidden = false; document.body.style.overflow = "hidden"; });
+  scBox?.addEventListener("click", (e) => {
+    if (e.target.closest("[data-sc-close]")) { scBox.hidden = true; document.body.style.overflow = ""; }
+  });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && scBox && !scBox.hidden) { scBox.hidden = true; document.body.style.overflow = ""; } });
   $("#qty-minus").addEventListener("click", () => { qty = Math.max(1, qty - 1); renderQty(); });
   $("#qty-plus").addEventListener("click", () => { qty = Math.min(20, qty + 1); renderQty(); });
 
   $("#pd-add").addEventListener("click", () => {
     if (!p) return;
-    Cart.add({ id: p.id, slug: p.slug, name: window.MilanaName ? MilanaName(p) : p.name, image: p.images[0] || "", price: p.price, retail_price: p.retail_price || p.price, price_visible: p.price_visible, price_label: p.price_label, sizes: p.sizes, qty });
+    Cart.add({ id: p.id, slug: p.slug, name: window.MilanaName ? MilanaName(p) : p.name, image: p.images[0] || "", price: p.price, retail_price: p.retail_price || p.price, price_visible: p.price_visible, price_label: p.price_label, sizes: p.sizes, qty, pack: unit });
     Cart.open();
   });
 
@@ -302,8 +637,9 @@
 
   $("#reviews-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const form = e.currentTarget;   /* после await currentTarget обнуляется — держим ссылку заранее */
     const msg = document.querySelector("[data-review-msg]");
-    const data = Object.fromEntries(new FormData(e.currentTarget));
+    const data = Object.fromEntries(new FormData(form));
     msg.hidden = true;
     try {
       const r = await fetch("/api/reviews", {
@@ -316,11 +652,12 @@
       msg.textContent = I18N.t("reviews.submitted");
       msg.classList.add("is-good");
       msg.hidden = false;
-      e.currentTarget.reset();
+      form.reset();
       reviewRating = 5;
       renderReviewStars();
     } catch (ex) {
-      msg.textContent = ex.message === "verified_purchase_required" ? I18N.t("reviews.verifiedOnly") : I18N.t("reviews.failed");
+      const codes = { unauthorized: "reviews.signinFirst", rate_limited: "reviews.tooMany", verified_purchase_required: "reviews.verifiedOnly" };
+      msg.textContent = I18N.t(codes[ex.message] || "reviews.failed");
       msg.classList.remove("is-good");
       msg.hidden = false;
     }

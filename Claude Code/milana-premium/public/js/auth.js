@@ -295,18 +295,21 @@
     tick();
   }
 
+  /* проверки формы регистрации — одинаковы для локального входа и для Firebase */
+  async function validateSignup(data) {
+    if (String(data.name || "").trim().length < 2) throw new Error("name");
+    if (!/^[0-9+()\-\s]{5,25}$/.test(String(data.phone || ""))) throw new Error("phone_format");
+    if (!data.terms) throw new Error("terms");
+    if (!/^\d{6}$/.test(String(data.email_code || ""))) throw new Error("otp");
+    await json("/api/auth/email-otp/verify", { email: data.email, code: data.email_code });
+    data.account_type = "business";   /* выбор типа убран из формы: тип задаёт менеджер в админке */
+  }
+
   async function handleLocal(form, mode) {
     const data = formData(form);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(data.email || ""))) throw new Error("email");
     if (String(data.password || "").length < 8) throw new Error("password");
-    if (mode === "signup") {
-      if (!["business", "individual"].includes(data.account_type)) throw new Error("account_type");
-      if (!data.terms) throw new Error("terms");
-      if (!/^[0-9+()\-\s]{5,25}$/.test(String(data.phone || ""))) throw new Error("phone");
-      if (!/^\d{6}$/.test(String(data.email_code || ""))) throw new Error("otp");
-      if (String(data.name || "").trim().length < 2) throw new Error("name");
-      await json("/api/auth/email-otp/verify", { email: data.email, code: data.email_code });
-    }
+    if (mode === "signup") await validateSignup(data);
     const res = await json(mode === "signup" ? "/api/auth/signup" : "/api/auth/signin", data);
     me = res.customer || null;
     renderLinks();
@@ -331,6 +334,9 @@
     if (!firebaseAuth || !window.__milanaFirebase) return handleLocal(form, mode);
     const data = formData(form);
     const { authMod } = window.__milanaFirebase;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(data.email || ""))) throw new Error("email");
+    if (String(data.password || "").length < 8) throw new Error("password");
+    if (mode === "signup") await validateSignup(data);
     const cred = mode === "signup"
       ? await authMod.createUserWithEmailAndPassword(firebaseAuth, data.email, data.password)
       : await authMod.signInWithEmailAndPassword(firebaseAuth, data.email, data.password);
@@ -340,6 +346,8 @@
       idToken,
       name: data.name || cred.user.displayName || "",
       phone: data.phone || "",
+      city: data.city || "",
+      address: data.address || "",
     });
     me = res.customer || null;
     renderLinks();
@@ -520,7 +528,10 @@
   }
 
   function friendly(code) {
-    const clean = String(code || "").replace(/^Firebase:\s*/i, "").replace(/\s*\(auth\/.*?\)\.?$/i, "");
+    const raw = String(code || "");
+    /* код вида auth/email-already-in-use ищем ДО очистки строки, иначе от неё остаётся голое «Error» */
+    const fbCode = (raw.match(/auth\/[a-z-]+/i) || [""])[0].toLowerCase();
+    const clean = raw.replace(/^Firebase:\s*/i, "").replace(/\s*\(auth\/.*?\)\.?$/i, "").trim();
     const map = {
       email: t("auth.errEmail"),
       password: t("auth.errPassword"),
@@ -541,12 +552,24 @@
       rate_limited: t("auth.errRateLimited"),
       phone_not_verified: t("auth.errPhoneVerify"),
       name: t("auth.errName"),
+      phone_format: t("auth.errPhoneFormat"),
+      "auth/email-already-in-use": t("auth.errExists"),
+      "auth/invalid-email": t("auth.errEmail"),
+      "auth/weak-password": t("auth.errPassword"),
+      "auth/missing-password": t("auth.errPassword"),
+      "auth/wrong-password": t("auth.errWrong"),
+      "auth/user-not-found": t("auth.errWrong"),
+      "auth/invalid-credential": t("auth.errWrong"),
+      "auth/invalid-login-credentials": t("auth.errWrong"),
+      "auth/user-disabled": t("auth.errDisabled"),
+      "auth/too-many-requests": t("auth.errRateLimited"),
+      "auth/network-request-failed": t("auth.errNetwork"),
       "auth/popup-closed-by-user": t("auth.errPopupClosed"),
       "auth/cancelled-popup-request": t("auth.errPopupClosed"),
       "auth/account-exists-with-different-credential": t("auth.errProviderConflict"),
       "auth/operation-not-allowed": t("auth.errProviderDisabled"),
     };
-    return map[clean] || clean || t("auth.errGeneric");
+    return map[fbCode] || map[clean] || (clean && !/^error\.?$/i.test(clean) ? clean : t("auth.errGeneric"));
   }
 
   async function boot() {

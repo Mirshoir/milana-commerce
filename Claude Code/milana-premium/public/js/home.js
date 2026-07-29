@@ -52,7 +52,10 @@
         <div class="product__row"><h3><a href="/p/${p.slug}">${esc(nm)}</a></h3>
           ${priceHtml(p)}${tagChip(p)}</div>
         <p class="product__fab" data-fab>${esc(fabric)}</p>
-        <p class="product__rating"><svg class="ic"><use href="#i-star"/></svg>${p.rating} <span>(${p.reviews} <i data-i18n="best.reviews">${I18N.t("best.reviews")}</i>)</span></p>
+        ${(Number(p.rating) > 0) ? `<p class="product__rating" title="${Number(p.rating).toFixed(1)} / 5">
+          <span class="stars" style="--r:${((Number(p.rating)/5)*100).toFixed(1)}%" aria-hidden="true"><i>★★★★★</i><b>★★★★★</b></span>
+          <em>${Number(p.rating).toFixed(1)}</em>${Number(p.reviews) > 0 ? ` <span>(${p.reviews})</span>` : ""}
+        </p>` : ""}
       </div>
     </article>`;
   }

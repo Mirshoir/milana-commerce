@@ -198,7 +198,7 @@
       a.href = "https://wa.me/" + s.whatsapp + (a.dataset.waText ? "?text=" + encodeURIComponent(a.dataset.waText) : "");
     });
     if (s.telegram) each('[data-dyn="tg"]', (a) => (a.href = "https://t.me/" + s.telegram));
-    if (s.instagram) each('[data-dyn="ig"]', (a) => (a.href = "https://instagram.com/" + s.instagram));
+    if (s.instagram) each('[data-dyn="ig"]', (a) => (a.href = "https://www.instagram.com/" + s.instagram));
     if (s.phone) each('[data-dyn="tel"]', (a) => { a.href = "tel:" + s.phone.replace(/[^\d+]/g, ""); if (a.dataset.text !== "keep") a.textContent = s.phone; });
     if (s.email) each('[data-dyn="mail"]', (a) => { a.href = "mailto:" + s.email; a.textContent = s.email; });
     each('[data-dyn="address"]', (el) => (el.textContent = s["address_" + lang] || s.address_en || ""));
@@ -208,9 +208,18 @@
   const ready = Promise.all([loadDict("en"), lang !== "en" ? loadDict(lang) : null, settingsReady])
     .then(() => { buildSwitchers(); apply(); applyDynamic(); });
 
+  /* размеры вроде «Свободный размер» переводим; цифровые оставляем как есть */
+  const SIZE_KEYS = { "свободный размер": "size.free", "free size": "size.free", "erkin o‘lcham": "size.free", "erkin o'lcham": "size.free" };
+  function sizeLabel(value) {
+    const raw = String(value ?? "").trim();
+    const key = SIZE_KEYS[raw.toLowerCase()];
+    return key ? t(key) : raw;
+  }
+
   window.I18N = {
     get lang() { return lang; },
     t, set, apply, ready, fmtPrice, fmtBagPrice, bagPrice, catName, panelName, productName, packageText, applyDynamic,
+    sizeLabel,
     BAG_SIZE,
     get settings() { return settings || {}; },
   };

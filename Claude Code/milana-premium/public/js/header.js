@@ -102,3 +102,64 @@
     if (fab && fab.offsetWidth) toTop.style.right = (18 + fab.offsetWidth + 12) + "px";
   }, 400));
 })();
+
+/* ============================================================
+   Промо-строка → бегущая новостная лента
+   Текст берётся из ключа best.ship (админка → Тексты → Промо-строка).
+   Несколько новостей можно разделить символом «|».
+   ============================================================ */
+(() => {
+  "use strict";
+  const promo = document.querySelector(".promo");
+  if (!promo) return;
+  const src = promo.querySelector("[data-i18n]");
+  if (!src) return;
+
+  function build() {
+    const text = (src.textContent || "").trim();
+    if (!text) return;
+    const parts = text.split("|").map((t) => t.trim()).filter(Boolean);
+
+    let track = promo.querySelector(".promo__track");
+    if (!track) {
+      track = document.createElement("div");
+      track.className = "promo__track";
+      promo.appendChild(track);
+      promo.classList.add("promo--ticker");
+    }
+    const makeRun = () => {
+      const run = document.createElement("span");
+      run.className = "promo__run";
+      parts.forEach((t) => {
+        const i = document.createElement("i");
+        i.className = "promo__item";
+        i.textContent = t;
+        run.appendChild(i);
+      });
+      return run;
+    };
+
+    /* измеряем одну копию */
+    track.innerHTML = "";
+    const probe = makeRun();
+    track.appendChild(probe);
+    const runW = probe.getBoundingClientRect().width || 600;
+
+    /* половина дорожки должна быть шире экрана — иначе в строке появляется пустой разрыв */
+    const viewport = promo.clientWidth || window.innerWidth || 1200;
+    const copies = Math.max(1, Math.ceil(viewport / runW) + 1);
+
+    track.innerHTML = "";
+    const half = document.createDocumentFragment();
+    for (let i = 0; i < copies; i++) half.appendChild(makeRun());
+    track.appendChild(half.cloneNode(true));   /* первая половина */
+    track.appendChild(half);                   /* вторая — точная копия для бесшовной петли */
+
+    /* скорость постоянная (~60 px/с) независимо от длины текста */
+    track.style.setProperty("--ticker-dur", Math.max(14, Math.round((runW * copies) / 60)) + "s");
+  }
+
+  build();
+  window.addEventListener("i18n:change", () => setTimeout(build, 60));
+  window.addEventListener("resize", () => { clearTimeout(build._t); build._t = setTimeout(build, 200); });
+})();

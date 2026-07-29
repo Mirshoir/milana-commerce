@@ -367,3 +367,25 @@ textarea.admin-searchbox{min-height:0;height:41px;resize:none;overflow:hidden;li
 .hsbar__scale{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#666}
 .hsbar__scale select{border:1px solid var(--line,#e3e0da);border-radius:6px;padding:3px 6px;font-size:12px;background:#fff}
 .redit__area--mini{border:1px solid var(--line,#e3e0da) !important;border-radius:8px !important;min-height:34px;padding:7px 11px}
+
+/* ================= Справочники ================= */
+.dictgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width:1080px){.dictgrid{grid-template-columns:1fr}}
+.dictcard h3{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.dictcard__n{font-style:normal;font-size:.7rem;letter-spacing:.06em;color:var(--soft);background:var(--bg);border:1px solid var(--line);padding:2px 9px}
+.dictlist{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow-y:auto;padding-right:4px}
+.dictrow{display:flex;align-items:center;gap:6px}
+.dictrow__in{flex:1 1 auto;min-width:0;height:36px;padding:6px 10px;color:var(--ink)}
+.dictrow__pack{flex:none;font-style:normal;font-size:.7rem;color:var(--mut);white-space:nowrap}
+.dictrow__use{flex:none;font-style:normal;font-size:.7rem;color:var(--soft);background:var(--bg);border:1px solid var(--line);padding:3px 8px;white-space:nowrap}
+.dictrow__use.is-zero{color:var(--mut);background:transparent;border-color:transparent}
+.dictrow__b{flex:none;width:28px;height:36px;border:1px solid var(--line-2);background:var(--card);color:var(--soft);cursor:pointer;font-size:.8rem;line-height:1;transition:border-color .15s,color .15s}
+.dictrow__b:hover{border-color:var(--ink);color:var(--ink)}
+.dictrow__b--del:hover{border-color:var(--err);color:var(--err)}
+.dictadd{display:flex;gap:6px;margin-top:14px}
+.dictadd .ainput{flex:1 1 auto;min-width:0;height:36px;padding:6px 10px}
+.dictadd .abtn{flex:none}
+.dictcard__warn{color:#8d6a1f}
+.dict__state{font-size:.74rem;color:#8d6a1f;margin-right:14px}
+.dictrow__pack{min-width:80px;text-align:right}
+.dictrow__use{min-width:62px;text-align:center}
