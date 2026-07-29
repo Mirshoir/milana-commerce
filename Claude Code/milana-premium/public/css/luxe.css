@@ -1216,6 +1216,7 @@ img { image-orientation: from-image; }
   transition: opacity var(--t-fast) var(--ease), transform var(--t-fast) var(--ease);
 }
 .appbadge:hover { opacity: .85; transform: translateY(-1px); }
+.appbadge[href="#"] { display: none; }
 .appbadge__logo { width: 20px; height: 20px; flex: none; }
 .appbadge span { display: flex; flex-direction: column; line-height: 1.12; }
 .appbadge i { font-style: normal; font-size: 8px; letter-spacing: .06em; text-transform: uppercase; color: rgba(255, 255, 255, .78); }

@@ -35,6 +35,12 @@ const PORT = Number(process.env.PORT) || 4173;
 const HOST = process.env.HOST || "0.0.0.0";
 const NODE_ENV = process.env.NODE_ENV || "development";
 const SITE_ORIGIN = String(process.env.SITE_ORIGIN || "https://milanapremium.uz").replace(/\/+$/, "");
+const TRUSTED_PROXY_IPS = new Set(
+  String(process.env.TRUSTED_PROXY_IPS || "127.0.0.1,::1,172.16.10.2,172.16.10.5")
+    .split(",")
+    .map((value) => value.trim().replace(/^::ffff:/, ""))
+    .filter((value) => net.isIP(value))
+);
 loadEnvFile(path.join(DATA_DIR, "supabase.env"));
 loadEnvFile(path.join(DATA_DIR, "firebase.env"));
 loadEnvFile(path.join(DATA_DIR, "telegram.env"));
@@ -719,6 +725,26 @@ const SETTINGS_DEFAULTS = {
   accent_dark: "#421521",                    // darker shade (dark sections, hovers)
 };
 for (const [k, v] of Object.entries(SETTINGS_DEFAULTS)) if (getSetting(k) == null) setSetting(k, v);
+if (!getSetting("chat_session_secret")) setSetting("chat_session_secret", crypto.randomBytes(32).toString("hex"));
+
+function chatSessionRef(id) {
+  const numericId = Number(id);
+  const signature = crypto.createHmac("sha256", getSetting("chat_session_secret"))
+    .update(String(numericId))
+    .digest("hex");
+  return `${numericId}.${signature}`;
+}
+
+function verifiedChatSessionId(value) {
+  const match = String(value || "").match(/^(\d+)\.([a-f0-9]{64})$/);
+  if (!match) return 0;
+  const expected = chatSessionRef(Number(match[1])).split(".")[1];
+  const supplied = Buffer.from(match[2], "hex");
+  const trusted = Buffer.from(expected, "hex");
+  return supplied.length === trusted.length && crypto.timingSafeEqual(supplied, trusted)
+    ? Number(match[1])
+    : 0;
+}
 
 const ORDER_BAG_SIZE = 60;
 const ORDER_BAG_SIZE_COUNT = 6;
@@ -1128,7 +1154,8 @@ const MIME = {
   ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp",
   ".svg": "image/svg+xml", ".gif": "image/gif", ".ico": "image/x-icon",
   ".mp4": "video/mp4", ".webm": "video/webm",
-  ".woff2": "font/woff2", ".woff": "font/woff", ".txt": "text/plain; charset=utf-8",
+  ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".otf": "font/otf",
+  ".txt": "text/plain; charset=utf-8",
 };
 
 function cspOrigin(url) {
@@ -1393,6 +1420,24 @@ function detectUploadMedia(buf) {
   if (buf.slice(0, 4).toString("latin1") === "RIFF" && buf.slice(8, 12).toString("latin1") === "WEBP") return { ext: "webp", kind: "image" };
   if (buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) return { ext: "webm", kind: "video" };
   if (buf.slice(4, 8).toString("latin1") === "ftyp") return { ext: "mp4", kind: "video" };
+  const signature = buf.slice(0, 4).toString("latin1");
+  if ((signature === "wOFF" || signature === "wOF2") && buf.length >= 48) {
+    const declaredLength = buf.readUInt32BE(8);
+    const tableCount = buf.readUInt16BE(12);
+    if (declaredLength === buf.length && tableCount > 0 && tableCount <= 256) {
+      return { ext: signature === "wOF2" ? "woff2" : "woff", kind: "font" };
+    }
+  }
+  const sfnt = buf.length >= 12 && (
+    signature === "OTTO"
+    || (buf[0] === 0x00 && buf[1] === 0x01 && buf[2] === 0x00 && buf[3] === 0x00)
+  );
+  if (sfnt) {
+    const tableCount = buf.readUInt16BE(4);
+    if (tableCount > 0 && tableCount <= 256 && 12 + tableCount * 16 <= buf.length) {
+      return { ext: signature === "OTTO" ? "otf" : "ttf", kind: "font" };
+    }
+  }
   return null;
 }
 
@@ -1491,6 +1536,11 @@ async function generateUploadThumb(sourcePath, name) {
 }
 
 async function optimizeUploadedMedia({ originalPath, finalBase, ext, kind, originalBytes }) {
+  if (kind === "font") {
+    const name = `${finalBase}.${ext}`;
+    fs.copyFileSync(originalPath, path.join(UPLOAD_DIR, name));
+    return { name, kind, bytes: originalBytes, optimized: false, originalBytes, savedBytes: 0, reason: "font_validated" };
+  }
   const toolAvailable = kind === "image" ? CWEBP_AVAILABLE : FFMPEG_AVAILABLE;
   if (!MEDIA_OPTIMIZE_ENABLED || !toolAvailable) {
     const name = `${finalBase}.${ext}`;
@@ -1595,7 +1645,11 @@ function sameOrigin(req) {
   if (!header) return true;
   try {
     const got = new URL(header);
-    const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").toLowerCase();
+    const peer = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+    const forwardedHost = TRUSTED_PROXY_IPS.has(peer)
+      ? String(req.headers["x-forwarded-host"] || "").split(",").at(-1).trim()
+      : "";
+    const host = String(forwardedHost || req.headers.host || "").toLowerCase();
     return got.host.toLowerCase() === host;
   } catch {
     return false;
@@ -1616,7 +1670,16 @@ function rateLimit(key, max, windowMs) {
   if (buckets.size > 5000) for (const [k, v] of buckets) if (now > v.reset) buckets.delete(k);
   return b.count <= max;
 }
-const ipOf = (req) => (req.socket.remoteAddress || "?").replace(/^::ffff:/, "");
+function ipOf(req) {
+  const peer = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+  if (!TRUSTED_PROXY_IPS.has(peer)) return peer || "?";
+  const forwarded = String(req.headers["x-forwarded-for"] || "")
+    .split(",")
+    .map((value) => value.trim().replace(/^::ffff:/, ""))
+    .filter((value) => net.isIP(value))
+    .at(-1);
+  return forwarded || peer || "?";
+}
 
 /* ---------- sessions ---------- */
 const SESSION_TTL = 30 * 24 * 3600 * 1000;
@@ -1957,6 +2020,26 @@ const COLLECTIONS = ["", "ss26"];
 const ORDER_STATUSES = ["new", "processing", "shipped", "done", "cancelled"];
 const PAYMENT_METHODS = ["manager", "cash", "bank", "click", "payme", "card"];
 const PAYMENT_STATUSES = ["pending", "invoice_sent", "waiting_for_customer", "submitted", "paid", "failed", "refunded", "cancelled"];
+const ORDER_STATUS_TRANSITIONS = {
+  new: new Set(["new", "processing", "cancelled"]),
+  processing: new Set(["processing", "shipped", "cancelled"]),
+  shipped: new Set(["shipped", "done"]),
+  done: new Set(["done"]),
+  cancelled: new Set(["cancelled"]),
+};
+const PAYMENT_STATUS_TRANSITIONS = {
+  pending: new Set(["pending", "invoice_sent", "waiting_for_customer", "submitted", "paid", "failed", "cancelled"]),
+  invoice_sent: new Set(["invoice_sent", "waiting_for_customer", "submitted", "paid", "failed", "cancelled"]),
+  waiting_for_customer: new Set(["waiting_for_customer", "invoice_sent", "submitted", "paid", "failed", "cancelled"]),
+  submitted: new Set(["submitted", "waiting_for_customer", "paid", "failed", "cancelled"]),
+  paid: new Set(["paid", "refunded"]),
+  failed: new Set(["failed", "pending", "invoice_sent", "waiting_for_customer", "submitted", "cancelled"]),
+  refunded: new Set(["refunded"]),
+  cancelled: new Set(["cancelled"]),
+};
+const ORDER_CANCELLABLE_PAYMENT_STATUSES = new Set([
+  "pending", "invoice_sent", "waiting_for_customer", "submitted", "failed", "cancelled", "refunded",
+]);
 const SUPPORT_TOPICS = ["general", "catalog", "price", "delivery", "defect", "payment", "order"];
 const SUPPORT_STATUSES = ["new", "open", "waiting", "done", "closed"];
 const ACCOUNT_TYPES = ["business", "individual"];
@@ -1970,6 +2053,52 @@ const normalizePhone = (v) => str(v, 25).replace(/\D/g, "");
 const emailOk = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v) && !/[<>"']/.test(v);
 const htmlText = (v) => str(v, 5000).replace(/\s+/g, " ").trim();
 const money = (n, currency = "USD") => `${Math.round((Number(n) || 0) * 100) / 100} ${currency}`;
+const transitionAllowed = (matrix, from, to) => Boolean(matrix[from]?.has(to));
+
+function stockAdjustmentsFromOrderItems(items) {
+  const aggregate = new Map();
+  const source = Array.isArray(items) ? items : [];
+  for (const item of source) {
+    const adjustment = item?.stock_adjustment;
+    const id = Number(adjustment?.id);
+    const type = adjustment?.type;
+    const amount = type === "retail" ? Number(adjustment?.qty) : Number(adjustment?.qop);
+    if (!Number.isInteger(id) || id <= 0 || !["retail", "wholesale"].includes(type)
+      || !Number.isFinite(amount) || amount <= 0 || (type === "retail" && !Number.isInteger(amount))) continue;
+    const key = `${type}:${id}`;
+    const current = aggregate.get(key) || { type, id, qty: 0, qop: 0 };
+    if (type === "retail") current.qty += amount;
+    else current.qop = Math.round((current.qop + amount) * 1000) / 1000;
+    aggregate.set(key, current);
+  }
+  return [...aggregate.values()];
+}
+
+function parseOrderItems(value) {
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function restoreSqliteStock(items) {
+  const released = { retail: 0, qop: 0 };
+  for (const adjustment of stockAdjustmentsFromOrderItems(items)) {
+    if (adjustment.type === "retail") {
+      const result = db.prepare("UPDATE products SET retail_stock=retail_stock+? WHERE id=?")
+        .run(adjustment.qty, adjustment.id);
+      if (result.changes) released.retail += adjustment.qty;
+    } else {
+      const result = db.prepare("UPDATE products SET available_qop=available_qop+? WHERE id=? AND available_qop IS NOT NULL")
+        .run(adjustment.qop, adjustment.id);
+      if (result.changes) released.qop += adjustment.qop;
+    }
+  }
+  return released;
+}
 
 function normalizePromoCode(v) {
   return str(v, 40).toUpperCase().replace(/[^A-Z0-9_-]/g, "");
@@ -2273,7 +2402,7 @@ function reviewSummary(productId, slug) {
   const row = db.prepare(`
     SELECT COUNT(*) count, AVG(rating) avg
     FROM reviews
-    WHERE status='approved' AND (product_id=? OR product_slug=?)
+    WHERE status='approved' AND verified_purchase=1 AND product_id=? AND product_slug=?
   `).get(Number(productId) || 0, str(slug, 120));
   return { count: Number(row?.count || 0), avg: Number(row?.avg || 0) };
 }
@@ -2310,7 +2439,9 @@ function decorateProduct(p) {
     retail_enabled: p.retail_enabled !== false && Number(p.retail_enabled) !== 0,
     retail_price: retail,
     retail_stock: Math.max(0, Math.round(Number(p.retail_stock) || 0)),
-    available_qop: p.available_qop == null || p.available_qop === "" ? null : Math.max(0, Math.round(Number(p.available_qop) || 0)),
+    available_qop: p.available_qop == null || p.available_qop === ""
+      ? null
+      : Math.max(0, Math.round((Number(p.available_qop) || 0) * 1000) / 1000),
     like_count: likeCount(p.id, p.slug),
     views: Math.max(0, Number(p.views) || 0),
     rating,
@@ -2344,13 +2475,33 @@ function priceForCustomer(product, customer, orderType = "wholesale") {
   };
 }
 
+function packPriceForCustomer(product, customer) {
+  const wholesale = priceForCustomer(product, customer, "wholesale");
+  const retail = priceForCustomer(product, customer, "retail");
+  const rawMarkup = getSetting("pack_markup");
+  const markup = rawMarkup == null || rawMarkup === "" ? 0 : Number(rawMarkup);
+  const safeMarkup = Number.isFinite(markup) ? Math.max(0, Math.min(200, markup)) : 0;
+  if (retail.unit > wholesale.unit) {
+    return { ...retail, source: "retail_price", pack_markup: safeMarkup };
+  }
+  return {
+    ...wholesale,
+    unit: Math.round(wholesale.unit * (1 + safeMarkup / 100) * 100) / 100,
+    source: safeMarkup ? "pack_markup" : wholesale.source,
+    pack_markup: safeMarkup,
+  };
+}
+
 function productForCustomer(product, customer, orderType = "wholesale") {
-  const pricing = priceForCustomer(product, customer, orderType);
+  const effectiveOrderType = customer?.account_type === "individual" ? "retail" : orderType;
+  const pricing = priceForCustomer(product, customer, effectiveOrderType);
+  const wholesale = priceForCustomer(product, customer, "wholesale");
+  const retail = priceForCustomer(product, customer, "retail");
   return {
     ...product,
     price: pricing.unit,
-    wholesale_price: pricing.unit,
-    retail_price: pricing.unit,
+    wholesale_price: wholesale.unit,
+    retail_price: retail.unit,
     old_price: product.old_price,
     price_visible: pricing.visible,
     price_label: pricing.label,
@@ -2597,9 +2748,9 @@ function smartRecommendProducts(products, seed, limit = 4) {
     .map((row) => publicProductCard(row.p, { smart_score: row.score }));
 }
 
-/* «Скрыт» в админке = предзаказ на витрине. В каталог такие товары попадают,
-   только если у них есть фото — иначе карточка выглядела бы пустой. */
-const CATALOG_VISIBLE_SQL = "(active=1 OR (COALESCE(images,'[]') NOT IN ('', '[]', 'null')))";
+/* The admin's active flag is authoritative: hidden products must not leak into
+   catalog/search/review/checkout routes merely because they still have images. */
+const CATALOG_VISIBLE_SQL = "active=1";
 
 async function activeProductsForCatalog(forceCatalogRefresh = false) {
   const localProducts = postgresCatalog
@@ -2666,8 +2817,12 @@ async function activeProductBySlug(slug) {
 function productSeo(product) {
   const url = absoluteSiteUrl(`/p/${encodeURIComponent(product.slug)}`);
   const productName = localizedProductType(product, "uz");
-  const model = str(product.model_no || product.variant, 80);
-  const title = `${productName}${model ? ` ${model}` : ""} — MILANA PREMIUM`;
+  const identifiers = [str(product.model_no, 80), str(product.variant, 80)]
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index);
+  const model = identifiers.join(" · ");
+  const displayName = `${productName}${model ? ` ${model}` : ""}`;
+  const title = `${displayName} — MILANA PREMIUM`;
   const description = plainMetaText(
     product.desc?.uz || product.desc?.en || product.desc?.ru,
     `${productName} — Milana Premium ulgurji kiyim katalogi.`,
@@ -2676,15 +2831,16 @@ function productSeo(product) {
   const image = images[0] || absoluteSiteUrl("/assets/hero-poster.jpg");
   const price = Number(product.wholesale_price || product.price || 0);
   const currency = String(product.currency || "USD").toUpperCase();
+  const preorder = product.preorder === true || product.in_stock === false;
   const schema = {
     "@context": "https://schema.org",
     "@type": "Product",
     "@id": `${url}#product`,
-    name: productName,
+    name: displayName,
     description,
     image: images.length ? images : [image],
-    sku: product.model_no || product.variant || String(product.id),
-    category: product.catalog_panel || product.category || "Clothing",
+    sku: identifiers.join("-") || String(product.id),
+    category: product.product_type || inferProductType(product) || product.category || "Clothing",
     brand: { "@type": "Brand", name: "MILANA PREMIUM" },
     url,
   };
@@ -2694,9 +2850,11 @@ function productSeo(product) {
       url,
       price,
       priceCurrency: currency,
-      availability: Number(product.available_qop) === 0
-        ? "https://schema.org/OutOfStock"
-        : "https://schema.org/InStock",
+      availability: preorder
+        ? "https://schema.org/PreOrder"
+        : Number(product.available_qop) === 0
+          ? "https://schema.org/OutOfStock"
+          : "https://schema.org/InStock",
       itemCondition: "https://schema.org/NewCondition",
       seller: { "@type": "Organization", name: "MILANA PREMIUM" },
     };
@@ -3218,7 +3376,7 @@ function validateProduct(b) {
   const retail_stock = Math.max(0, Math.min(1e6, Math.round(Number(b.retail_stock) || 0)));
   const available_qop = b.available_qop === null || b.available_qop === "" || b.available_qop === undefined
     ? null
-    : Math.max(0, Math.min(1e6, Math.round(Number(b.available_qop) || 0)));
+    : Math.max(0, Math.min(1e6, Math.round((Number(b.available_qop) || 0) * 1000) / 1000));
   let old_price = b.old_price === null || b.old_price === "" || b.old_price === undefined ? null : Number(b.old_price);
   if (old_price !== null && !(old_price > 0 && old_price < 1e9)) throw new Error("old_price");
   const sizes = Array.isArray(b.sizes) ? b.sizes.map((s) => str(s, 8)).filter(Boolean).slice(0, 12) : [];
@@ -3689,9 +3847,9 @@ const api = {
       else db.prepare("UPDATE email_otps SET attempts=attempts+1 WHERE email=?").run(email);
       return fail(res, 401, "otp_wrong");
     }
-    if (postgresCommerce) await postgresCommerce.verifyOtp("email", email);
-    else db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
     const token = await createCustomerSession(customer.id);
+    if (postgresCommerce) await postgresCommerce.deleteOtp("email", email);
+    else db.prepare("DELETE FROM email_otps WHERE email=?").run(email);
     audit("customer", "auth.passwordless", { id: customer.id, provider: customer.provider || "local" });
     authResponse(req, res, 200, customer, token);
   },
@@ -3715,11 +3873,17 @@ const api = {
       else db.prepare("UPDATE email_otps SET attempts=attempts+1 WHERE email=?").run(email);
       return fail(res, 401, "otp_wrong");
     }
-    if (postgresCommerce) await postgresCommerce.verifyOtp("email", email);
-    else db.prepare("UPDATE email_otps SET verified_at=datetime('now') WHERE email=?").run(email);
+    if (["firebase", "google", "apple"].includes(String(row.provider || "").toLowerCase())) {
+      return send(res, 409, {
+        error: "federated_password_reset_required",
+        provider: String(row.provider).toLowerCase(),
+      });
+    }
     const updated = postgresCommerce ? await postgresCommerce.updateCustomerPassword(row.id, hashPassword(password)) :
       (db.prepare("UPDATE customers SET password_hash=?, provider='local', updated_at=datetime('now') WHERE id=?").run(hashPassword(password), row.id),
        db.prepare("SELECT * FROM customers WHERE id=?").get(row.id));
+    if (postgresCommerce) await postgresCommerce.deleteOtp("email", email);
+    else db.prepare("DELETE FROM email_otps WHERE email=?").run(email);
     if (postgresCommerce) await postgresCommerce.deleteCustomerSessions(row.id);
     else db.prepare("DELETE FROM customer_sessions WHERE customer_id=?").run(row.id);
     const token = await createCustomerSession(row.id);
@@ -3987,18 +4151,26 @@ const api = {
 
   "GET /api/products/:slug/reviews": async (req, res, u, m) => {
     const slug = str(m.slug, 120);
-    const productId = Number(u.searchParams.get("product_id")) || 0;
+    const product = await activeProductBySlug(slug);
+    if (!product) return fail(res, 404, "product_not_found");
+    const productId = Number(product.id);
     const rows = postgresCommerce ? await postgresCommerce.reviewsForProduct(productId, slug, 50) : db.prepare(`
       SELECT r.id, r.rating, r.comment, r.photo_url, r.verified_purchase, r.created_at,
              COALESCE(c.name, 'Milana customer') customer_name
       FROM reviews r
       JOIN customers c ON c.id=r.customer_id
-      WHERE r.status='approved' AND (r.product_slug=? OR r.product_id=?)
+      WHERE r.status='approved' AND r.verified_purchase=1 AND r.product_slug=? AND r.product_id=?
       ORDER BY r.id DESC
       LIMIT 50
     `).all(slug, productId);
     const summary = postgresCommerce ? await postgresCommerce.reviewSummary(productId, slug) : reviewSummary(productId, slug);
-    send(res, 200, { summary: { count: Number(summary.count) || 0, rating: Number(summary.rating) || 0 }, reviews: rows });
+    send(res, 200, {
+      summary: {
+        count: Number(summary.count) || 0,
+        rating: Number(summary.rating ?? summary.avg) || 0,
+      },
+      reviews: rows,
+    });
   },
 
   "POST /api/reviews": async (req, res) => {
@@ -4006,13 +4178,43 @@ const api = {
     if (!customer) return fail(res, 401, "unauthorized");
     if (!rateLimit("review:" + customer.id, 12, 24 * 3600e3)) return fail(res, 429, "rate_limited");
     const b = await readJson(req, 16e3);
-    const productId = Number(b.product_id) || 0;
-    const productSlug = str(b.product_slug, 120);
-    const rating = Math.max(1, Math.min(5, Math.round(Number(b.rating) || 0)));
+    const requestedProductId = Number(b.product_id) || 0;
+    const requestedProductSlug = str(b.product_slug, 120);
+    const rating = Number(b.rating);
     const comment = str(b.comment, 1200);
     const photo = str(b.photo_url, 300);
-    if (!productId && !productSlug) return fail(res, 400, "product");
-    if (!rating) return fail(res, 400, "rating");
+    if (!requestedProductId && !requestedProductSlug) return fail(res, 400, "product");
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) return fail(res, 400, "rating");
+    if (!comment) return fail(res, 400, "comment");
+    let canonical = null;
+    if (postgresCatalog) {
+      canonical = requestedProductId
+        ? await postgresCatalog.getById(requestedProductId, true)
+        : await postgresCatalog.getBySlug(requestedProductSlug, true);
+      if (canonical) canonical = rowToProduct(canonical);
+    } else {
+      const row = requestedProductId
+        ? db.prepare(`SELECT * FROM products WHERE id=? AND ${CATALOG_VISIBLE_SQL}`).get(requestedProductId)
+        : db.prepare(`SELECT * FROM products WHERE slug=? AND ${CATALOG_VISIBLE_SQL}`).get(requestedProductSlug);
+      if (row) canonical = rowToProduct(row);
+    }
+    if (!canonical && CATALOG_SOURCE_ENABLED) {
+      canonical = requestedProductId
+        ? await catalogProductById(requestedProductId)
+        : await catalogProductBySlug(requestedProductSlug);
+      if (canonical?.active === false) canonical = null;
+    }
+    if (!canonical && requestedProductId) {
+      try { canonical = await localStoreProductById(requestedProductId); } catch {}
+      if (canonical?.active === false) canonical = null;
+    }
+    if (!canonical) return fail(res, 404, "product_not_found");
+    const productId = Number(canonical.id);
+    const productSlug = str(canonical.slug, 120);
+    if ((requestedProductId && requestedProductId !== productId)
+      || (requestedProductSlug && requestedProductSlug !== productSlug)) {
+      return fail(res, 409, "product_mismatch");
+    }
     const orders = postgresCommerce ? await postgresCommerce.ordersForCustomer(customer.id, 100) : db.prepare("SELECT id, items FROM orders WHERE customer_id=? AND status!='cancelled' ORDER BY id DESC LIMIT 100").all(customer.id);
     let orderId = 0;
     for (const order of orders) {
@@ -4024,11 +4226,23 @@ const api = {
         break;
       }
     }
-    /* отзыв оставляет любой авторизованный клиент; покупка отмечается флагом, а не запретом */
-    const verified = orderId ? 1 : 0;
-    const created = postgresCommerce ? await postgresCommerce.createReview({
-      productId, productSlug, customerId: customer.id, orderId: orderId || null, rating, comment, photoUrl: photo,
-    }) : null;
+    if (!orderId) return fail(res, 403, "verified_purchase_required");
+    const verified = 1;
+    if (!postgresCommerce && db.prepare("SELECT id FROM reviews WHERE customer_id=? AND product_id=? LIMIT 1").get(customer.id, productId)) {
+      return fail(res, 409, "duplicate_review");
+    }
+    let created = null;
+    if (postgresCommerce) {
+      try {
+        created = await postgresCommerce.createReview({
+          productId, productSlug, customerId: customer.id, orderId: orderId || null,
+          rating, comment, photoUrl: photo, verified: Boolean(verified),
+        });
+      } catch (error) {
+        if (error.message === "review_exists") return fail(res, 409, "duplicate_review");
+        throw error;
+      }
+    }
     const r = created ? null : db.prepare(`
       INSERT INTO reviews (product_id, product_slug, customer_id, order_id, rating, comment, photo_url, verified_purchase, status)
       VALUES (?,?,?,?,?,?,?,?, 'pending')
@@ -4044,10 +4258,20 @@ const api = {
     const signedInCustomer = await customerFromRequest(req);
     const message = str(b.message, 1500);
     if (message.length < 2) return fail(res, 400, "message");
-    let sessionId = Number(b.session_id) || 0;
-    const existing = sessionId
-      ? (postgresCommerce ? await postgresCommerce.chatSession(sessionId) : db.prepare("SELECT id FROM chat_sessions WHERE id=?").get(sessionId))
+    let sessionId = verifiedChatSessionId(b.session_id);
+    let existing = sessionId
+      ? (postgresCommerce ? await postgresCommerce.chatSession(sessionId) : db.prepare("SELECT * FROM chat_sessions WHERE id=?").get(sessionId))
       : null;
+    if (!existing && signedInCustomer && /^\d+$/.test(String(b.session_id || ""))) {
+      const candidateId = Number(b.session_id);
+      const candidate = postgresCommerce
+        ? await postgresCommerce.chatSession(candidateId)
+        : db.prepare("SELECT * FROM chat_sessions WHERE id=?").get(candidateId);
+      if (candidate && Number(candidate.customer_id) === Number(signedInCustomer.id)) {
+        sessionId = candidateId;
+        existing = candidate;
+      }
+    }
     if (!existing) {
       if (postgresCommerce) {
         const session = await postgresCommerce.createChatSession({
@@ -4076,21 +4300,21 @@ const api = {
     const chatLang = ["en", "ru", "uz"].includes(b.lang) ? b.lang : "uz";
     const chatReplies = {
       en: {
-        default: "Thank you. A Milana manager will clarify soon. Wholesale orders follow the 1 qop = 60 clothes rule.",
+        default: "Thank you. A Milana manager will clarify soon. Wholesale orders are available by pack or bag; 1 bag contains 60 items.",
         delivery: "Delivery is agreed by region. We dispatch from Andijan; cargo usually takes 1-5 business days.",
-        price: "Price depends on the catalog model. Wholesale price is calculated by qop, while retail price is shown by piece.",
+        price: "Price depends on the catalog model. Wholesale price is calculated by pack or bag, while retail price is shown per item.",
         human: "We will connect you with a manager. Leaving your contact number helps us answer faster."
       },
       ru: {
-        default: "Спасибо. Менеджер Milana скоро уточнит детали. Оптовые заказы работают по правилу: 1 qop = 60 вещей.",
+        default: "Спасибо. Менеджер Milana скоро уточнит детали. Оптовый заказ доступен упаковками или мешками; 1 мешок содержит 60 изделий.",
         delivery: "Доставка согласуется по региону. Отправляем из Андижана; cargo обычно занимает 1-5 рабочих дней.",
-        price: "Цена зависит от модели в каталоге. Оптовая цена считается по qop, розничная цена указана за штуку.",
+        price: "Цена зависит от модели в каталоге. Оптовая цена считается по упаковке или мешку, розничная цена указана за штуку.",
         human: "Подключим менеджера. Оставьте контактный номер, чтобы мы ответили быстрее."
       },
       uz: {
-        default: "Rahmat. Milana menejeri tez orada aniqlashtiradi. Ulgurji buyurtmalar 1 qop = 60 dona qoida bilan ishlaydi.",
+        default: "Rahmat. Milana menejeri tez orada aniqlashtiradi. Ulgurji buyurtma qadoq yoki qop bilan beriladi; 1 qopda 60 dona bor.",
         delivery: "Yetkazib berish hudud bo'yicha kelishiladi. Andijondan jo'natamiz, cargo muddati odatda 1-5 ish kuni.",
-        price: "Narx katalogdagi modelga bog'liq. Ulgurji narx qop bo'yicha, chakana narx esa dona bo'yicha ko'rsatiladi.",
+        price: "Narx katalogdagi modelga bog'liq. Ulgurji narx qadoq yoki qop bo'yicha, chakana narx esa dona bo'yicha ko'rsatiladi.",
         human: "Menejerga ulaymiz. Kontakt raqamingizni qoldirsangiz, javobni tezlashtiramiz."
       }
     };
@@ -4127,19 +4351,27 @@ const api = {
     }
     if (postgresCommerce) await postgresCommerce.addChatMessage(sessionId, "bot", reply);
     else db.prepare("INSERT INTO chat_messages (session_id, sender_type, message) VALUES (?,?,?)").run(sessionId, "bot", reply);
-    send(res, 200, { session_id: sessionId, reply, products });
+    send(res, 200, { session_id: chatSessionRef(sessionId), reply, products });
   },
 
   "POST /api/chat/escalate": async (req, res) => {
     const b = await readJson(req, 12e3);
     const signedInCustomer = await customerFromRequest(req);
-    const sessionId = Number(b.session_id) || 0;
+    let sessionId = verifiedChatSessionId(b.session_id);
     const name = str(b.name || signedInCustomer?.name || "", 80);
     const phone = str(b.phone || signedInCustomer?.phone || "", 25);
     const email = normalizeEmail(b.email || signedInCustomer?.email || "");
     const message = str(b.message || "Chat escalation", 3000);
     if (name.length < 2) return fail(res, 400, "name");
     if (!/^[0-9+()\-\s]{5,25}$/.test(phone)) return fail(res, 400, "phone");
+    if (!sessionId && signedInCustomer && /^\d+$/.test(String(b.session_id || ""))) {
+      const candidateId = Number(b.session_id);
+      const candidate = postgresCommerce
+        ? await postgresCommerce.chatSession(candidateId)
+        : db.prepare("SELECT * FROM chat_sessions WHERE id=?").get(candidateId);
+      if (candidate && Number(candidate.customer_id) === Number(signedInCustomer.id)) sessionId = candidateId;
+    }
+    if (b.session_id && !sessionId) return fail(res, 403, "chat_session_forbidden");
     if (sessionId) {
       if (postgresCommerce) await postgresCommerce.escalateChat(sessionId, { name, phone, email });
       else db.prepare("UPDATE chat_sessions SET status='escalated', visitor_name=?, visitor_phone=?, visitor_email=?, updated_at=datetime('now') WHERE id=?")
@@ -4249,7 +4481,6 @@ const api = {
       const requestedColor = str(it.color || it.variant || "", 120);
       const requestedSize = str(it.size || it.selected_size || "", 120);
       const color = requestedColor || productColorOptions[0] || "";
-      const pricing = priceForCustomer(sourceProduct, signedInCustomer, orderType);
       const retailEnabled = product ? product.retail_enabled !== false : Number(row.retail_enabled) !== 0;
       const availableQop = product ? product.available_qop : row.available_qop;
       const retailStock = Number(product ? product.retail_stock : row.retail_stock) || 0;
@@ -4258,6 +4489,11 @@ const api = {
       const requestedUnitType = str(it.unit_type || it.unit || "", 20).toLowerCase();
       const wholesaleUnitType = ORDER_PACKAGE_ALIASES[requestedUnitType] || (ORDER_PACKAGE_UNITS.has(requestedUnitType) ? requestedUnitType : "qop");
       const packagePieces = wholesaleUnitType === "pachka" ? packPieces(sizes, gender, category) : ORDER_BAG_SIZE;
+      const pricing = orderType === "retail"
+        ? priceForCustomer(sourceProduct, signedInCustomer, "retail")
+        : wholesaleUnitType === "pachka"
+          ? packPriceForCustomer(sourceProduct, signedInCustomer)
+          : priceForCustomer(sourceProduct, signedInCustomer, "wholesale");
       const maxQty = orderType === "retail" ? 99 : Math.max(1, Math.floor((20 * ORDER_BAG_SIZE) / packagePieces));
       if (rawQty > maxQty) return fail(res, 400, "qty_limit");
       const wholesalePieces = rawQty * packagePieces;
@@ -4268,6 +4504,7 @@ const api = {
       let bag_size = packagePieces;
       let price = Math.round(unit_price * bag_size * 100) / 100;
       let unit_type = wholesaleUnitType;
+      let stock_adjustment = null;
       const price_pending = !pricing.visible;
       const qty = rawQty;
       if (orderType === "retail") {
@@ -4276,15 +4513,24 @@ const api = {
         bag_size = 1;
         price = Math.round(unit_price * 100) / 100;
         unit_type = "piece";
-        if ((row || postgresCatalog) && retailStock > 0) stockAdjustments.push({ type: "retail", id, qty });
+        if ((row || postgresCatalog) && retailStock > 0) {
+          stock_adjustment = { type: "retail", id, qty };
+          stockAdjustments.push(stock_adjustment);
+        }
       } else {
         size_mix = packageSizeMix(sizes, gender, category, packagePieces);
         if ((row || postgresCatalog) && availableQop != null) {
-          stockAdjustments.push({ type: "wholesale", id, qop: Math.ceil(wholesalePieces / ORDER_BAG_SIZE) });
+          stock_adjustment = {
+            type: "wholesale",
+            id,
+            qop: Math.round((wholesalePieces / ORDER_BAG_SIZE) * 1000) / 1000,
+          };
+          stockAdjustments.push(stock_adjustment);
         }
       }
       items.push({
         id, slug, name, qty, unit_price, bag_size, unit_type, size: requestedSize, color, size_mix, price, image: images[0] || "",
+        stock_adjustment,
         price_pending,
         price_source: pricing.source,
         price_label: pricing.label,
@@ -4311,34 +4557,43 @@ const api = {
       paymentId = created.payment.id;
       number = created.order.number;
     } else {
-      const r = db.prepare(`
-        INSERT INTO orders (customer_id, customer, items, total, order_type, lang, manager_id, manager_name)
-        VALUES (?,?,?,?,?,?,?,?)
-      `).run(
-        signedInCustomer?.id || null,
-        JSON.stringify(customer),
-        JSON.stringify(items),
-        amount,
-        orderType,
-        lang,
-        manager.id,
-        manager.name
-      );
-      orderId = r.lastInsertRowid;
-      number = "MP-" + new Date().getFullYear() + "-" + String(orderId).padStart(4, "0");
-      db.prepare("UPDATE orders SET number=? WHERE id=?").run(number, orderId);
-      const payment = db.prepare(`
-        INSERT INTO payments (order_id, order_number, provider, method, status, amount, currency, payload)
-        VALUES (?,?,?,?,?,?,?,?)
-      `).run(orderId, number, paymentProvider(paymentMethod), paymentMethod, "pending", amount, "USD",
-        JSON.stringify({ source: "checkout", gateway_connected: false }));
-      paymentId = payment.lastInsertRowid;
-      for (const adjustment of stockAdjustments) {
-        if (adjustment.type === "retail") {
-          db.prepare("UPDATE products SET retail_stock=MAX(0, retail_stock-?) WHERE id=?").run(adjustment.qty, adjustment.id);
-        } else {
-          db.prepare("UPDATE products SET available_qop=MAX(0, available_qop-?) WHERE id=? AND available_qop IS NOT NULL").run(adjustment.qop, adjustment.id);
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const r = db.prepare(`
+          INSERT INTO orders (customer_id, customer, items, total, order_type, lang, manager_id, manager_name)
+          VALUES (?,?,?,?,?,?,?,?)
+        `).run(
+          signedInCustomer?.id || null,
+          JSON.stringify(customer),
+          JSON.stringify(items),
+          amount,
+          orderType,
+          lang,
+          manager.id,
+          manager.name
+        );
+        orderId = r.lastInsertRowid;
+        number = "MP-" + new Date().getFullYear() + "-" + String(orderId).padStart(4, "0");
+        db.prepare("UPDATE orders SET number=? WHERE id=?").run(number, orderId);
+        const payment = db.prepare(`
+          INSERT INTO payments (order_id, order_number, provider, method, status, amount, currency, payload)
+          VALUES (?,?,?,?,?,?,?,?)
+        `).run(orderId, number, paymentProvider(paymentMethod), paymentMethod, "pending", amount, "USD",
+          JSON.stringify({ source: "checkout", gateway_connected: false }));
+        paymentId = payment.lastInsertRowid;
+        for (const adjustment of stockAdjustments) {
+          const result = adjustment.type === "retail"
+            ? db.prepare("UPDATE products SET retail_stock=retail_stock-? WHERE id=? AND retail_stock>=?")
+              .run(adjustment.qty, adjustment.id, adjustment.qty)
+            : db.prepare("UPDATE products SET available_qop=available_qop-? WHERE id=? AND available_qop IS NOT NULL AND available_qop>=?")
+              .run(adjustment.qop, adjustment.id, adjustment.qop);
+          if (!result.changes) throw new Error("insufficient_stock");
         }
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        if (error.message === "insufficient_stock") return fail(res, 409, "insufficient_stock");
+        throw error;
       }
     }
     audit("customer", "order.created", { order_id: orderId, number, total: amount, order_type: orderType });
@@ -4369,20 +4624,55 @@ const api = {
       return fail(res, 409, "cannot_cancel");
     }
     const b = await readJson(req, 4e3);
+    let released = { retail: 0, qop: 0 };
     if (postgresCommerce) {
-      try { await postgresCommerce.cancelOrder(id, customer.id, str(b.reason, 500)); }
+      try {
+        const cancelled = await postgresCommerce.cancelOrder(id, customer.id, str(b.reason, 500));
+        released = cancelled.released || released;
+      }
       catch (error) {
         if (error.message === "cannot_cancel") return fail(res, 409, "cannot_cancel");
         if (error.message === "not_found") return fail(res, 404, "not_found");
         throw error;
       }
     } else {
-      db.prepare("UPDATE orders SET status='cancelled', updated_at=datetime('now') WHERE id=?").run(id);
-      db.prepare("UPDATE payments SET status='cancelled', payload=?, updated_at=datetime('now') WHERE id=?").run(
-        JSON.stringify({ cancelled_by: "customer", reason: str(b.reason, 500), cancelled_at: new Date().toISOString() }), payment.id);
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const lockedOrder = db.prepare("SELECT * FROM orders WHERE id=? AND customer_id=?").get(id, customer.id);
+        const lockedPayment = db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(id) || {};
+        if (!lockedOrder) throw new Error("not_found");
+        if (lockedOrder.status !== "new"
+          || !["pending", "waiting_for_customer", "invoice_sent"].includes(lockedPayment.status || "pending")) {
+          throw new Error("cannot_cancel");
+        }
+        released = restoreSqliteStock(parseOrderItems(lockedOrder.items));
+        const payload = {
+          cancelled_by: "customer",
+          reason: str(b.reason, 500),
+          cancelled_at: new Date().toISOString(),
+        };
+        db.prepare("UPDATE orders SET status='cancelled', updated_at=datetime('now') WHERE id=?").run(id);
+        if (lockedPayment.id) {
+          db.prepare("UPDATE payments SET status='cancelled', payload=?, updated_at=datetime('now') WHERE id=?")
+            .run(JSON.stringify(payload), lockedPayment.id);
+        }
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        if (error.message === "cannot_cancel") return fail(res, 409, "cannot_cancel");
+        if (error.message === "not_found") return fail(res, 404, "not_found");
+        throw error;
+      }
     }
     audit("customer", "order.cancelled", { id, number: order.number, reason: str(b.reason, 120) });
-    send(res, 200, { order_id: id, status: "cancelled", payment_status: "cancelled", cancelled_at: new Date().toISOString(), stock_released_qop: 0 });
+    send(res, 200, {
+      order_id: id,
+      status: "cancelled",
+      payment_status: "cancelled",
+      cancelled_at: new Date().toISOString(),
+      stock_released_qop: released.qop,
+      stock_released_retail: released.retail,
+    });
   },
 
   "POST /api/auth/orders/:id/payment-proof": async (req, res, u, m) => {
@@ -4398,6 +4688,9 @@ const api = {
       payload: joined.payment_payload, status: joined.payment_status,
     } : db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(id);
     if (!payment) return fail(res, 404, "payment_not_found");
+    if (!transitionAllowed(PAYMENT_STATUS_TRANSITIONS, payment.status || "pending", "submitted")) {
+      return fail(res, 409, "invalid_payment_transition");
+    }
     const b = await readJson(req, 8e3);
     const method = PAYMENT_METHODS.includes(b.method) ? b.method : payment.method || "manager";
     const reference = str(b.reference, 120);
@@ -4415,9 +4708,19 @@ const api = {
       note,
       submitted_at: submittedAt,
     };
-    if (postgresCommerce) await postgresCommerce.submitPaymentProof(payment.id, method, reference, payload);
-    else db.prepare("UPDATE payments SET method=?, status='submitted', reference=COALESCE(NULLIF(?,''), reference), payload=?, updated_at=datetime('now') WHERE id=?")
-      .run(method, reference, JSON.stringify(payload), payment.id);
+    if (postgresCommerce) {
+      const updated = await postgresCommerce.submitPaymentProof(
+        payment.id, method, reference, payload, payment.status || "pending"
+      );
+      if (!updated) return fail(res, 409, "state_changed");
+    } else {
+      const updated = db.prepare(`
+        UPDATE payments
+        SET method=?, status='submitted', reference=COALESCE(NULLIF(?,''), reference), payload=?, updated_at=datetime('now')
+        WHERE id=? AND status=?
+      `).run(method, reference, JSON.stringify(payload), payment.id, payment.status || "pending");
+      if (!updated.changes) return fail(res, 409, "state_changed");
+    }
     audit("customer", "payment.submitted", { order_id: id, payment_id: payment.id, method });
     send(res, 200, { order_id: id, payment_status: "submitted", submitted_at: submittedAt });
   },
@@ -4572,7 +4875,7 @@ const api = {
         WHERE id=?
       `).run(name, login, telegramChatId, telegramThreadId, active, id);
     }
-    if (!active) db.prepare("DELETE FROM manager_sessions WHERE manager_id=?").run(id);
+    if (password || !active) db.prepare("DELETE FROM manager_sessions WHERE manager_id=?").run(id);
     audit("admin", "manager.updated", { id, name, login, active });
     send(res, 200, db.prepare(`
       SELECT id, name, login, telegram_chat_id, telegram_thread_id, active, created_at, updated_at
@@ -4763,6 +5066,7 @@ const api = {
     try { v = validateProduct(b); } catch (e) { return fail(res, 400, "invalid_" + e.message); }
     const slug = await uniqueCatalogSlug(slugify(str(b.slug, 80) || v.name));
     if (postgresCatalog) {
+      if (postgresCommerce) await postgresCommerce.ensureFractionalStockSchema();
       const created = await postgresCatalog.create(slug, v);
       audit("admin", "product.created", { id: created.id, slug, catalog_db: "postgres" });
       return send(res, 201, rowToProduct(created));
@@ -4794,6 +5098,7 @@ const api = {
     try { v = validateProduct(b); } catch (e) { return fail(res, 400, "invalid_" + e.message); }
     const slug = await uniqueCatalogSlug(slugify(str(b.slug, 80) || v.name), id);
     if (postgresCatalog) {
+      if (postgresCommerce) await postgresCommerce.ensureFractionalStockSchema();
       const updated = await postgresCatalog.update(id, slug, v);
       audit("admin", "product.updated", { id, slug, catalog_db: "postgres" });
       return send(res, 200, rowToProduct(updated));
@@ -4832,7 +5137,8 @@ const api = {
     if (buf.length < 100) return fail(res, 400, "empty");
     const media = detectUploadMedia(buf);
     if (!media) return fail(res, 400, "format_not_allowed");
-    const finalBase = (media.kind === "video" ? "v" : "p") + Date.now().toString(36) + "-" + crypto.randomBytes(4).toString("hex");
+    const prefix = media.kind === "video" ? "v" : media.kind === "font" ? "f" : "p";
+    const finalBase = prefix + Date.now().toString(36) + "-" + crypto.randomBytes(4).toString("hex");
     const originalName = `${finalBase}.${media.ext}`;
     const originalPath = path.join(UPLOAD_ORIGINAL_DIR, originalName);
     fs.writeFileSync(originalPath, buf);
@@ -4909,12 +5215,56 @@ const api = {
     if (staff?.role === "manager" && Number(existing.manager_id) !== Number(staff.manager.id)) {
       return fail(res, 403, "forbidden");
     }
-    if (postgresCommerce) await postgresCommerce.updateOrderStatus(id, b.status, str(b.tracking_number, 80));
-    else db.prepare("UPDATE orders SET status=?, tracking_number=COALESCE(NULLIF(?,''), tracking_number), updated_at=datetime('now') WHERE id=?").run(b.status, str(b.tracking_number, 80), id);
+    if (!transitionAllowed(ORDER_STATUS_TRANSITIONS, existing.status, b.status)) {
+      return fail(res, 409, "invalid_order_transition");
+    }
+    let released = { retail: 0, qop: 0 };
+    if (postgresCommerce) {
+      try {
+        const updated = await postgresCommerce.updateOrderStatus(
+          id, b.status, str(b.tracking_number, 80), existing.status
+        );
+        released = updated?.released || released;
+      } catch (error) {
+        if (["state_changed", "invalid_payment_state"].includes(error.message)) {
+          return fail(res, 409, error.message);
+        }
+        throw error;
+      }
+    } else {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const lockedOrder = db.prepare("SELECT * FROM orders WHERE id=?").get(id);
+        if (!lockedOrder) throw new Error("not_found");
+        if (lockedOrder.status !== existing.status) throw new Error("state_changed");
+        if (b.status === "cancelled" && lockedOrder.status !== "cancelled") {
+          const payment = db.prepare("SELECT * FROM payments WHERE order_id=? ORDER BY id DESC LIMIT 1").get(id);
+          const paymentStatus = payment?.status || "pending";
+          if (!ORDER_CANCELLABLE_PAYMENT_STATUSES.has(paymentStatus)) throw new Error("invalid_payment_state");
+          released = restoreSqliteStock(parseOrderItems(lockedOrder.items));
+          if (payment && !["cancelled", "refunded"].includes(paymentStatus)) {
+            db.prepare("UPDATE payments SET status='cancelled', updated_at=datetime('now') WHERE id=?").run(payment.id);
+          }
+        }
+        db.prepare(`
+          UPDATE orders
+          SET status=?, tracking_number=COALESCE(NULLIF(?,''), tracking_number), updated_at=datetime('now')
+          WHERE id=?
+        `).run(b.status, str(b.tracking_number, 80), id);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        if (["state_changed", "invalid_payment_state"].includes(error.message)) {
+          return fail(res, 409, error.message);
+        }
+        if (error.message === "not_found") return fail(res, 404, "not_found");
+        throw error;
+      }
+    }
     audit(staff?.role === "manager" ? `manager:${staff.manager.id}` : "admin", "order.status_changed", {
-      id, from: existing.status, to: b.status,
+      id, from: existing.status, to: b.status, stock_released: released,
     });
-    send(res, 200, { ok: true });
+    send(res, 200, { ok: true, stock_released: released });
   },
 
   "PUT /api/admin/payments/:id": async (req, res, u, m) => {
@@ -4923,9 +5273,30 @@ const api = {
     const id = Number(m.id);
     const existing = postgresCommerce ? await postgresCommerce.paymentById(id) : db.prepare("SELECT * FROM payments WHERE id=?").get(id);
     if (!existing) return fail(res, 404, "not_found");
+    if (!transitionAllowed(PAYMENT_STATUS_TRANSITIONS, existing.status, b.status)) {
+      return fail(res, 409, "invalid_payment_transition");
+    }
+    const order = postgresCommerce
+      ? await postgresCommerce.orderById(existing.order_id)
+      : db.prepare("SELECT status FROM orders WHERE id=?").get(existing.order_id);
+    if (!order) return fail(res, 404, "order_not_found");
+    if (order.status === "cancelled" && !["cancelled", "refunded"].includes(b.status)) {
+      return fail(res, 409, "invalid_order_payment_state");
+    }
+    if (["shipped", "done"].includes(order.status) && b.status === "cancelled") {
+      return fail(res, 409, "invalid_order_payment_state");
+    }
     const reference = "reference" in b ? str(b.reference, 120) : existing.reference;
-    if (postgresCommerce) await postgresCommerce.updatePaymentStatus(id, b.status, reference);
-    else db.prepare("UPDATE payments SET status=?, reference=?, updated_at=datetime('now') WHERE id=?").run(b.status, reference, id);
+    if (postgresCommerce) {
+      const updated = await postgresCommerce.updatePaymentStatus(id, b.status, reference, existing.status);
+      if (!updated) return fail(res, 409, "state_changed");
+    } else {
+      const result = db.prepare(`
+        UPDATE payments SET status=?, reference=?, updated_at=datetime('now')
+        WHERE id=? AND status=?
+      `).run(b.status, reference, id, existing.status);
+      if (!result.changes) return fail(res, 409, "state_changed");
+    }
     audit("admin", "payment.status_changed", { id, order_id: existing.order_id, from: existing.status, to: b.status });
     send(res, 200, { ok: true });
   },
@@ -5039,13 +5410,13 @@ function matchRoute(method, pathname) {
   return null;
 }
 
-function serveFile(res, absPath, cache, req) {
+function serveFile(res, absPath, cache, req, statusCode = 200) {
   let st;
   try { st = fs.statSync(absPath); } catch { return false; }
   if (!st.isFile()) return false;
   const ext = path.extname(absPath).toLowerCase();
   const lastMod = st.mtime.toUTCString();
-  if (req && req.headers["if-modified-since"] === lastMod) {
+  if (statusCode === 200 && req && req.headers["if-modified-since"] === lastMod) {
     res.writeHead(304, { ...SECURITY_HEADERS, "Cache-Control": cache, "Last-Modified": lastMod });
     res.end();
     return true;
@@ -5065,12 +5436,12 @@ function serveFile(res, absPath, cache, req) {
       headers["Content-Encoding"] = compressed.encoding;
       headers.Vary = "Accept-Encoding";
     }
-    res.writeHead(200, headers);
+    res.writeHead(statusCode, headers);
     res.end(compressed.body);
     return true;
   }
   const stream = fs.createReadStream(absPath);
-  res.writeHead(200, {
+  res.writeHead(statusCode, {
     ...SECURITY_HEADERS,
     "Content-Type": contentType,
     "Content-Length": st.size,
@@ -5080,6 +5451,11 @@ function serveFile(res, absPath, cache, req) {
   if (req?.method === "HEAD") { res.end(); return true; }
   stream.pipe(res);
   return true;
+}
+
+function serveBrandedNotFound(req, res) {
+  return serveFile(res, path.join(PUBLIC_DIR, "404.html"), "no-store", req, 404)
+    || fail(res, 404, "not_found");
 }
 
 /* serve an uploaded file, honoring HTTP Range (needed for <video> seeking) */
@@ -5278,11 +5654,11 @@ const server = http.createServer(async (req, res) => {
     if (/^\/p\/[a-z0-9-]+$/.test(pathname)) {
       const slug = decodeURIComponent(pathname.slice(3));
       const product = await activeProductBySlug(slug);
-      if (!product) return fail(res, 404, "not_found");
+      if (!product) return serveBrandedNotFound(req, res);
       const templatePath = path.join(PUBLIC_DIR, storefrontPage("product.html"));
       let template;
       try { template = fs.readFileSync(templatePath, "utf8"); }
-      catch { return fail(res, 404, "not_found"); }
+      catch { return serveBrandedNotFound(req, res); }
       return sendText(req, res, 200, renderProductDocument(template, product), "text/html; charset=utf-8", "no-store");
     }
 
@@ -5296,10 +5672,13 @@ const server = http.createServer(async (req, res) => {
        media can cache longer, which keeps repeat mobile/tablet visits snappy. */
     const cache = ext === ".html" || ext === "" ? "no-store"
       : ext === ".json" ? "no-cache"
-      : [".css", ".js", ".woff2", ".woff", ".svg", ".ico", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm"].includes(ext) ? "public, max-age=604800, stale-while-revalidate=86400"
+      : [".css", ".js", ".woff2", ".woff", ".ttf", ".otf", ".svg", ".ico", ".jpg", ".jpeg", ".png", ".webp", ".gif", ".mp4", ".webm"].includes(ext) ? "public, max-age=604800, stale-while-revalidate=86400"
       : "public, max-age=86400";
     if (serveFile(res, abs, cache, req)) return;
 
+    if (String(req.headers.accept || "").includes("text/html") || !path.extname(pathname)) {
+      return serveBrandedNotFound(req, res);
+    }
     fail(res, 404, "not_found");
   } catch (e) {
     if (e.message === "too_large") return fail(res, 413, "too_large");

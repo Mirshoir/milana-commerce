@@ -40,6 +40,9 @@
 
   function applyText() {
     input.placeholder = t("search.site");
+    input.setAttribute("aria-label", t("aria.search"));
+    root.querySelector(".hsearch__panel")?.setAttribute("aria-label", t("aria.search"));
+    root.querySelector("[data-search-close]")?.setAttribute("aria-label", t("aria.close"));
     allEl.textContent = t("preview.viewAll");
   }
   if (window.I18N) I18N.ready.then(applyText); else applyText();

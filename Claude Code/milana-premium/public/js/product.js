@@ -641,11 +641,19 @@
     const msg = document.querySelector("[data-review-msg]");
     const data = Object.fromEntries(new FormData(form));
     msg.hidden = true;
+    const comment = String(data.comment || "").trim();
+    if (comment.length < 3) {
+      msg.textContent = I18N.t("reviews.commentRequired");
+      msg.classList.remove("is-good");
+      msg.hidden = false;
+      form.reportValidity();
+      return;
+    }
     try {
       const r = await fetch("/api/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ product_id: p.id, product_slug: p.slug, rating: data.rating, comment: data.comment }),
+        body: JSON.stringify({ product_id: p.id, product_slug: p.slug, rating: data.rating, comment }),
       });
       const res = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(res.error || "review_failed");
@@ -656,7 +664,13 @@
       reviewRating = 5;
       renderReviewStars();
     } catch (ex) {
-      const codes = { unauthorized: "reviews.signinFirst", rate_limited: "reviews.tooMany", verified_purchase_required: "reviews.verifiedOnly" };
+      const codes = {
+        unauthorized: "reviews.signinFirst",
+        rate_limited: "reviews.tooMany",
+        verified_purchase_required: "reviews.verifiedOnly",
+        comment_required: "reviews.commentRequired",
+        duplicate_review: "reviews.duplicate",
+      };
       msg.textContent = I18N.t(codes[ex.message] || "reviews.failed");
       msg.classList.remove("is-good");
       msg.hidden = false;

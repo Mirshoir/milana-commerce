@@ -6,7 +6,7 @@
   <title>Админ — MILANA PREMIUM</title>
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%230C0C0C'/%3E%3Ctext x='32' y='44' font-family='Helvetica,Arial,sans-serif' font-size='32' letter-spacing='2' fill='%23FFFFFF' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/css/admin.css?v=20260728-dict2">
+  <link rel="stylesheet" href="/css/admin.css?v=20260729-hardqa2">
 </head>
 <body>
 
@@ -151,7 +151,7 @@
               <label>Розничная цена за штуку, $ <input class="ainput" id="f-retail-price" type="number" min="0" step="0.01"></label>
               <label>Старая цена <input class="ainput" id="f-old" type="number" min="0" step="0.01" placeholder="—"></label>
               <label>Пачка, шт (по числу размеров) <input class="ainput" id="f-wholesale-moq" type="number" value="6" readonly title="Считается автоматически: по 1 изделию на каждый размер"></label>
-              <label>Склад (qop) <input class="ainput" id="f-available-qop" type="number" min="0" step="1" placeholder="—"></label>
+              <label>Склад (qop) <input class="ainput" id="f-available-qop" type="number" min="0" step="0.1" placeholder="—"></label>
             </div>
             <div class="frow frow--4">
               <label>Розница склад <input class="ainput" id="f-retail-stock" type="number" min="0" step="1"></label>
@@ -238,7 +238,7 @@
         <header class="vhead"><h1>Заказы <span class="vhead__n" id="order-count"></span></h1></header>
         <div class="tablewrap">
           <table class="atable atable--orders" id="order-table">
-            <thead><tr><th>№</th><th>Дата</th><th>Менеджер</th><th>Клиент</th><th>Тип</th><th>Состав</th><th>Сумма</th><th>Оплата</th><th>Статус</th></tr></thead>
+            <thead><tr><th>№</th><th>Дата</th><th>Менеджер</th><th>Клиент</th><th>Тип</th><th>Состав</th><th>Сумма</th><th>Оплата</th><th>Статус</th><th>Трек-номер</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -530,7 +530,7 @@
   </div>
 
   <div class="atoast" id="atoast"></div>
-  <script src="/js/admin.js?v=20260728-free" defer></script>
+  <script src="/js/admin.js?v=20260729-hardqa2" defer></script>
   <script src="/js/admin-locale.js?v=20260724-photo-names" defer></script>
 </body>
 </html>

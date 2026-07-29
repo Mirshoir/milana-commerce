@@ -253,6 +253,9 @@ textarea.admin-searchbox{min-height:0;height:41px;resize:none;overflow:hidden;li
 .osel{padding:7px 9px;border:1px solid var(--line-2);border-radius:0;background:#fff;font:inherit;font-size:.8rem;cursor:pointer}
 .osel--new{border-color:var(--ink);color:var(--ink)}
 .osum{white-space:nowrap}
+.otracking{min-width:180px}
+.ainput--tracking{min-width:160px;padding:7px 9px;font-size:.8rem}
+.otracking .abtn{margin-top:6px;width:100%;padding:7px 9px;font-size:.68rem}
 
 /* ---------- тост ---------- */
 .atoast{

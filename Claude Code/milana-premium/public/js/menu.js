@@ -9,7 +9,8 @@
     menu.classList.toggle("is-open", open);
     burger.classList.toggle("is-open", open);
     burger.setAttribute("aria-expanded", String(open));
-    burger.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+    const key = open ? "aria.closeMenu" : "aria.openMenu";
+    burger.setAttribute("aria-label", window.I18N ? I18N.t(key) : (open ? "Close menu" : "Open menu"));
     menu.setAttribute("aria-hidden", String(!open));
     document.body.style.overflow = open ? "hidden" : "";
   };
@@ -19,4 +20,6 @@
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape") setOpen(false);
   });
+  window.addEventListener("i18n:change", () => setOpen(menu.classList.contains("is-open")));
+  if (window.I18N?.ready) I18N.ready.then(() => setOpen(false));
 })();

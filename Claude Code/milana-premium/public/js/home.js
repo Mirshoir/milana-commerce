@@ -38,10 +38,13 @@
     const lang = I18N.lang;
     const fabric = (window.MilanaFab || ((x) => x))((p.fabric && (p.fabric[lang] || p.fabric.en)) || "");
     const nm = window.MilanaName ? MilanaName(p) : p.name;
+    const wished = window.MilanaState?.wishlist?.has?.(p.id);
     return `
     <article class="product" data-id="${p.id}">
       <div class="product__media" data-imgs="${esc((p.images || []).slice(0, 6).join('|'))}">
-        <button class="product__wish" aria-label="Wishlist"><svg class="ic"><use href="#i-heart"/></svg></button>
+        <button class="product__wish${wished ? " is-active" : ""}" type="button"
+          data-wish-id="${esc(p.id)}" aria-label="${esc(I18N.t("auth.wishlist"))}"
+          aria-pressed="${wished ? "true" : "false"}"><svg class="ic"><use href="#i-heart"/></svg></button>
         <a class="product__go" href="/p/${p.slug}"><figure>${mediaTag(p.images[0] || "", nm, i < 4)}</figure></a>
         <div class="product__quick">
           <div class="product__sizes">${p.sizes.map((s) => `<span data-size="${esc(s)}">${esc(s)}</span>`).join("")}</div>
@@ -75,7 +78,7 @@
   }
 
   /* add-to-cart + size pick (event delegation, works for static + dynamic) */
-  document.addEventListener("click", (e) => {
+  document.addEventListener("click", async (e) => {
     const addBtn = e.target.closest("[data-add]");
     if (addBtn) {
       e.preventDefault();
@@ -84,7 +87,32 @@
       Cart.add({ id: p.id, slug: p.slug, name: window.MilanaName ? MilanaName(p) : p.name, image: p.images[0] || "", price: p.price, price_visible: p.price_visible, price_label: p.price_label, sizes: p.sizes });
     }
     const wish = e.target.closest(".product__wish");
-    if (wish && !wish.dataset.bound) { wish.classList.toggle("is-active"); e.preventDefault(); }
+    if (wish && !wish.dataset.bound) {
+      e.preventDefault();
+      const p = products.find((item) => String(item.id) === String(wish.dataset.wishId || wish.closest("[data-id]")?.dataset.id));
+      if (!p) return;
+      const payload = {
+        id: p.id,
+        slug: p.slug,
+        name: window.MilanaName ? MilanaName(p) : p.name,
+        image: p.images?.[0] || "",
+        price: p.price,
+        price_visible: p.price_visible,
+      };
+      const currently = Boolean(window.MilanaState?.wishlist?.has?.(p.id));
+      if (window.MilanaAuth?.customer) {
+        const response = await fetch("/api/products/" + encodeURIComponent(p.id) + "/like", {
+          method: currently ? "DELETE" : "POST",
+        }).catch(() => null);
+        if (!response?.ok) return;
+      }
+      currently
+        ? window.MilanaState?.wishlist?.remove?.(p.id)
+        : window.MilanaState?.wishlist?.add?.(payload);
+      const active = !currently;
+      wish.classList.toggle("is-active", active);
+      wish.setAttribute("aria-pressed", String(active));
+    }
   });
 
   /* ---------- hero: image or video from settings ---------- */

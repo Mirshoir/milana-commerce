@@ -26,7 +26,16 @@
   const TAG_RU = { bestseller: "Бестселлер", new: "Новинка", sale: "Скидка" };
   const STATUS_RU = { new: "🆕 Новый", processing: "⏳ В работе", shipped: "🚚 Отправлен", done: "✅ Выполнен", cancelled: "✖ Отменён" };
   const PAYMENT_METHOD_RU = { manager: "Менеджер", cash: "Наличные", bank: "Банк", click: "Click", payme: "Payme", card: "Карта" };
-  const PAYMENT_STATUS_RU = { pending: "⏳ Ожидает", invoice_sent: "📨 Счёт отправлен", paid: "✅ Оплачено", failed: "⚠ Ошибка", refunded: "↩ Возврат", cancelled: "✖ Отменено" };
+  const PAYMENT_STATUS_RU = {
+    pending: "⏳ Ожидает",
+    invoice_sent: "📨 Счёт отправлен",
+    waiting_for_customer: "👤 Ждём клиента",
+    submitted: "📎 Подтверждение отправлено",
+    paid: "✅ Оплачено",
+    failed: "⚠ Ошибка",
+    refunded: "↩ Возврат",
+    cancelled: "✖ Отменено",
+  };
   const SUPPORT_STATUS_RU = { new: "🆕 Новый", open: "👀 Открыт", waiting: "⏳ Ждём", done: "✅ Решён", closed: "✖ Закрыт" };
   const SUPPORT_TOPIC_RU = { general: "Общий", catalog: "Каталог", price: "Цена", delivery: "Доставка", defect: "Брак", payment: "Оплата", order: "Заказ" };
   const TIER_RU = { regular: "Обычный", premium: "Премиум", vip: "VIP" };
@@ -528,10 +537,6 @@
     status.textContent = saved
       ? `Готово ✓ Оптимизировано, сэкономлено ${(saved / 1024 / 1024).toFixed(1)} МБ.`
       : "Готово ✓";
-    const descriptionsEmpty = ["ru", "uz", "en"].every((lang) => !$("#f-desc-" + lang).value.trim());
-    if (descriptionsEmpty && editImages.some((url) => !/\.(mp4|webm)(?:\?|$)/i.test(url))) {
-      await generatePhotoDescription({ automatic: true });
-    }
     setTimeout(() => (status.textContent = ""), 2000);
   }
 
@@ -584,7 +589,7 @@
     $(sel).addEventListener("input", updateEditChecklist);
   });
 
-  async function generatePhotoDescription({ automatic = false } = {}) {
+  async function generatePhotoDescription() {
     const images = editImages.filter((url) => !/\.(mp4|webm)(?:\?|$)/i.test(url)).slice(0, 3);
     const button = $("#edit-ai-fill");
     const message = $("#edit-ai-msg");
@@ -594,7 +599,7 @@
     }
     button.disabled = true;
     button.textContent = "Анализ…";
-    message.textContent = automatic ? "Создаём описание по загруженному фото…" : "Анализируем фото товара…";
+    message.textContent = "Анализируем фото товара…";
     try {
       const result = await api("/api/admin/products/describe", {
         method: "POST",
@@ -632,7 +637,12 @@
     }
   }
 
-  $("#edit-ai-fill").addEventListener("click", () => generatePhotoDescription());
+  $("#edit-ai-fill").addEventListener("click", () => {
+    const approved = window.confirm(
+      "Фотографии товара будут отправлены в OpenAI для анализа, и это может использовать API-кредиты. Продолжить?"
+    );
+    if (approved) generatePhotoDescription();
+  });
 
   $("#edit-save").addEventListener("click", async () => {
     const err = $("#edit-err");
@@ -849,7 +859,7 @@
       const pay = o.payment || {};
       const customer = o.customer || {};
       return `
-      <tr>
+      <tr data-order-row="${o.id}">
         <td class="onum">${esc(o.number)}</td>
         <td class="odate">${esc((o.created_at || "").slice(0, 16).replace("T", " "))}</td>
         <td><b>${esc(o.manager_name || customer.assigned_manager || "—")}</b></td>
@@ -869,8 +879,12 @@
             ${Object.entries(STATUS_RU).map(([v, l]) => `<option value="${v}" ${v === o.status ? "selected" : ""}>${l}</option>`).join("")}
           </select>
         </td>
+        <td class="otracking">
+          <input class="ainput ainput--tracking" data-order-tracking="${o.id}" value="${esc(o.tracking_number || "")}" maxlength="80" aria-label="Трек-номер заказа ${esc(o.number)}" placeholder="Не назначен">
+          <button class="abtn" type="button" data-order-tracking-save="${o.id}">Сохранить</button>
+        </td>
       </tr>`;
-    }).join("") || `<tr><td colspan="9" style="text-align:center;color:var(--soft);padding:36px">Заказов пока нет</td></tr>`;
+    }).join("") || `<tr><td colspan="10" style="text-align:center;color:var(--soft);padding:36px">Заказов пока нет</td></tr>`;
   }
 
   $("#order-table").addEventListener("change", async (e) => {
@@ -879,7 +893,8 @@
     if (!orderSel && !paymentSel) return;
     try {
       if (orderSel) {
-        await api("/api/admin/orders/" + orderSel.dataset.order, { method: "PUT", body: { status: orderSel.value } });
+        const tracking = orderSel.closest("[data-order-row]")?.querySelector("[data-order-tracking]")?.value.trim() || "";
+        await api("/api/admin/orders/" + orderSel.dataset.order, { method: "PUT", body: { status: orderSel.value, tracking_number: tracking } });
         orderSel.classList.toggle("osel--new", orderSel.value === "new");
         toast("Статус обновлён");
       }
@@ -889,6 +904,28 @@
       }
       loadOrders();
     } catch (ex) { toast("Ошибка: " + ex.message); }
+  });
+
+  $("#order-table").addEventListener("click", async (e) => {
+    const button = e.target.closest("[data-order-tracking-save]");
+    if (!button) return;
+    const row = button.closest("[data-order-row]");
+    const status = row?.querySelector("[data-order]")?.value;
+    const tracking = row?.querySelector("[data-order-tracking]")?.value.trim() || "";
+    if (!row || !status) return;
+    button.disabled = true;
+    try {
+      await api("/api/admin/orders/" + button.dataset.orderTrackingSave, {
+        method: "PUT",
+        body: { status, tracking_number: tracking },
+      });
+      toast("Трек-номер сохранён");
+      await loadOrders();
+    } catch (ex) {
+      toast("Ошибка: " + ex.message);
+    } finally {
+      button.disabled = false;
+    }
   });
 
   /* ================= REVIEWS ================= */

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Заказы менеджера — MILANA PREMIUM</title>
   <meta name="robots" content="noindex, nofollow">
-  <link rel="stylesheet" href="/css/admin.css?v=20260725-managers">
+  <link rel="stylesheet" href="/css/admin.css?v=20260729-hardqa2">
 </head>
 <body>
   <div class="app">
@@ -31,7 +31,7 @@
         <div class="tablewrap">
           <table class="atable atable--orders" id="order-table">
             <thead>
-              <tr><th>№</th><th>Дата</th><th>Клиент</th><th>Состав</th><th>Сумма</th><th>Статус</th></tr>
+              <tr><th>№</th><th>Дата</th><th>Клиент</th><th>Состав</th><th>Сумма</th><th>Статус</th><th>Трек-номер</th></tr>
             </thead>
             <tbody></tbody>
           </table>
@@ -104,7 +104,7 @@
           $("#orders-badge").textContent = fresh;
           $("#order-count").textContent = "· " + orders.length;
           $("#order-table tbody").innerHTML = orders.map((order) => `
-            <tr>
+            <tr data-order-row="${order.id}">
               <td class="onum">${esc(order.number)}</td>
               <td class="odate">${esc((order.created_at || "").slice(0, 16).replace("T", " "))}</td>
               <td class="ocust">${customerCell(order.customer)}</td>
@@ -117,8 +117,12 @@
                   ).join("")}
                 </select>
               </td>
+              <td class="otracking">
+                <input class="ainput ainput--tracking" data-order-tracking="${order.id}" value="${esc(order.tracking_number || "")}" maxlength="80" aria-label="Трек-номер заказа ${esc(order.number)}" placeholder="Не назначен">
+                <button class="abtn" type="button" data-order-tracking-save="${order.id}">Сохранить</button>
+              </td>
             </tr>
-          `).join("") || `<tr><td colspan="6" style="text-align:center;color:var(--soft);padding:36px">У вас пока нет заказов</td></tr>`;
+          `).join("") || `<tr><td colspan="7" style="text-align:center;color:var(--soft);padding:36px">У вас пока нет заказов</td></tr>`;
         } catch (exception) {
           error.textContent = "Не удалось загрузить заказы: " + exception.message;
           error.hidden = false;
@@ -130,9 +134,10 @@
         if (!select) return;
         select.disabled = true;
         try {
+          const tracking = select.closest("[data-order-row]")?.querySelector("[data-order-tracking]")?.value.trim() || "";
           await api("/api/admin/orders/" + select.dataset.order, {
             method: "PUT",
-            body: { status: select.value },
+            body: { status: select.value, tracking_number: tracking },
           });
           toast("Статус обновлён");
           await loadOrders();
@@ -140,6 +145,28 @@
           toast("Ошибка: " + exception.message);
         } finally {
           select.disabled = false;
+        }
+      });
+
+      $("#order-table").addEventListener("click", async (event) => {
+        const button = event.target.closest("[data-order-tracking-save]");
+        if (!button) return;
+        const row = button.closest("[data-order-row]");
+        const status = row?.querySelector("[data-order]")?.value;
+        const tracking = row?.querySelector("[data-order-tracking]")?.value.trim() || "";
+        if (!row || !status) return;
+        button.disabled = true;
+        try {
+          await api("/api/admin/orders/" + button.dataset.orderTrackingSave, {
+            method: "PUT",
+            body: { status, tracking_number: tracking },
+          });
+          toast("Трек-номер сохранён");
+          await loadOrders();
+        } catch (exception) {
+          toast("Ошибка: " + exception.message);
+        } finally {
+          button.disabled = false;
         }
       });
 

@@ -100,6 +100,8 @@
   const footEl = () => drawer.querySelector(".drawer__foot");
 
   function render() {
+    drawer.querySelector(".drawer__panel").setAttribute("aria-label", t("cart.title"));
+    drawer.querySelector("[data-cart-close]").setAttribute("aria-label", t("aria.close"));
     drawer.querySelector(".drawer__title").textContent =
       view === "checkout" ? t("cart.checkout") : view === "success" ? t("cart.success1") : t("cart.title");
 

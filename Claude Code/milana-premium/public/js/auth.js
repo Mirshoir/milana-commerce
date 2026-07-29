@@ -13,10 +13,23 @@
   let appleProvider = null;
   let appleEnabled = false;
   let orders = null;
+  let ordersError = false;
+  let wishlistError = false;
+  const orderMessages = new Map();
 
   const t = (k, v) => window.I18N ? I18N.t(k, v) : k;
   const fmt = (n) => window.I18N ? I18N.fmtPrice(n) : "$" + Number(n || 0).toFixed(2);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const statusLabel = (type, status) => {
+    const clean = String(status || (type === "orderStatus" ? "new" : "pending"));
+    const key = `auth.${type}.${clean}`;
+    const translated = t(key);
+    return translated === key ? clean.replace(/_/g, " ") : translated;
+  };
+  const canCancelOrder = (order) => order?.status === "new"
+    && ["pending", "waiting_for_customer", "invoice_sent"].includes(order?.payment?.status || "pending");
+  const canSubmitPaymentProof = (order) => !["cancelled", "done"].includes(order?.status)
+    && ["pending", "invoice_sent", "waiting_for_customer", "failed"].includes(order?.payment?.status || "pending");
   const json = async (url, body) => {
     const r = await fetch(url, {
       method: "POST",
@@ -222,30 +235,69 @@
     if (orderList) {
       if (orders === null) {
         orderList.innerHTML = `<div class="account-empty is-loading"><span></span><p>${esc(t("auth.loadingOrders"))}</p></div>`;
+      } else if (ordersError) {
+        orderList.innerHTML = `<div class="account-empty account-empty--error" role="alert">
+          <p>${esc(t("auth.ordersLoadError"))}</p>
+          <button type="button" data-account-orders-retry>${esc(t("auth.retry"))}</button>
+        </div>`;
       } else if (!orders.length) {
         orderList.innerHTML = `<div class="account-empty"><p>${esc(t("auth.noOrders"))}</p><a href="/shop">${esc(t("auth.startOrder"))}</a></div>`;
       } else {
-        orderList.innerHTML = orders.slice(0, 4).map((order) => {
+        orderList.innerHTML = orders.map((order) => {
           const first = order.items?.[0] || {};
           const extra = Math.max(0, (order.items?.length || 0) - 1);
-          return `<a class="account-order" href="/support?topic=order">
-            <span>${esc(order.number || "MP")}</span>
-            <strong>${esc(first.name ? I18N.productName(first) : t("cart.title"))}${extra ? ` +${extra}` : ""}</strong>
-            <i>${esc(order.status || "new")} · ${fmt(order.total || 0)}</i>
-          </a>`;
+          const payment = order.payment || {};
+          const tracking = order.tracking_number || order.delivery?.tracking_number || "";
+          const proof = payment.submission || {};
+          const proofReference = proof.reference || payment.reference || "";
+          const orderId = String(order.id);
+          const feedback = orderMessages.get(orderId);
+          const proofId = `payment-proof-${orderId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
+          const controls = canCancelOrder(order) || canSubmitPaymentProof(order);
+          return `<article class="account-order" data-account-order="${esc(orderId)}">
+            <div class="account-order__summary">
+              <div>
+                <span class="account-order__number">${esc(order.number || "MP")}</span>
+                <a class="account-order__title" href="/support?topic=order">${esc(first.name ? I18N.productName(first) : t("cart.title"))}${extra ? ` +${extra}` : ""}</a>
+              </div>
+              <strong class="account-order__total">${fmt(order.total || 0)}</strong>
+            </div>
+            <div class="account-order__meta">
+              <div class="account-order__datum"><span>${esc(t("auth.orderStatusLabel"))}</span><strong>${esc(statusLabel("orderStatus", order.status))}</strong></div>
+              <div class="account-order__datum"><span>${esc(t("auth.paymentStatusLabel"))}</span><strong>${esc(statusLabel("paymentStatus", payment.status))}</strong></div>
+              <div class="account-order__datum"><span>${esc(t("auth.tracking"))}</span><strong>${esc(tracking || t("auth.trackingPending"))}</strong></div>
+            </div>
+            ${proofReference ? `<p class="account-order__reference"><span>${esc(t("auth.paymentReference"))}</span> ${esc(proofReference)}</p>` : ""}
+            ${controls ? `<div class="account-order__actions">
+              ${canSubmitPaymentProof(order) ? `<button type="button" class="account-order__button" data-payment-proof-open="${esc(orderId)}" aria-expanded="false" aria-controls="${esc(proofId)}">${esc(t("auth.paymentProof"))}</button>` : ""}
+              ${canCancelOrder(order) ? `<button type="button" class="account-order__button account-order__button--danger" data-order-cancel="${esc(orderId)}">${esc(t("auth.cancelOrder"))}</button>` : ""}
+            </div>` : ""}
+            <p class="account-order__feedback${feedback?.bad ? " is-error" : feedback ? " is-good" : ""}" data-account-order-msg role="${feedback?.bad ? "alert" : "status"}">${feedback ? esc(feedback.text) : ""}</p>
+            ${canSubmitPaymentProof(order) ? `<form class="account-proof" id="${esc(proofId)}" data-payment-proof-form="${esc(orderId)}" hidden>
+              <div class="account-proof__grid">
+                <label><span>${esc(t("auth.paymentReference"))}</span><input name="reference" value="${esc(proofReference)}" maxlength="120" placeholder="${esc(t("auth.paymentReferencePh"))}" autocomplete="off"></label>
+                <label><span>${esc(t("auth.paymentNote"))}</span><textarea name="note" maxlength="1000" placeholder="${esc(t("auth.paymentNotePh"))}">${esc(proof.note || "")}</textarea></label>
+              </div>
+              <p class="account-proof__help">${esc(t("auth.paymentProofHelp"))}</p>
+              <p class="account-order__feedback" data-payment-proof-msg role="alert"></p>
+              <button type="submit" class="account-order__button account-order__button--primary">${esc(t("auth.submitProof"))}</button>
+            </form>` : ""}
+          </article>`;
         }).join("");
       }
     }
 
     if (wishList) {
       if (!wishlist.length) {
-        wishList.innerHTML = `<div class="account-empty"><p>${esc(t("auth.noWishlist"))}</p><a href="/shop">${esc(t("auth.findModels"))}</a></div>`;
+        wishList.innerHTML = `<div class="account-empty"><p>${esc(t("auth.noWishlist"))}</p><a href="/shop">${esc(t("auth.findModels"))}</a></div>${wishlistError ? `<p class="account-list-msg is-error" role="alert">${esc(t("auth.wishlistRemoveError"))}</p>` : ""}`;
       } else {
-        wishList.innerHTML = wishlist.slice(0, 4).map((item) => `<a class="account-wish" href="/p/${esc(item.slug || item.id)}">
-          <img src="${esc(item.image || "/assets/img/detail-stack.jpg")}" alt="">
-          <span><strong>${esc(item.name ? I18N.productName(item) : t("auth.savedModel"))}</strong><i>${item.price_visible === false ? t("price.manager") : fmt(item.price || 0)}</i></span>
-          <button type="button" data-account-wish-remove="${esc(item.id)}" aria-label="Remove">×</button>
-        </a>`).join("");
+        wishList.innerHTML = wishlist.slice(0, 4).map((item) => `<article class="account-wish">
+          <a class="account-wish__link" href="/p/${esc(item.slug || item.id)}">
+            <img src="${esc(item.image || "/assets/img/detail-stack.jpg")}" alt="">
+            <span><strong>${esc(item.name ? I18N.productName(item) : t("auth.savedModel"))}</strong><i>${item.price_visible === false ? t("price.manager") : fmt(item.price || 0)}</i></span>
+          </a>
+          <button type="button" data-account-wish-remove="${esc(item.id)}" aria-label="${esc(t("auth.removeSaved"))}">×</button>
+        </article>`).join("") + (wishlistError ? `<p class="account-list-msg is-error" role="alert">${esc(t("auth.wishlistRemoveError"))}</p>` : "");
         window.MilanaState?.wireImages?.(wishList);
       }
     }
@@ -257,10 +309,19 @@
       const r = await fetch("/api/auth/orders");
       if (!r.ok) throw new Error("orders");
       orders = (await r.json()).orders || [];
+      ordersError = false;
     } catch {
       orders = [];
+      ordersError = true;
     }
     renderAccountDetails();
+  }
+
+  async function reloadOrders() {
+    orders = null;
+    ordersError = false;
+    renderAccountDetails();
+    await loadOrders();
   }
 
   function setMsg(formName, msg, bad = true) {
@@ -444,17 +505,79 @@
         if (firebaseAuth && window.__milanaFirebase) await window.__milanaFirebase.authMod.signOut(firebaseAuth).catch(() => {});
         me = null;
         orders = null;
+        ordersError = false;
+        wishlistError = false;
+        orderMessages.clear();
         switchTab("signin");
         renderLinks();
         renderAccount();
         window.dispatchEvent(new CustomEvent("milana:auth", { detail: { customer: me } }));
       }
 
+      const retryOrders = e.target.closest("[data-account-orders-retry]");
+      if (retryOrders) {
+        retryOrders.disabled = true;
+        await reloadOrders();
+      }
+
+      const proofOpen = e.target.closest("[data-payment-proof-open]");
+      if (proofOpen) {
+        const form = document.getElementById(proofOpen.getAttribute("aria-controls"));
+        if (form) {
+          const opening = form.hidden;
+          form.hidden = !opening;
+          proofOpen.setAttribute("aria-expanded", String(opening));
+          if (opening) form.querySelector("input, textarea")?.focus();
+        }
+      }
+
+      const cancelOrder = e.target.closest("[data-order-cancel]");
+      if (cancelOrder) {
+        const id = cancelOrder.dataset.orderCancel;
+        const order = orders?.find((item) => String(item.id) === String(id));
+        if (!order || !confirm(t("auth.cancelOrderConfirm", { number: order.number || "" }))) return;
+        const feedback = cancelOrder.closest("[data-account-order]")?.querySelector("[data-account-order-msg]");
+        cancelOrder.disabled = true;
+        cancelOrder.setAttribute("aria-busy", "true");
+        if (feedback) {
+          feedback.textContent = t("auth.updating");
+          feedback.className = "account-order__feedback";
+          feedback.setAttribute("role", "status");
+        }
+        try {
+          await json(`/api/auth/orders/${encodeURIComponent(id)}/cancel`, {});
+          orderMessages.set(String(id), { text: t("auth.orderCancelled"), bad: false });
+          await reloadOrders();
+        } catch (ex) {
+          if (feedback) {
+            feedback.textContent = ex.message === "cannot_cancel" ? t("auth.cannotCancel") : t("auth.orderActionError");
+            feedback.className = "account-order__feedback is-error";
+            feedback.setAttribute("role", "alert");
+          }
+        } finally {
+          cancelOrder.disabled = false;
+          cancelOrder.removeAttribute("aria-busy");
+        }
+      }
+
       const removeWish = e.target.closest("[data-account-wish-remove]");
       if (removeWish) {
         e.preventDefault();
-        window.MilanaState?.wishlist?.remove(removeWish.dataset.accountWishRemove);
-        renderAccountDetails();
+        e.stopPropagation();
+        const id = removeWish.dataset.accountWishRemove;
+        removeWish.disabled = true;
+        removeWish.setAttribute("aria-busy", "true");
+        try {
+          const response = await fetch(`/api/products/${encodeURIComponent(id)}/like`, { method: "DELETE" });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(data.error || "request_failed");
+          wishlistError = false;
+          if (window.MilanaState?.wishlist?.remove) window.MilanaState.wishlist.remove(id);
+          else renderAccountDetails();
+        } catch {
+          wishlistError = true;
+          renderAccountDetails();
+        }
       }
 
       if (e.target.closest("[data-profile-edit]")) { editProfile(); return; }
@@ -468,11 +591,45 @@
     });
 
     /* сохранение профиля (форма создаётся динамически) */
-    page.addEventListener("submit", (e) => {
+    page.addEventListener("submit", async (e) => {
+      const proofForm = e.target.closest("[data-payment-proof-form]");
+      if (proofForm) {
+        e.preventDefault();
+        const data = formData(proofForm);
+        const reference = String(data.reference || "").trim();
+        const note = String(data.note || "").trim();
+        const msg = proofForm.querySelector("[data-payment-proof-msg]");
+        const fields = proofForm.querySelectorAll("input, textarea, button");
+        const setProofMessage = (text, bad = true) => {
+          if (!msg) return;
+          msg.textContent = text;
+          msg.className = `account-order__feedback${bad ? " is-error" : " is-good"}`;
+          msg.setAttribute("role", bad ? "alert" : "status");
+        };
+        if (!reference && !note) {
+          setProofMessage(t("auth.proofRequired"));
+          proofForm.querySelector("input")?.focus();
+          return;
+        }
+        fields.forEach((field) => { field.disabled = true; });
+        setProofMessage(t("auth.updating"), false);
+        const id = proofForm.dataset.paymentProofForm;
+        try {
+          await json(`/api/auth/orders/${encodeURIComponent(id)}/payment-proof`, { reference, note });
+          orderMessages.set(String(id), { text: t("auth.proofSubmitted"), bad: false });
+          await reloadOrders();
+        } catch (ex) {
+          setProofMessage(ex.message === "proof" ? t("auth.proofRequired") : t("auth.orderActionError"));
+        } finally {
+          fields.forEach((field) => { field.disabled = false; });
+        }
+        return;
+      }
+
       const pform = e.target.closest("[data-account-form]");
       if (!pform) return;
       e.preventDefault();
-      saveProfile(pform);
+      await saveProfile(pform);
     });
 
     page.querySelectorAll("[data-auth-form]").forEach((form) => {

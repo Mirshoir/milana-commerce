@@ -159,7 +159,11 @@
     track.style.setProperty("--ticker-dur", Math.max(14, Math.round((runW * copies) / 60)) + "s");
   }
 
-  build();
+  /* The source text is translated asynchronously. Building immediately
+     cloned the Russian fallback before the selected language was applied,
+     leaving a mixed-language ticker until the user changed language. */
+  if (window.I18N?.ready) I18N.ready.then(build);
+  else build();
   window.addEventListener("i18n:change", () => setTimeout(build, 60));
   window.addEventListener("resize", () => { clearTimeout(build._t); build._t = setTimeout(build, 200); });
 })();

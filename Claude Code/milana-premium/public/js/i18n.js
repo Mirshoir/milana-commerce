@@ -84,6 +84,43 @@
     });
     root.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
     root.querySelectorAll("[data-i18n-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.i18nAria)); });
+    const legacyAria = {
+      "Аккаунт": "auth.account",
+      "Избранное": "auth.wishlist",
+      "Корзина": "cart.title",
+      "Основное меню": "aria.mainNav",
+      "Мобильное меню": "aria.mobileNav",
+      "Хлебные крошки": "aria.breadcrumbs",
+      "Назад": "aria.prev",
+      "Вперёд": "aria.next",
+      "Открыть меню": "aria.openMenu",
+      "Закрыть": "aria.close",
+      "Закрыть фильтры": "aria.closeFilters",
+      "Поиск": "aria.search",
+      "Оценка": "aria.rating",
+      "Наличие": "aria.availability",
+      "Меньше": "aria.decrease",
+      "Больше": "aria.increase",
+      "В избранное": "aria.addWishlist",
+      "Популярные товары": "aria.popularProducts",
+      "Цена от": "aria.priceMin",
+      "Цена до": "aria.priceMax",
+      "Слайды": "aria.slides",
+      "Сезонная коллекция": "aria.seasonalCollection",
+      "Тип одежды": "shop.clothing",
+      "Edit profile": "aria.editProfile",
+      "Сортировка": "shop.sort",
+      "Фильтры": "shop.filters",
+      "Каталоги": "shop.catalogPanel",
+      "Товары": "shop.title",
+    };
+    root.querySelectorAll("[aria-label]").forEach((el) => {
+      const key = el.dataset.i18nAria || legacyAria[el.getAttribute("aria-label")];
+      if (key) {
+        el.dataset.i18nAria = key;
+        el.setAttribute("aria-label", t(key));
+      }
+    });
     document.documentElement.lang = lang;
     if (dicts[lang] && dicts[lang]["meta.title"] && root === document) {
       if (!document.body.dataset.keepTitle) document.title = t("meta.title");
@@ -149,22 +186,45 @@
     ["top", /майка|top|tank/],
   ];
 
-  function productName(product) {
-    const p = typeof product === "string" ? { name: product } : (product || {});
-    /* сначала — настоящее название товара на языке интерфейса (наши переводы каталога);
-       обобщённый тип («Комплект», «Халат») остаётся запасным вариантом, если названия нет */
-    const own = (p.name_i18n && typeof p.name_i18n === "object" && p.name_i18n[lang]) || p.name;
-    if (own && String(own).trim()) return String(own).trim();
-    if (p.product_type) return t("productType." + p.product_type);
+  const PRODUCT_TYPES = new Set([
+    "tunic", "sarochka", "robe", "pajamas", "set", "tracksuit", "hoodie",
+    "dress", "shirt", "polo", "trousers", "tshirt", "shorts", "top",
+    "homewear", "clothing",
+  ]);
+
+  function inferProductType(p) {
+    /* These panels are garment-specific and correct known imported rows where
+       photo classification stored the generic type "dress". */
+    const panelType = {
+      tunics: "tunic",
+      robes: "robe",
+      nightgowns: "sarochka",
+    }[String(p.catalog_panel || "").toLowerCase()];
+    if (panelType) return panelType;
+
     const translatedNames = p.name_i18n && typeof p.name_i18n === "object"
       ? Object.values(p.name_i18n)
       : [];
-    const source = [p.name, ...translatedNames].filter(Boolean).join(" ").toLowerCase();
-    let type = PRODUCT_TYPE_PATTERNS.find(([, pattern]) => pattern.test(source))?.[0];
-    if (!type) {
-      type = ({ robes: "robe", pajamas: "pajamas", loungewear: "tunic", homewear: "homewear" })[p.category] || "clothing";
-    }
-    return t("productType." + type);
+    const source = [
+      p.name, ...translatedNames, p.slug, p.model_no, p.variant,
+    ].filter(Boolean).join(" ").toLowerCase();
+    const fromName = PRODUCT_TYPE_PATTERNS.find(([, pattern]) => pattern.test(source))?.[0];
+    if (fromName) return fromName;
+
+    const declared = String(p.product_type || "").toLowerCase();
+    if (PRODUCT_TYPES.has(declared)) return declared;
+
+    return ({
+      robes: "robe",
+      pajamas: "pajamas",
+      loungewear: "homewear",
+      homewear: "homewear",
+    })[String(p.category || "").toLowerCase()] || "clothing";
+  }
+
+  function productName(product) {
+    const p = typeof product === "string" ? { name: product } : (product || {});
+    return t("productType." + inferProductType(p));
   }
 
   function packageText(value) {
