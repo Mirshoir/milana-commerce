@@ -451,7 +451,6 @@
     renderPhotos();
     updateEditChecklist();
     $("#upload-status").textContent = "";
-    $("#edit-ai-msg").textContent = "";
     switchView("edit");
   }
 
@@ -587,61 +586,6 @@
   });
   ["#f-wholesale-price", "#f-sizes", "#f-desc-ru", "#f-desc-uz", "#f-desc-en"].forEach((sel) => {
     $(sel).addEventListener("input", updateEditChecklist);
-  });
-
-  async function generatePhotoDescription() {
-    const images = editImages.filter((url) => !/\.(mp4|webm)(?:\?|$)/i.test(url)).slice(0, 3);
-    const button = $("#edit-ai-fill");
-    const message = $("#edit-ai-msg");
-    if (!images.length) {
-      message.textContent = "Сначала загрузите фотографию товара.";
-      return;
-    }
-    button.disabled = true;
-    button.textContent = "Анализ…";
-    message.textContent = "Анализируем фото товара…";
-    try {
-      const result = await api("/api/admin/products/describe", {
-        method: "POST",
-        body: {
-          images,
-          name: $("#f-name").value,
-          model_no: $("#f-model").value,
-          variant: $("#f-variant").value,
-      color: $("#f-color").value.trim(),
-          category: $("#f-cat").value,
-          gender: $("#f-gender").value,
-        },
-      });
-      ["ru", "uz", "en"].forEach((lang) => {
-        $("#f-desc-" + lang).value = result.desc?.[lang] || "";
-      });
-      if (result.product_type) $("#f-product-type").value = result.product_type;
-      if (!$("#f-name").value.trim() && result.names?.ru) {
-        $("#f-name").value = result.names.ru;
-      }
-      updateEditChecklist();
-      message.textContent = "Описание создано по фото на русском, узбекском и английском. Проверьте и сохраните товар.";
-    } catch (ex) {
-      const errors = {
-        openai_not_configured: "OpenAI не настроен на сервере.",
-        image_required: "Нужно загрузить фотографию, не видео.",
-        image_not_local: "Можно анализировать только загруженные на сайт фотографии.",
-        image_not_found: "Фотография не найдена. Загрузите её заново.",
-        image_too_large: "Фотография слишком большая для анализа.",
-      };
-      message.textContent = errors[ex.message] || "Не удалось создать описание по фото. Попробуйте ещё раз.";
-    } finally {
-      button.disabled = false;
-      button.textContent = "По фото";
-    }
-  }
-
-  $("#edit-ai-fill").addEventListener("click", () => {
-    const approved = window.confirm(
-      "Фотографии товара будут отправлены в OpenAI для анализа, и это может использовать API-кредиты. Продолжить?"
-    );
-    if (approved) generatePhotoDescription();
   });
 
   $("#edit-save").addEventListener("click", async () => {

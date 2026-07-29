@@ -765,6 +765,27 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const cookie = login.headers.get("set-cookie").split(";")[0];
   assert.match(cookie, /^sid=/);
 
+  const adminHtmlResponse = await fetch(app.base + "/admin", { headers: { Cookie: cookie } });
+  assert.equal(adminHtmlResponse.status, 200);
+  const adminHtml = await adminHtmlResponse.text();
+  assert.doesNotMatch(adminHtml, /id="edit-ai-fill"/);
+  assert.doesNotMatch(adminHtml, /id="edit-ai-msg"/);
+  assert.match(adminHtml, /id="f-desc-ru"/);
+  assert.match(adminHtml, /id="f-desc-uz"/);
+  assert.match(adminHtml, /id="f-desc-en"/);
+  const adminScriptResponse = await fetch(app.base + "/js/admin.js");
+  assert.equal(adminScriptResponse.status, 200);
+  const adminScript = await adminScriptResponse.text();
+  assert.doesNotMatch(adminScript, /\/api\/admin\/products\/describe/);
+  assert.doesNotMatch(adminScript, /generatePhotoDescription/);
+  assert.match(adminScript, /desc:\s*\{\s*ru:\s*\$\("#f-desc-ru"\)\.value,\s*uz:\s*\$\("#f-desc-uz"\)\.value,\s*en:\s*\$\("#f-desc-en"\)\.value\s*\}/);
+  const removedDescriptionGenerator = await json(
+    app.base + "/api/admin/products/describe",
+    { images: ["/assets/img/hero.jpg"] },
+    { headers: { Cookie: cookie, Origin: app.base } },
+  );
+  assert.equal(removedDescriptionGenerator.status, 404);
+
   const woff = Buffer.alloc(128);
   woff.write("wOFF", 0, "latin1");
   woff.writeUInt32BE(0x00010000, 4);

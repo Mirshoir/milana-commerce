@@ -101,7 +101,7 @@
                   <option value="kids">Yosh bolalar</option>
                 </select>
               </label>
-              <label>Название по фото
+              <label>Тип товара
                 <select class="ainput" id="f-product-type">
                   <option value="">Определить из текста</option>
                   <option value="tunic">Туника</option><option value="sarochka">Сорочка</option>
@@ -174,10 +174,7 @@
           </div>
 
           <div class="card">
-            <div class="card__top">
-              <h3>Описание</h3>
-              <button class="abtn" id="edit-ai-fill" type="button">По фото</button>
-            </div>
+            <h3>Описание</h3>
             <div class="langtabs" id="desc-tabs">
               <button data-lt="ru" class="is-on">RU</button><button data-lt="uz">UZ</button><button data-lt="en">ENG</button>
             </div>
@@ -189,7 +186,6 @@
               <label>Ткань UZ <input class="ainput" id="f-fab-uz" maxlength="300" placeholder="Tut ipagi · burgundi"></label>
               <label>Ткань ENG <input class="ainput" id="f-fab-en" maxlength="300" placeholder="Mulberry silk · burgundy"></label>
             </div>
-            <p class="hint" id="edit-ai-msg"></p>
           </div>
         </div>
       </section>
@@ -530,7 +526,7 @@
   </div>
 
   <div class="atoast" id="atoast"></div>
-  <script src="/js/admin.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/admin.js?v=20260729-manual-description" defer></script>
   <script src="/js/admin-locale.js?v=20260724-photo-names" defer></script>
 </body>
 </html>
