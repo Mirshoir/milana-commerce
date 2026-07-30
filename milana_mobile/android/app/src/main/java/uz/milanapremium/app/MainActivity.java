@@ -1,0 +1,5 @@
+package uz.milanapremium.app;
+
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {}

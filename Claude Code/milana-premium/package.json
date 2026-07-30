@@ -5,10 +5,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test",
+    "test": "node --test --test-concurrency=1",
+    "optimize:media": "node tools/optimize-upload-media.js",
     "postgres:schema": "node tools/apply-postgres-schema.js",
     "postgres:migrate": "node tools/migrate-sqlite-to-postgres.js",
-    "postgres:migrate:dry": "node tools/migrate-sqlite-to-postgres.js --dry-run"
+    "postgres:migrate:dry": "node tools/migrate-sqlite-to-postgres.js --dry-run",
+    "postgres:verify": "node tools/verify-postgres-migration.js"
   },
   "engines": {
     "node": ">=22.5.0"

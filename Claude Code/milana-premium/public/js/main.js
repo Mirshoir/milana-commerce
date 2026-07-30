@@ -76,7 +76,7 @@
     gsap.set(".hero .line__in", { yPercent: 112 });
     gsap.set("[data-intro]", { autoAlpha: 0, y: 26 });
     gsap.set(".hero__img", { clipPath: "inset(0% 0% 100% 0%)" });
-    gsap.set(".hero__img img", { scale: 1.3 });
+    gsap.set(".hero__img img, .hero__img video", { scale: 1.3 });
     introPrepared = true;
   }
 
@@ -85,7 +85,7 @@
     const tl = gsap.timeline({ defaults: { ease: "power4.out" } });
     tl.to(".hero .line__in", { yPercent: 0, duration: 1.3, stagger: 0.1, clearProps: "transform" }, 0.15)
       .to(".hero__img", { clipPath: "inset(0% 0% 0% 0%)", duration: 1.5, ease: "power3.inOut", clearProps: "clipPath" }, 0.1)
-      .to(".hero__img img", { scale: 1, duration: 2.1, ease: "power3.out", clearProps: "transform" }, 0.1)
+      .to(".hero__img img, .hero__img video", { scale: 1, duration: 2.1, ease: "power3.out", clearProps: "transform" }, 0.1)
       .to("[data-intro]", { autoAlpha: 1, y: 0, duration: 1.1, stagger: 0.09, clearProps: "transform" }, 0.55);
   }
 
@@ -211,7 +211,7 @@
   window.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
 
   /* ---------------- drag-to-scroll collection ---------------- */
-  document.querySelectorAll(".scroller").forEach((scroller) => {
+  document.querySelectorAll(".scroller:not([data-no-drag])").forEach((scroller) => {
     let isDown = false, startX = 0, startLeft = 0, moved = 0;
     scroller.addEventListener("pointerdown", (e) => {
       if (e.pointerType !== "mouse") return; // touch scrolls natively

@@ -1,0 +1,17 @@
+{
+  "googlePlay": {
+    "accountVerified": false,
+    "appContentCompleted": false,
+    "closedTestCompleted": false,
+    "productionAccessGranted": false
+  },
+  "apple": {
+    "developerMembershipActive": false,
+    "agreementsAccepted": false,
+    "appMetadataCompleted": false
+  },
+  "release": {
+    "publicLegalPagesLive": false,
+    "deviceQaPassed": false
+  }
+}

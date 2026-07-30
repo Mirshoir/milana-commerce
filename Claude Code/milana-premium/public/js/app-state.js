@@ -14,9 +14,20 @@
   const save = () => {
     localStorage.setItem(KEY, JSON.stringify(wishlist.slice(0, 80)));
     syncWishlistButtons();
+    syncWishCount();
     window.dispatchEvent(new CustomEvent("milana:wishlist", { detail: { items: all() } }));
   };
   const idOf = (item) => String(item?.id || item?.slug || "");
+  /* счётчик избранного в шапке */
+  function syncWishCount() {
+    const n = wishlist.length;
+    document.querySelectorAll("[data-wish-count]").forEach((el) => {
+      el.textContent = n > 99 ? "99+" : String(n);
+      el.classList.toggle("is-zero", n < 1);
+    });
+  }
+  document.addEventListener("DOMContentLoaded", syncWishCount);
+
   const all = () => wishlist.slice();
   const setAll = (items) => {
     wishlist = (Array.isArray(items) ? items : []).slice(0, 80).map((item) => ({

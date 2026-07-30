@@ -1,17 +1,480 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Milana Premium - Fashion & Homewear Collection</title>
-    <!-- Google Fonts: Outfit (Modern thin sans-serif display) & Condiment (Cursive script) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100;200;300;400;500;600;700&family=Condiment&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="/assets/index-BejMX8Pq.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-Dx6NIoSG.css">
-  </head>
-  <body class="bg-[#010828] text-[#EFF4FF] selection:bg-[#6FFF00] selection:text-[#010828] overflow-x-hidden min-h-screen">
-    <div id="root"></div>
-  </body>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Модель — MILANA PREMIUM</title>
+  <meta name="description" content="Модель из оптового каталога Milana Premium: фото, размеры, цена за штуку, отзывы проверенных покупателей.">
+  <meta name="robots" content="noindex,follow">
+  <meta name="theme-color" content="#FFFFFF">
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/css/luxe.css?v=20260729-hardqa2">
+  <link rel="stylesheet" href="/css/luxe-pages.css?v=20260729-hardqa2">
+</head>
+<body data-keep-title="1">
+
+  <!-- svg sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16M13 5l7 7-7 7"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M6 7h12l1.5 13.5H4.5L6 7ZM8.5 9.5V6a3.5 3.5 0 0 1 7 0v3.5"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.5S3.5 15.2 3.5 9.3C3.5 6.4 5.7 4.5 8 4.5c1.7 0 3.2.9 4 2.3.8-1.4 2.3-2.3 4-2.3 2.3 0 4.5 1.9 4.5 4.8 0 5.9-8.5 11.2-8.5 11.2Z"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.8 6.3.8-4.6 4.3 1.2 6.2L12 17l-5.6 3.1 1.2-6.2L3 9.6l6.3-.8L12 3Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.2-3.6 4.1-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4.5 6v5.5c0 4.7 3.2 8 7.5 9.5 4.3-1.5 7.5-4.8 7.5-9.5V6L12 3Z"/><path d="m9 12 2 2 4-4.5"/></symbol>
+    <symbol id="i-truck" viewBox="0 0 24 24"><path d="M2.5 6.5h12v10h-12zM14.5 10h4l2.5 3v3.5h-6.5"/><circle cx="6.5" cy="18" r="1.8"/><circle cx="17.5" cy="18" r="1.8"/></symbol>
+    <symbol id="i-thread" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5c-3 2.4-3 14.6 0 17M12 3.5c3 2.4 3 14.6 0 17M3.8 9.5h16.4M3.8 14.5h16.4"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5v-9Z"/><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9"/></symbol>
+  </svg>
+
+  <!-- header -->
+  <header class="header">
+    <div class="promo"><span data-i18n="best.ship">Оптовый заказ начинается с одной упаковки или одного мешка на модель · наличие подтверждает менеджер</span></div>
+    <div class="header__main">
+      <div class="header__side">
+        <button class="burger" aria-label="Открыть меню" aria-expanded="false"><i></i><i></i><i></i></button>
+        <button type="button" class="header__search" data-search-open><svg class="ic"><use href="#i-search"/></svg><span data-i18n="search.site">Поиск по сайту…</span></button>
+      </div>
+      <a class="logo" href="/" aria-label="Milana Premium">MILANA <span>Premium</span></a>
+      <div class="header__side header__side--r">
+        <div class="langsel">
+          <button type="button" class="langsel__btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Til / Язык / Language">
+            <span data-lang-current>RU</span>
+          </button>
+          <div class="lang langsel__menu" role="listbox">
+            <button type="button" data-lang="uz" role="option">O‘zbekcha</button>
+            <button type="button" data-lang="ru" role="option">Русский</button>
+            <button type="button" data-lang="en" role="option">English</button>
+          </div>
+        </div>
+        <a class="iconbtn" href="/signin" aria-label="Аккаунт"><svg class="ic"><use href="#i-user"/></svg></a>
+        <a class="iconbtn" href="/shop?wish=1" aria-label="Избранное" data-wish-link>
+          <svg class="ic"><use href="#i-heart"/></svg>
+          <span data-wish-count class="is-zero">0</span>
+        </a>
+        <button class="iconbtn" data-cart-open aria-label="Корзина">
+          <svg class="ic"><use href="#i-cart"/></svg>
+          <span data-cart-count class="is-zero">0</span>
+        </button>
+      </div>
+    </div>
+    <nav class="header__nav" aria-label="Основное меню">
+      <div class="navitem">
+        <a href="/shop" data-i18n="nav.shop">Каталог</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="shop.gender">Пол</h4>
+                <a href="/shop?gender=women" data-i18n="cats.women">Женщинам</a>
+                <a href="/shop?gender=men" data-i18n="cats.men">Мужчинам</a>
+                <a href="/shop?gender=kids" data-i18n="cats.kids">Детям</a>
+                <a href="/shop" data-i18n="shop.all">Все</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.clothing">Тип одежды</h4>
+                <a href="/shop?category=pajamas" data-i18n="cats.pajamas">Пижамы</a>
+                <a href="/shop?category=robes" data-i18n="cats.robes">Халаты</a>
+                <a href="/shop?category=homewear" data-i18n="cats.homewear">Homewear</a>
+                <a href="/shop?category=loungewear" data-i18n="cats.loungewear">Loungewear</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.tag">Подборка</h4>
+                <a href="/shop?tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+                <a href="/shop?tag=sale" data-i18n="shop.tagSale">Скидка</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=women">
+                <img src="/uploads/pmrlo8czo-400f22ac.webp" alt="Женщинам" loading="lazy">
+                <b data-i18n="cats.women">Женщинам</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=men">
+                <img src="/uploads/pmrlk7am3-dd1aa8f4.webp" alt="Мужчинам" loading="lazy">
+                <b data-i18n="cats.men">Мужчинам</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=kids">
+                <img src="/uploads/pmrloe62a-800dfd84.webp" alt="Детям" loading="lazy">
+                <b data-i18n="cats.kids">Детям</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem">
+        <a href="/shop?gender=women" data-i18n="cats.women">Женщинам</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="shop.clothing">Тип одежды</h4>
+                <a href="/shop?gender=women&amp;category=pajamas" data-i18n="cats.pajamas">Пижамы</a>
+                <a href="/shop?gender=women&amp;category=robes" data-i18n="cats.robes">Халаты</a>
+                <a href="/shop?gender=women&amp;category=homewear" data-i18n="cats.homewear">Homewear</a>
+                <a href="/shop?gender=women&amp;category=loungewear" data-i18n="cats.loungewear">Loungewear</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.tag">Подборка</h4>
+                <a href="/shop?gender=women&amp;tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?gender=women&amp;sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+                <a href="/shop?gender=women" data-i18n="shop.all">Все</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=women&amp;category=loungewear">
+                <img src="/uploads/pmrlkcxu5-2c3ab779.webp" alt="Loungewear" loading="lazy">
+                <b data-i18n="cats.loungewear">Loungewear</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=women&amp;category=pajamas">
+                <img src="/uploads/pmrlkw1kq-94a08913.webp" alt="Пижамы" loading="lazy">
+                <b data-i18n="cats.pajamas">Пижамы</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem">
+        <a href="/shop?gender=men" data-i18n="cats.men">Мужчинам</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="shop.clothing">Тип одежды</h4>
+                <a href="/shop?gender=men&amp;category=pajamas" data-i18n="cats.pajamas">Пижамы</a>
+                <a href="/shop?gender=men&amp;category=homewear" data-i18n="cats.homewear">Homewear</a>
+                <a href="/shop?gender=men&amp;category=loungewear" data-i18n="cats.loungewear">Loungewear</a>
+                <a href="/shop?gender=men" data-i18n="shop.all">Все</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.tag">Подборка</h4>
+                <a href="/shop?gender=men&amp;tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?gender=men&amp;sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=men">
+                <img src="/uploads/pmrlk7am3-dd1aa8f4.webp" alt="Мужская коллекция" loading="lazy">
+                <b data-i18n="mq.2">Мужская коллекция</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=men&amp;tag=bestseller">
+                <img src="/uploads/pmrlkb3hu-8f34e700.webp" alt="Бестселлеры" loading="lazy">
+                <b data-i18n="nav.bestsellers">Бестселлеры</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem">
+        <a href="/shop?gender=kids" data-i18n="cats.kids">Детям</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="cats.kids">Детям</h4>
+                <a href="/shop?gender=kids" data-i18n="shop.all">Все</a>
+                <a href="/shop?gender=kids&amp;tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?gender=kids&amp;sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=kids">
+                <img src="/uploads/pmrloe62a-800dfd84.webp" alt="Детская одежда" loading="lazy">
+                <b data-i18n="mq.3">Детская одежда</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem"><a href="/shop?tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a></div>
+      <div class="navitem"><a href="/ordering" data-i18n="terms.navOrdering">Как заказать</a></div>
+      <div class="navitem"><a href="/#maison" data-i18n="nav.maison">О нас</a></div>
+    </nav>
+  </header>
+
+  <!-- mobile menu -->
+  <nav class="menu" id="menu" aria-hidden="true" aria-label="Мобильное меню">
+    <a href="/shop" data-i18n="nav.shop">Каталог</a>
+    <a href="/shop?gender=women" data-i18n="cats.women">Женщинам</a>
+    <a href="/shop?gender=men" data-i18n="cats.men">Мужчинам</a>
+    <a href="/shop?gender=kids" data-i18n="cats.kids">Детям</a>
+    <a href="/ordering" data-i18n="terms.navOrdering">Как заказать</a>
+    <a href="/support" data-i18n="nav.support">Поддержка</a>
+    <div class="menu__meta">
+      <span>+998 50 155 10 10</span>
+      <span data-i18n="menu.showroom">Шоурум</span>
+    </div>
+  </nav>
+
+  <main>
+    <article class="pd is-loading" id="pd">
+      <div class="container">
+        <nav class="crumbs" aria-label="Хлебные крошки">
+          <a href="/shop" data-i18n="shop.title">Все товары</a>
+          <span aria-hidden="true">/</span>
+          <a href="/shop" id="crumb-gender" hidden></a>
+          <span aria-hidden="true" id="crumb-gender-sep" hidden>/</span>
+          <a href="/shop" id="crumb-cat" hidden></a>
+          <span aria-hidden="true" id="crumb-cat-sep" hidden>/</span>
+          <b id="crumb-name">…</b>
+        </nav>
+
+        <div class="pd__grid">
+          <!-- галерея -->
+          <div class="pd__gallery pd__gallery--grid" id="pd-gallery"></div>
+
+          <!-- информация -->
+          <div class="pd__info">
+            <h1 class="pd__name" id="pd-name">…</h1>
+            <p class="pd__sku"><span id="pd-sku"></span><i id="pd-likes" hidden></i></p>
+            <div class="pd__pricerow">
+              <div class="pd__price" id="pd-price"></div>
+              <button type="button" class="pd__sc-open" id="pd-sc-open" data-i18n="prod.sizeChart">Таблица размеров</button>
+            </div>
+
+            <div>
+              <p class="pd__label"><span data-i18n="prod.size">Размеры в мешке</span></p>
+              <div class="pd__sizes" id="pd-sizes"></div>
+            </div>
+
+            <div class="pd__variants" id="pd-variants" hidden></div>
+
+            <a class="pd__rating pd__rating--link" id="pd-rating" href="#reviews" hidden></a>
+
+            <p class="pd__prenote" id="pd-preorder" hidden></p>
+
+            <div class="pd__tiers" id="pd-tiers"></div>
+
+            <div>
+              <p class="pd__label"><span data-i18n="prod.qty">Мешки</span><span data-i18n="prod.inStock">В наличии · отправка за 24 часа</span></p>
+
+              <div class="pd__buy">
+                <div class="pd__qty">
+                  <button id="qty-minus" aria-label="Меньше">−</button>
+                  <span id="qty-n">1</span>
+                  <button id="qty-plus" aria-label="Больше">+</button>
+                </div>
+                <button class="btn btn--primary" id="pd-add"><span data-i18n="prod.add">В корзину</span></button>
+                <a class="btn btn--primary pd__mgr" id="pd-manager" target="_blank" rel="noopener" hidden><span data-i18n="prod.contactManager">Связаться с менеджером</span></a>
+                <button id="pd-wish" aria-label="В избранное" aria-pressed="false"><svg class="ic"><use href="#i-heart"/></svg></button>
+              </div>
+
+              <p class="pd__total" id="pd-total"></p>
+            </div>
+
+
+            <section class="pd__specs" id="pd-specs" hidden>
+              <h3 data-i18n="prod.specs">Характеристики</h3>
+              <dl id="pd-specs-list"></dl>
+            </section>
+
+            <section class="pd__measure" id="pd-measure" hidden>
+              <h3 data-i18n="prod.measure">Замеры модели</h3>
+              <div id="pd-measure-body"></div>
+              <p class="pd__measure-note" data-i18n="prod.scNote">Замеры изделия в сантиметрах. Допуск ±1,5 см.</p>
+            </section>
+
+            <div class="pd__acc">
+              <div class="pd__acc-item">
+                <button class="pd__acc-head" aria-expanded="true"><span data-i18n="prod.desc">Описание</span><svg class="ic"><use href="#i-arrow"/></svg></button>
+                <div class="pd__acc-body"><p class="pd__desc" id="pd-desc"></p></div>
+              </div>
+              <div class="pd__acc-item">
+                <button class="pd__acc-head" aria-expanded="false"><span data-i18n="prod.fabric">Ткань и уход</span><svg class="ic"><use href="#i-arrow"/></svg></button>
+                <div class="pd__acc-body"><p class="pd__care" id="pd-care"></p></div>
+              </div>
+            </div>
+
+            <div class="pd__trust">
+              <div><svg class="ic"><use href="#i-shield"/></svg><span data-i18n="prod.assure1">Проверка менеджером</span></div>
+              <div><svg class="ic"><use href="#i-box"/></svg><span data-i18n="prod.assure2">Готовый микс</span></div>
+              <div><svg class="ic"><use href="#i-truck"/></svg><span data-i18n="prod.assure3">Cargo-поддержка</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- отзывы -->
+      <section class="reviews section section--tight" id="reviews">
+        <div class="container reviews__grid">
+          <div class="reviews__summary">
+            <span class="overline" data-i18n="reviews.overline">Отзывы</span>
+            <h2 class="t-display t-lg" data-i18n="reviews.title">Отзывы клиентов</h2>
+            <p class="reviews__count" id="reviews-summary"></p>
+          </div>
+          <div>
+            <div class="reviews__list" id="reviews-list"></div>
+            <form id="reviews-form" hidden>
+              <h4 data-i18n="reviews.title">Отзывы клиентов</h4>
+              <div class="reviews__stars-input" role="radiogroup" aria-label="Оценка">
+                <button type="button" data-review-star="1" aria-checked="false">★</button>
+                <button type="button" data-review-star="2" aria-checked="false">★</button>
+                <button type="button" data-review-star="3" aria-checked="false">★</button>
+                <button type="button" data-review-star="4" aria-checked="false">★</button>
+                <button type="button" data-review-star="5" aria-checked="true">★</button>
+              </div>
+              <input type="hidden" name="rating" value="5">
+              <textarea name="comment" rows="3" minlength="3" maxlength="600" required data-i18n-ph="reviews.placeholder" placeholder="Короткий отзыв"></textarea>
+              <p data-review-msg hidden></p>
+              <button class="btn btn--primary" type="submit"><span data-i18n="reviews.submit">Отправить</span></button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- похожие -->
+      <section class="related section section--tight" id="related" hidden>
+        <div class="container">
+          <div class="sec-head">
+            <h2 class="t-display t-lg"><i data-i18n="prod.related">Вам может понравиться</i></h2>
+            <a class="link-underline" href="/shop" data-i18n="prod.back">Назад в каталог</a>
+          </div>
+          <div class="product-grid" id="related-grid"></div>
+        </div>
+      </section>
+    </article>
+
+    <!-- популярные товары: лента с боковыми стрелками -->
+    <section class="popstrip" aria-label="Популярные товары">
+      <div class="container">
+        <h2 class="popstrip__title" data-i18n="pop.title">Популярные товары</h2>
+        <div class="popstrip__wrap">
+          <button type="button" class="popstrip__arr popstrip__arr--l" id="pop-prev" aria-label="Назад"><svg class="ic" style="transform:rotate(180deg)"><use href="#i-arrow"/></svg></button>
+          <div class="scroller popstrip__row" id="pop-row"></div>
+          <button type="button" class="popstrip__arr popstrip__arr--r" id="pop-next" aria-label="Вперёд"><svg class="ic"><use href="#i-arrow"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+
+    <div class="pd-sc" id="pd-sc" hidden>
+      <div class="pd-sc__veil" data-sc-close></div>
+      <div class="pd-sc__box" role="dialog" aria-modal="true">
+        <button type="button" class="pd-sc__x" data-sc-close aria-label="Закрыть">&#10005;</button>
+        <h3 data-i18n="prod.sizeChartTitle">Размерная сетка, см</h3>
+        <div id="pd-sc-body"></div>
+        <p class="pd-sc__note" data-i18n="prod.scNote">Замеры изделия в сантиметрах. Допуск ±1,5 см.</p>
+      </div>
+    </div>
+
+    <div class="pd-sticky" id="pd-sticky" hidden>
+      <div class="pd-sticky__in">
+        <div class="pd-sticky__price"><b id="pd-sticky-total"></b><i id="pd-sticky-unit"></i></div>
+        <button type="button" class="btn btn--primary" id="pd-sticky-add" data-i18n="prod.add">В корзину</button>
+        <a class="btn btn--primary" id="pd-sticky-manager" target="_blank" rel="noopener" hidden data-i18n="prod.contactManager">Связаться с менеджером</a>
+      </div>
+    </div>
+  </main>
+
+  <!-- footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__grid footer__grid--wide">
+        <div>
+          <a class="logo" href="/">MILANA <span>Premium</span></a>
+          <p class="footer__tag" data-i18n="foot.tag">Фабрика одежды в Узбекистане: домашняя и повседневная одежда для женщин, мужчин и детей.</p>
+          <p class="footer__addr" data-dyn="address">Узбекистан, Андижан, Коратут 605 · Пн–Сб 08:00–18:00</p>
+        </div>
+        <div>
+          <h5 data-i18n="foot.buyers">Покупателям</h5>
+          <ul>
+            <li><a href="/shop" data-i18n="shop.title">Все товары</a></li>
+            <li><a href="/shop?tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a></li>
+            <li><a href="/ordering" data-i18n="terms.navOrdering">Как работает заказ</a></li>
+            <li><a href="/#faq" data-i18n="foot.faq">Частые вопросы</a></li>
+            <li><a href="/terms" data-i18n="foot.terms">Условия</a></li>
+          </ul>
+        </div>
+        <div>
+          <h5 data-i18n="foot.company">О компании</h5>
+          <ul>
+            <li><a href="/#maison" data-i18n="foot.about">О фабрике</a></li>
+            <li><a href="/#map" data-i18n="map.title">Как нас найти</a></li>
+            <li><a href="/support" data-i18n="nav.support">Поддержка</a></li>
+            <li><a href="/signin" data-i18n="auth.account">Аккаунт</a></li>
+          </ul>
+        </div>
+        <div>
+          <h5 data-i18n="foot.contact">Связаться с нами</h5>
+          <ul class="footer__contact">
+            <li><a data-dyn="tel" href="tel:+998501551010">+998 50 155 10 10</a></li>
+            <li><a data-dyn="mail" href="#"></a></li>
+            <li><a data-dyn="wa" href="https://wa.me/998501551010" target="_blank" rel="noopener" data-i18n="ws.wa">Написать в WhatsApp</a></li>
+            <li><a data-dyn="tg" href="https://t.me/milanapremium2" target="_blank" rel="noopener" data-i18n="ws.tg">Написать в Telegram</a></li>
+          </ul>
+          <h5 class="footer__socht" data-i18n="foot.social">Мы в соцсетях</h5>
+          <div class="footer__soc">
+            <a data-dyn="ig" href="https://www.instagram.com/milanapremium" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1" fill="currentColor" stroke="none"/></svg><span>Instagram</span></a>
+            <a data-dyn="tg" href="https://t.me/milanapremium2" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><path d="M21 4.4 3.6 11l4.9 1.7 1.8 5.6 3-3.4 4.6 3.3L21 4.4Z"/><path d="m8.5 12.7 8.5-6.2"/></svg><span>Telegram</span></a>
+            <a data-dyn="wa" href="https://wa.me/998501551010" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.3-1.1A8.5 8.5 0 1 0 12 3.5Z"/><path d="M9 8.8c.5 2.6 2.6 4.8 5.2 5.4l1-1.5-2-1-.8.6a5.4 5.4 0 0 1-1.7-1.8l.6-.8-1-2-1.3 1.1Z"/></svg><span>WhatsApp</span></a>
+          </div>
+        </div>
+        <div>
+          <h5 data-i18n="foot.nl">Каталог и новинки</h5>
+          <form class="newsletter" novalidate>
+            <input type="email" required data-i18n-ph="foot.nlPh" placeholder="ваш@email.com" autocomplete="email" aria-label="Email">
+            <button type="submit" data-i18n="reviews.submit">Отправить</button>
+          </form>
+          <p class="newsletter__note" data-i18n="foot.nlNote">Новые модели и новости сотрудничества. Без лишних сообщений.</p>
+          <div class="footer__apps">
+            <a class="appbadge" href="#" onclick="return false" data-app="ios" aria-label="App Store">
+              <svg class="appbadge__logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M16.36 12.9c-.02-2.4 1.96-3.55 2.05-3.61-1.12-1.64-2.86-1.86-3.48-1.89-1.48-.15-2.89.87-3.64.87-.75 0-1.91-.85-3.14-.83-1.61.02-3.1.94-3.93 2.38-1.68 2.91-.43 7.22 1.2 9.59.8 1.16 1.75 2.46 2.99 2.41 1.2-.05 1.65-.78 3.1-.78 1.45 0 1.85.78 3.11.75 1.29-.02 2.1-1.18 2.89-2.35.91-1.35 1.28-2.66 1.3-2.72-.03-.01-2.49-.96-2.51-3.8M14.3 5.31c.66-.8 1.11-1.91.99-3.02-.95.04-2.11.63-2.79 1.43-.61.71-1.14 1.84-1 2.93 1.06.08 2.14-.54 2.8-1.34"/></svg>
+              <span><i data-i18n="foot.appApple">Загрузите в</i><b>App Store</b></span>
+            </a>
+            <a class="appbadge" href="#" onclick="return false" data-app="android" aria-label="Google Play">
+              <svg class="appbadge__logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#00D3FF" d="M3.9 2.3c-.29.3-.46.77-.46 1.38v16.64c0 .61.17 1.08.47 1.36l.06.05 9.32-9.32v-.22L3.9 2.3z"/><path fill="#FFCE00" d="M16.9 15.35l-3.11-3.11v-.22l3.12-3.12.07.04 3.69 2.1c1.05.6 1.05 1.58 0 2.18l-3.77 2.13z"/><path fill="#FF3A44" d="M16.97 15.31 13.79 12.13l-9.9 9.9c.35.37.92.41 1.57.05l11.51-6.77z"/><path fill="#00E676" d="M16.97 8.9 5.46 2.14c-.65-.37-1.22-.32-1.57.05l9.9 9.9 3.18-3.19z"/></svg>
+              <span><i data-i18n="foot.appGoogle">Доступно в</i><b>Google Play</b></span>
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="footer__base">
+        <span>© <span id="year">2026</span> MILANA PREMIUM</span>
+        <span data-dyn="address">Узбекистан, Андижан, Коратут 605 · Пн–Сб 08:00–18:00</span>
+        <span><a href="tel:+998501551010" data-dyn="tel">+998 50 155 10 10</a> · <a href="https://www.instagram.com/milanapremium" data-dyn="ig" target="_blank" rel="noopener">Instagram</a></span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    /* тень шапки + рассылка */
+    (() => {
+      const h = document.querySelector(".header");
+      addEventListener("scroll", () => h.classList.toggle("is-solid", scrollY > 8), { passive: true });
+      const form = document.querySelector(".newsletter");
+      form && form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const input = form.querySelector("input");
+        const note = document.querySelector(".newsletter__note");
+        try {
+          const r = await fetch("/api/newsletter", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: input.value.trim(), lang: window.I18N ? I18N.lang : "en", source: "footer" }) });
+          if (!r.ok) throw new Error();
+          note.textContent = (window.I18N ? I18N.t("foot.nlOk") : "OK") + " " + input.value.trim();
+          input.value = "";
+        } catch { note.textContent = window.I18N ? I18N.t("cart.invalid") : "Error"; }
+      });
+    })();
+  </script>
+
+  <!-- engine -->
+  <script src="/js/i18n.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/site-config.js?v=3" defer></script>
+  <script src="/js/app-state.js?v=20260727-wish" defer></script>
+  <script src="/js/auth.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/cart.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/cards.js?v=5" defer></script>
+  <script src="/js/product.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/lightbox.js?v=20260728-gal" defer></script>
+  <script src="/js/header.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/search.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/chat-widget.js?v=2" defer></script>
+</body>
 </html>

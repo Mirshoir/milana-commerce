@@ -1,0 +1,6 @@
+# Copy this file to android/key.properties. Never commit the populated file or
+# the upload keystore.
+storeFile=milana-upload-key.jks
+storePassword=CHANGE_ME
+keyAlias=milana-upload
+keyPassword=CHANGE_ME

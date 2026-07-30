@@ -41,7 +41,17 @@ async function waitFor(url, timeoutMs = 10000) {
 async function startServer(t, extraEnv = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "milana-backend-"));
   const port = await freePort();
-  const env = { ...process.env, SEED_FALLBACK_CATALOG: "1", ...extraEnv, DATA_DIR: dataDir, PORT: String(port), HOST: "127.0.0.1", NODE_ENV: "test" };
+  const env = {
+    ...process.env,
+    SEED_FALLBACK_CATALOG: "1",
+    TELEGRAM_ORDER_CHAT_ID: "-1000000000000",
+    TELEGRAM_DEFAULT_MANAGER_PASSWORD: "test-manager-password",
+    ...extraEnv,
+    DATA_DIR: dataDir,
+    PORT: String(port),
+    HOST: "127.0.0.1",
+    NODE_ENV: "test",
+  };
   const child = spawn(process.execPath, ["server.js"], { cwd: path.join(__dirname, ".."), env, stdio: ["ignore", "pipe", "pipe"] });
   let logs = "";
   let exited = false;
@@ -202,7 +212,10 @@ test("order placement sends Telegram notification when configured", async (t) =>
 
   const products = await (await fetch(app.base + "/api/products?limit=1")).json();
   const product = products[0];
+  const managers = await (await fetch(app.base + "/api/managers")).json();
+  const managerId = managers[0].id;
   const orderRes = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: {
       name: "Telegram Buyer",
       phone: "+998 90 777 88 99",
@@ -269,6 +282,40 @@ test("external catalog source stays disconnected", async (t) => {
   assert.equal(catalog.hits(), 0);
 });
 
+test("rate limits trust forwarded IPs only from configured proxies", async (t) => {
+  const trusted = await startServer(t);
+  for (let i = 0; i < 5; i++) {
+    const response = await json(trusted.base + "/api/newsletter", {
+      email: `trusted-${i}@example.com`,
+    }, { headers: { "X-Forwarded-For": "203.0.113.10" } });
+    assert.equal(response.status, 201);
+  }
+  const limited = await json(trusted.base + "/api/newsletter", {
+    email: "trusted-limited@example.com",
+  }, { headers: { "X-Forwarded-For": "203.0.113.10" } });
+  assert.equal(limited.status, 429);
+  const otherClient = await json(trusted.base + "/api/newsletter", {
+    email: "trusted-other@example.com",
+  }, { headers: { "X-Forwarded-For": "203.0.113.11" } });
+  assert.equal(otherClient.status, 201);
+  const prependedSpoof = await json(trusted.base + "/api/newsletter", {
+    email: "trusted-prepended-spoof@example.com",
+  }, { headers: { "X-Forwarded-For": "198.51.100.200, 203.0.113.10" } });
+  assert.equal(prependedSpoof.status, 429);
+
+  const untrusted = await startServer(t, { TRUSTED_PROXY_IPS: "172.16.10.2" });
+  for (let i = 0; i < 5; i++) {
+    const response = await json(untrusted.base + "/api/newsletter", {
+      email: `untrusted-${i}@example.com`,
+    }, { headers: { "X-Forwarded-For": `198.51.100.${i + 1}` } });
+    assert.equal(response.status, 201);
+  }
+  const spoofed = await json(untrusted.base + "/api/newsletter", {
+    email: "untrusted-limited@example.com",
+  }, { headers: { "X-Forwarded-For": "198.51.100.99" } });
+  assert.equal(spoofed.status, 429);
+});
+
 test("password recovery code can be sent through SMTP", async (t) => {
   const smtp = await startSmtpStub(t);
   const app = await startServer(t, {
@@ -292,6 +339,12 @@ test("password recovery code can be sent through SMTP", async (t) => {
 
 test("public API, order placement, newsletter, and admin protections work", async (t) => {
   const app = await startServer(t);
+  const sqlite = new DatabaseSync(path.join(app.dataDir, "milana.db"));
+  t.after(() => sqlite.close());
+  sqlite.prepare(`
+    INSERT INTO settings (key,value) VALUES ('pack_markup','25')
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value
+  `).run();
 
   const health = await (await fetch(app.base + "/api/health")).json();
   assert.equal(health.ok, true);
@@ -300,9 +353,13 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const products = await (await fetch(app.base + "/api/products?limit=1")).json();
   assert.equal(products.length, 1);
   const product = products[0];
+  const managers = await (await fetch(app.base + "/api/managers")).json();
+  assert.equal(managers.length, 1);
+  const managerId = managers[0].id;
   const selectedColor = product.colors?.[0] || "catalog color";
   assert.equal(product.price_visible, true);
   assert.equal(product.price > 0, true);
+  sqlite.prepare("UPDATE products SET available_qop=10, retail_stock=10 WHERE id=?").run(product.id);
 
   const smartSearch = await (await fetch(app.base + "/api/search/smart?q=" + encodeURIComponent(product.model_no || product.name))).json();
   assert.equal(smartSearch.products.length > 0, true);
@@ -312,6 +369,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.ok(Array.isArray(recommendations.products));
 
   const orderRes = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: { name: "Test Customer", phone: "+998 90 123 45 67", city: "Tashkent" },
     payment: { method: "bank" },
     items: [{ id: product.id, qty: 2, unit_type: "qop", size: product.sizes[0] || "", color: selectedColor }],
@@ -326,6 +384,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(order.payment.amount, order.total);
 
   const pachkaOrderRes = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: { name: "Pachka Buyer", phone: "+998 90 222 44 66", city: "Tashkent" },
     payment: { method: "manager" },
     items: [{ id: product.id, qty: 1, unit_type: "pachka", size: product.sizes[0] || "" }],
@@ -333,9 +392,15 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   });
   assert.equal(pachkaOrderRes.status, 201);
   const pachkaOrder = await pachkaOrderRes.json();
-  assert.equal(pachkaOrder.total, Math.round(product.price * 6 * 100) / 100);
+  const pachkaPieces = product.order_units.find((unit) => unit.unit_type === "pachka").pieces;
+  const pachkaUnitPrice = product.retail_price > product.price
+    ? product.retail_price
+    : Math.round(product.price * 1.25 * 100) / 100;
+  assert.equal(pachkaOrder.total, Math.round(pachkaUnitPrice * pachkaPieces * 100) / 100);
+  assert.equal(sqlite.prepare("SELECT available_qop FROM products WHERE id=?").get(product.id).available_qop, 7.9);
 
   const missingReactDelivery = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     source: "react_frontend",
     customer: { name: "React Buyer", phone: "+998 90 222 44 66", city: "Tashkent" },
     items: [{ id: product.id, qty: 1, unit_type: "pachka" }],
@@ -345,6 +410,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal((await missingReactDelivery.json()).error, "address");
 
   const missingReactPostcode = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     source: "react_frontend",
     customer: { name: "React Buyer", phone: "+998 90 222 44 66", city: "Tashkent", address: "Amir Temur 12" },
     items: [{ id: product.id, qty: 1, unit_type: "pachka" }],
@@ -412,6 +478,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
 
   const recoverOtp = await json(app.base + "/api/auth/email-otp/start", { email: "buyer@example.com" });
   assert.equal(recoverOtp.status, 200);
+  const recoverCode = (await recoverOtp.json()).dev_code;
   const recoverWrongCode = await json(app.base + "/api/auth/recover", {
     email: "buyer@example.com",
     password: "new-strong-pass-2026",
@@ -422,11 +489,18 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const recover = await json(app.base + "/api/auth/recover", {
     email: "buyer@example.com",
     password: "new-strong-pass-2026",
-    email_code: (await recoverOtp.json()).dev_code,
+    email_code: recoverCode,
   });
   assert.equal(recover.status, 200);
   const recoveryCookie = recover.headers.get("set-cookie").split(";")[0];
   assert.match(recoveryCookie, /^cid=/);
+  const reusedRecoveryCode = await json(app.base + "/api/auth/recover", {
+    email: "buyer@example.com",
+    password: "another-strong-pass-2026",
+    email_code: recoverCode,
+  });
+  assert.equal(reusedRecoveryCode.status, 401);
+  assert.equal((await reusedRecoveryCode.json()).error, "otp_expired");
 
   const oldPasswordSignin = await json(app.base + "/api/auth/signin", {
     email: "buyer@example.com",
@@ -443,6 +517,34 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const newCustomerToken = (await newPasswordSignin.json()).session_token;
   assert.match(newCustomerToken, /^[a-f0-9]{64}$/);
 
+  const passwordlessOtp = await json(app.base + "/api/auth/email-otp/start", { email: "buyer@example.com" });
+  const passwordlessCode = (await passwordlessOtp.json()).dev_code;
+  const passwordless = await json(app.base + "/api/auth/passwordless", {
+    email: "buyer@example.com",
+    code: passwordlessCode,
+  });
+  assert.equal(passwordless.status, 200);
+  const reusedPasswordless = await json(app.base + "/api/auth/passwordless", {
+    email: "buyer@example.com",
+    code: passwordlessCode,
+  });
+  assert.equal(reusedPasswordless.status, 401);
+  assert.equal((await reusedPasswordless.json()).error, "otp_expired");
+
+  sqlite.prepare("UPDATE customers SET provider='firebase' WHERE email='buyer@example.com'").run();
+  const firebaseRecoveryOtp = await json(app.base + "/api/auth/email-otp/start", { email: "buyer@example.com" });
+  const firebaseRecovery = await json(app.base + "/api/auth/recover", {
+    email: "buyer@example.com",
+    password: "must-not-replace-firebase",
+    email_code: (await firebaseRecoveryOtp.json()).dev_code,
+  });
+  assert.equal(firebaseRecovery.status, 409);
+  assert.deepEqual(await firebaseRecovery.json(), {
+    error: "federated_password_reset_required",
+    provider: "firebase",
+  });
+  sqlite.prepare("UPDATE customers SET provider='local' WHERE email='buyer@example.com'").run();
+
   const likeRes = await json(app.base + "/api/products/" + product.id + "/like", {}, {
     headers: { Cookie: newCustomerCookie, Origin: app.base },
   });
@@ -453,6 +555,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal((await likes.json()).likes.length, 1);
 
   const customerOrderRes = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: { name: "Retail Buyer", phone: "+998 91 222 33 44", city: "Andijon" },
     payment: { method: "manager" },
     items: [{ id: product.id, qty: 1 }],
@@ -486,6 +589,7 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.equal(cancelAfterProof.status, 409);
 
   const cancellableOrderRes = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: { name: "Retail Buyer", phone: "+998 91 222 33 44", city: "Andijon" },
     payment: { method: "manager" },
     items: [{ id: product.id, qty: 1 }],
@@ -497,13 +601,49 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     reason: "Duplicate order",
   }, { headers: { Authorization: "Bearer " + newCustomerToken, Origin: app.base } });
   assert.equal(cancelOrder.status, 200);
-  assert.equal((await cancelOrder.json()).status, "cancelled");
+  const cancelledBody = await cancelOrder.json();
+  assert.equal(cancelledBody.status, "cancelled");
+  assert.equal(cancelledBody.stock_released_retail, 1);
+  assert.equal(sqlite.prepare("SELECT retail_stock FROM products WHERE id=?").get(product.id).retail_stock, 9);
+  const repeatedCustomerCancel = await json(app.base + "/api/auth/orders/" + cancellableOrder.id + "/cancel", {
+    reason: "Duplicate retry",
+  }, { headers: { Authorization: "Bearer " + newCustomerToken, Origin: app.base } });
+  assert.equal(repeatedCustomerCancel.status, 409);
+  assert.equal(sqlite.prepare("SELECT retail_stock FROM products WHERE id=?").get(product.id).retail_stock, 9);
 
   const tooManyQop = await json(app.base + "/api/orders", {
+    manager_id: managerId,
     customer: { name: "Limit Buyer", phone: "+998 90 000 00 00" },
     items: [{ id: product.id, qty: 21 }],
   });
   assert.equal(tooManyQop.status, 400);
+
+  const invalidReviewRating = await json(app.base + "/api/reviews", {
+    product_id: product.id,
+    product_slug: product.slug,
+    rating: 0,
+    comment: "Invalid rating",
+  }, { headers: { Cookie: newCustomerCookie, Origin: app.base } });
+  assert.equal(invalidReviewRating.status, 400);
+  assert.equal((await invalidReviewRating.json()).error, "rating");
+
+  const emptyReview = await json(app.base + "/api/reviews", {
+    product_id: product.id,
+    product_slug: product.slug,
+    rating: 5,
+    comment: "   ",
+  }, { headers: { Cookie: newCustomerCookie, Origin: app.base } });
+  assert.equal(emptyReview.status, 400);
+  assert.equal((await emptyReview.json()).error, "comment");
+
+  const mismatchedReview = await json(app.base + "/api/reviews", {
+    product_id: product.id,
+    product_slug: "wrong-product-slug",
+    rating: 5,
+    comment: "Wrong product binding",
+  }, { headers: { Cookie: newCustomerCookie, Origin: app.base } });
+  assert.equal(mismatchedReview.status, 409);
+  assert.equal((await mismatchedReview.json()).error, "product_mismatch");
 
   const reviewRes = await json(app.base + "/api/reviews", {
     product_id: product.id,
@@ -512,6 +652,14 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     comment: "Verified buyer review",
   }, { headers: { Cookie: newCustomerCookie, Origin: app.base } });
   assert.equal(reviewRes.status, 201);
+  const duplicateReview = await json(app.base + "/api/reviews", {
+    product_id: product.id,
+    product_slug: product.slug,
+    rating: 4,
+    comment: "Duplicate review",
+  }, { headers: { Cookie: newCustomerCookie, Origin: app.base } });
+  assert.equal(duplicateReview.status, 409);
+  assert.equal((await duplicateReview.json()).error, "duplicate_review");
 
   const businessOtp = await json(app.base + "/api/auth/otp/start", { phone: "+998 90 555 66 77" });
   assert.equal(businessOtp.status, 200);
@@ -525,9 +673,18 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     otp_code: (await businessOtp.json()).dev_code,
   });
   assert.equal(businessSignup.status, 201);
+  const businessCookie = businessSignup.headers.get("set-cookie").split(";")[0];
   const businessCustomer = (await businessSignup.json()).customer;
   assert.equal(businessCustomer.account_type, "business");
   assert.equal(businessCustomer.approval_status, "active");
+  const unverifiedReview = await json(app.base + "/api/reviews", {
+    product_id: product.id,
+    product_slug: product.slug,
+    rating: 5,
+    comment: "No matching purchase",
+  }, { headers: { Cookie: businessCookie, Origin: app.base } });
+  assert.equal(unverifiedReview.status, 403);
+  assert.equal((await unverifiedReview.json()).error, "verified_purchase_required");
 
   const supportRes = await json(app.base + "/api/support", {
     name: "Support Customer",
@@ -551,6 +708,42 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const chat = await chatRes.json();
   assert.ok(chat.session_id);
   assert.match(chat.reply, /Menejer|manager/i);
+  assert.match(chat.session_id, /^\d+\.[a-f0-9]{64}$/);
+  const numericChatId = chat.session_id.split(".")[0];
+
+  const englishChat = await json(app.base + "/api/chat/message", {
+    session_id: chat.session_id,
+    message: "What is the wholesale price?",
+    lang: "en",
+  }, { headers: { Origin: app.base } });
+  assert.equal(englishChat.status, 200);
+  assert.match((await englishChat.json()).reply, /pack or bag/i);
+
+  const russianChat = await json(app.base + "/api/chat/message", {
+    session_id: chat.session_id,
+    message: "Какая цена?",
+    lang: "ru",
+  }, { headers: { Origin: app.base } });
+  assert.equal(russianChat.status, 200);
+  assert.match((await russianChat.json()).reply, /упаковке или мешку/i);
+
+  const hijackAttempt = await json(app.base + "/api/chat/message", {
+    session_id: numericChatId,
+    message: "Append to another visitor session",
+    lang: "en",
+  }, { headers: { Origin: app.base } });
+  assert.equal(hijackAttempt.status, 200);
+  const isolatedChat = await hijackAttempt.json();
+  assert.notEqual(isolatedChat.session_id.split(".")[0], numericChatId);
+
+  const hijackEscalation = await json(app.base + "/api/chat/escalate", {
+    session_id: numericChatId,
+    name: "Chat Attacker",
+    phone: "+998 90 000 11 22",
+    message: "Must not alter the original session",
+  }, { headers: { Origin: app.base } });
+  assert.equal(hijackEscalation.status, 403);
+  assert.equal((await hijackEscalation.json()).error, "chat_session_forbidden");
 
   const productChatRes = await json(app.base + "/api/chat/message", { message: "Tavsiya qiling " + (product.model_no || product.name), lang: "uz" }, {
     headers: { Origin: app.base },
@@ -572,7 +765,62 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   const cookie = login.headers.get("set-cookie").split(";")[0];
   assert.match(cookie, /^sid=/);
 
-  const adminProductRes = await json(app.base + "/api/admin/products", {
+  const adminHtmlResponse = await fetch(app.base + "/admin", { headers: { Cookie: cookie } });
+  assert.equal(adminHtmlResponse.status, 200);
+  const adminHtml = await adminHtmlResponse.text();
+  assert.doesNotMatch(adminHtml, /id="edit-ai-fill"/);
+  assert.doesNotMatch(adminHtml, /id="edit-ai-msg"/);
+  assert.match(adminHtml, /id="f-desc-ru"/);
+  assert.match(adminHtml, /id="f-desc-uz"/);
+  assert.match(adminHtml, /id="f-desc-en"/);
+  const adminScriptResponse = await fetch(app.base + "/js/admin.js");
+  assert.equal(adminScriptResponse.status, 200);
+  const adminScript = await adminScriptResponse.text();
+  assert.doesNotMatch(adminScript, /\/api\/admin\/products\/describe/);
+  assert.doesNotMatch(adminScript, /generatePhotoDescription/);
+  assert.match(adminScript, /desc:\s*\{\s*ru:\s*\$\("#f-desc-ru"\)\.value,\s*uz:\s*\$\("#f-desc-uz"\)\.value,\s*en:\s*\$\("#f-desc-en"\)\.value\s*\}/);
+  const retiredDescriptionGenerator = await json(
+    app.base + "/api/admin/products/describe",
+    { images: ["/assets/img/hero.jpg"] },
+    { headers: { Cookie: cookie, Origin: app.base } },
+  );
+  assert.equal(retiredDescriptionGenerator.status, 200);
+  assert.deepEqual(await retiredDescriptionGenerator.json(), {
+    ok: true,
+    disabled: true,
+    product_type: "",
+    desc: { ru: "", uz: "", en: "" },
+  });
+
+  const woff = Buffer.alloc(128);
+  woff.write("wOFF", 0, "latin1");
+  woff.writeUInt32BE(0x00010000, 4);
+  woff.writeUInt32BE(woff.length, 8);
+  woff.writeUInt16BE(1, 12);
+  const fontUpload = await fetch(app.base + "/api/admin/upload", {
+    method: "POST",
+    headers: { Cookie: cookie, Origin: app.base, "Content-Type": "font/woff" },
+    body: woff,
+  });
+  assert.equal(fontUpload.status, 201);
+  const uploadedFont = await fontUpload.json();
+  assert.equal(uploadedFont.kind, "font");
+  assert.match(uploadedFont.url, /^\/uploads\/f[a-z0-9-]+\.woff$/);
+  const servedFont = await fetch(app.base + uploadedFont.url);
+  assert.equal(servedFont.status, 200);
+  assert.match(servedFont.headers.get("content-type"), /^font\/woff/);
+
+  const manualDescription = {
+    en: "MANUAL-EN: Soft lounge set with a relaxed silhouette.",
+    ru: "MANUAL-RU: Мягкий комплект свободного силуэта.",
+    uz: "MANUAL-UZ: Erkin bichimli yumshoq to‘plam.",
+  };
+  const manualFabric = {
+    en: "MANUAL-FABRIC-EN: Cotton jersey",
+    ru: "MANUAL-FABRIC-RU: Хлопковый трикотаж",
+    uz: "MANUAL-FABRIC-UZ: Paxta trikotaj",
+  };
+  const galleryProductPayload = {
     name: "Gallery Product",
     model_no: "GP-2026",
     variant: "black-print",
@@ -588,21 +836,42 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     sizes: ["44", "46", "48", "50", "52", "54"],
     images: ["/assets/img/hero.jpg", "/assets/img/about.jpg", "/assets/img/factory-1.jpg", "/assets/img/factory-2.jpg"],
     colors: ["black + print"],
-    desc: {
-      en: "",
-      ru: "Gallery Product — лаунж-сеты, женский. Модель OLD-100. Размеры: 44, 46, 48, 50, 52, 54. Оптовый заказ от 1 Qadoq (6 шт., по 1 на размер) или 1 Qop (60 шт., по 10 на размер); финальную доступность и отправку подтверждает менеджер.",
-      uz: "",
-    },
-    fabric: { en: "Cotton jersey", ru: "Хлопковый трикотаж", uz: "Paxta trikotaj" },
+    desc: manualDescription,
+    fabric: manualFabric,
     active: true,
     sort: 2000,
-  }, { headers: { Cookie: cookie, Origin: app.base } });
+  };
+  const adminProductRes = await json(
+    app.base + "/api/admin/products",
+    galleryProductPayload,
+    { headers: { Cookie: cookie, Origin: app.base } },
+  );
   assert.equal(adminProductRes.status, 201);
   const adminProduct = await adminProductRes.json();
+  assert.equal(adminProduct.copy_manual, true);
+  assert.deepEqual(adminProduct.desc, manualDescription);
+  assert.deepEqual(adminProduct.fabric, manualFabric);
   assert.equal(adminProduct.wholesale_moq, 6);
-  const sqlite = new DatabaseSync(path.join(app.dataDir, "milana.db"));
-  t.after(() => sqlite.close());
-  assert.equal(sqlite.prepare("SELECT wholesale_moq FROM products WHERE id=?").get(adminProduct.id).wholesale_moq, 6);
+  const storedProduct = sqlite.prepare(`
+    SELECT wholesale_moq, copy_manual, desc_en, desc_ru, desc_uz, fabric_en, fabric_ru, fabric_uz
+    FROM products WHERE id=?
+  `).get(adminProduct.id);
+  assert.equal(storedProduct.wholesale_moq, 6);
+  assert.equal(storedProduct.copy_manual, 1);
+  assert.deepEqual(
+    { en: storedProduct.desc_en, ru: storedProduct.desc_ru, uz: storedProduct.desc_uz },
+    manualDescription,
+  );
+  assert.deepEqual(
+    { en: storedProduct.fabric_en, ru: storedProduct.fabric_ru, uz: storedProduct.fabric_uz },
+    manualFabric,
+  );
+  const adminProductsAfterCreate = await (
+    await fetch(app.base + "/api/admin/products?limit=250", { headers: { Cookie: cookie } })
+  ).json();
+  const reloadedAdminProduct = adminProductsAfterCreate.find((row) => row.id === adminProduct.id);
+  assert.deepEqual(reloadedAdminProduct.desc, manualDescription);
+  assert.deepEqual(reloadedAdminProduct.fabric, manualFabric);
   const publicProductsAfterCreate = await (await fetch(app.base + "/api/products?limit=1000")).json();
   const publicAdminProduct = publicProductsAfterCreate.find((row) => row.id === adminProduct.id);
   assert.ok(publicAdminProduct);
@@ -613,11 +882,102 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   ]);
   assert.deepEqual(publicAdminProduct.images, adminProduct.images);
   assert.deepEqual(publicAdminProduct.colors, ["black-print"]);
-  assert.match(publicAdminProduct.desc.en, /Model GP-2026/);
-  assert.match(publicAdminProduct.desc.ru, /Модель GP-2026/);
-  assert.doesNotMatch(publicAdminProduct.desc.ru, /OLD-100/);
-  assert.match(publicAdminProduct.desc.uz, /Model GP-2026/);
-  assert.equal(publicAdminProduct.fabric.uz, "Paxta trikotaj");
+  assert.deepEqual(publicAdminProduct.desc, manualDescription);
+  assert.deepEqual(publicAdminProduct.fabric, manualFabric);
+
+  const editedDescription = {
+    en: "EDITED-EN: Updated product description saved by an administrator.",
+    ru: "EDITED-RU: Обновлённое описание, сохранённое администратором.",
+    uz: "EDITED-UZ: Administrator saqlagan yangilangan mahsulot tavsifi.",
+  };
+  const editedFabric = {
+    en: "EDITED-FABRIC-EN: Brushed cotton",
+    ru: "EDITED-FABRIC-RU: Хлопок с мягкой обработкой",
+    uz: "EDITED-FABRIC-UZ: Yumshoq ishlov berilgan paxta",
+  };
+  const updateProductRes = await json(
+    app.base + "/api/admin/products/" + adminProduct.id,
+    { ...galleryProductPayload, slug: adminProduct.slug, desc: editedDescription, fabric: editedFabric, sort: 2001 },
+    { method: "PUT", headers: { Cookie: cookie, Origin: app.base } },
+  );
+  assert.equal(updateProductRes.status, 200);
+  const updatedAdminProduct = await updateProductRes.json();
+  assert.deepEqual(updatedAdminProduct.desc, editedDescription);
+  assert.deepEqual(updatedAdminProduct.fabric, editedFabric);
+  const storedUpdatedProduct = sqlite.prepare(`
+    SELECT copy_manual, desc_en, desc_ru, desc_uz, fabric_en, fabric_ru, fabric_uz
+    FROM products WHERE id=?
+  `).get(adminProduct.id);
+  assert.equal(storedUpdatedProduct.copy_manual, 1);
+  assert.deepEqual(
+    { en: storedUpdatedProduct.desc_en, ru: storedUpdatedProduct.desc_ru, uz: storedUpdatedProduct.desc_uz },
+    editedDescription,
+  );
+  assert.deepEqual(
+    { en: storedUpdatedProduct.fabric_en, ru: storedUpdatedProduct.fabric_ru, uz: storedUpdatedProduct.fabric_uz },
+    editedFabric,
+  );
+  const publicUpdatedProduct = await (await fetch(app.base + "/api/products/" + adminProduct.slug)).json();
+  assert.deepEqual(publicUpdatedProduct.desc, editedDescription);
+  assert.deepEqual(publicUpdatedProduct.fabric, editedFabric);
+
+  sqlite.prepare(`
+    UPDATE products
+    SET copy_manual=0, desc_en='LEGACY-EN', desc_ru='LEGACY-RU', desc_uz='LEGACY-UZ'
+    WHERE id=?
+  `).run(adminProduct.id);
+  const legacyFallbackProduct = await (await fetch(app.base + "/api/products/" + adminProduct.slug)).json();
+  assert.doesNotMatch(legacyFallbackProduct.desc.en, /LEGACY-EN/);
+  assert.doesNotMatch(legacyFallbackProduct.desc.ru, /LEGACY-RU/);
+  assert.doesNotMatch(legacyFallbackProduct.desc.uz, /LEGACY-UZ/);
+  sqlite.prepare(`
+    UPDATE products
+    SET copy_manual=1, desc_en=?, desc_ru=?, desc_uz=?
+    WHERE id=?
+  `).run(editedDescription.en, editedDescription.ru, editedDescription.uz, adminProduct.id);
+
+  const seoResponse = await fetch(app.base + "/p/" + adminProduct.slug, {
+    headers: { Accept: "text/html" },
+  });
+  assert.equal(seoResponse.status, 200);
+  const seoHtml = await seoResponse.text();
+  assert.match(seoHtml, /<title>[^<]*GP-2026[^<]*black-print[^<]*MILANA PREMIUM<\/title>/);
+  const jsonLdMatch = seoHtml.match(/<script id="product-jsonld" type="application\/ld\+json">([^<]+)<\/script>/);
+  assert.ok(jsonLdMatch);
+  const jsonLd = JSON.parse(jsonLdMatch[1]);
+  assert.match(jsonLd.sku, /GP-2026/);
+  assert.match(jsonLd.sku, /black-print/);
+  assert.notEqual(jsonLd.category, adminProduct.catalog_panel);
+  assert.equal(jsonLd.offers.availability, "https://schema.org/InStock");
+  sqlite.prepare("UPDATE products SET available_qop=0 WHERE id=?").run(adminProduct.id);
+  const outOfStockHtml = await (await fetch(app.base + "/p/" + adminProduct.slug)).text();
+  const outOfStockJsonLd = JSON.parse(
+    outOfStockHtml.match(/<script id="product-jsonld" type="application\/ld\+json">([^<]+)<\/script>/)[1]
+  );
+  assert.equal(outOfStockJsonLd.offers.availability, "https://schema.org/OutOfStock");
+
+  sqlite.prepare("UPDATE products SET active=0 WHERE id=?").run(adminProduct.id);
+  const productsAfterHide = await (await fetch(app.base + "/api/products?limit=1000")).json();
+  assert.equal(productsAfterHide.some((row) => row.id === adminProduct.id), false);
+  assert.equal((await fetch(app.base + "/api/products/" + adminProduct.slug)).status, 404);
+  const hiddenOrder = await json(app.base + "/api/orders", {
+    manager_id: managerId,
+    customer: { name: "Hidden Buyer", phone: "+998 90 444 55 66" },
+    items: [{ id: adminProduct.id, qty: 1, unit_type: "qop" }],
+  });
+  assert.equal(hiddenOrder.status, 400);
+  assert.equal((await hiddenOrder.json()).error, "item_unavailable");
+  const hiddenPage = await fetch(app.base + "/p/" + adminProduct.slug, {
+    headers: { Accept: "text/html" },
+  });
+  assert.equal(hiddenPage.status, 404);
+  assert.match(hiddenPage.headers.get("content-type"), /^text\/html/);
+  assert.match(await hiddenPage.text(), /Страница не найдена/);
+  const unknownPage = await fetch(app.base + "/missing-branded-page", {
+    headers: { Accept: "text/html" },
+  });
+  assert.equal(unknownPage.status, 404);
+  assert.match(await unknownPage.text(), /MILANA PREMIUM/);
 
   const adminOrders = await fetch(app.base + "/api/admin/orders", { headers: { Cookie: cookie } });
   assert.equal(adminOrders.status, 200);
@@ -642,7 +1002,8 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   assert.ok(adminPachkaOrder);
   assert.equal(adminPachkaOrder.items[0].unit_type, "pachka");
   assert.equal(adminPachkaOrder.items[0].bag_size, 6);
-  assert.equal(adminPachkaOrder.items[0].price, Math.round(product.price * 6 * 100) / 100);
+  assert.equal(adminPachkaOrder.items[0].unit_price, pachkaUnitPrice);
+  assert.equal(adminPachkaOrder.items[0].price, Math.round(pachkaUnitPrice * 6 * 100) / 100);
   assert.equal(adminPachkaOrder.items[0].size_mix.reduce((sum, row) => sum + row.qty, 0), 6);
 
   const blocked = await json(
@@ -652,12 +1013,53 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   );
   assert.equal(blocked.status, 403);
 
-  const allowed = await json(
+  const cancelPachka = await json(
+    app.base + "/api/admin/orders/" + adminPachkaOrder.id,
+    { status: "cancelled" },
+    { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
+  );
+  assert.equal(cancelPachka.status, 200);
+  assert.equal((await cancelPachka.json()).stock_released.qop, 0.1);
+  assert.equal(sqlite.prepare("SELECT available_qop FROM products WHERE id=?").get(product.id).available_qop, 8);
+  const repeatPachkaCancel = await json(
+    app.base + "/api/admin/orders/" + adminPachkaOrder.id,
+    { status: "cancelled" },
+    { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
+  );
+  assert.equal(repeatPachkaCancel.status, 200);
+  assert.equal((await repeatPachkaCancel.json()).stock_released.qop, 0);
+  assert.equal(sqlite.prepare("SELECT available_qop FROM products WHERE id=?").get(product.id).available_qop, 8);
+
+  const invalidOrderTransition = await json(
     app.base + "/api/admin/orders/" + adminOrder.id,
     { status: "done" },
     { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
   );
-  assert.equal(allowed.status, 200);
+  assert.equal(invalidOrderTransition.status, 409);
+  assert.equal((await invalidOrderTransition.json()).error, "invalid_order_transition");
+  for (const status of ["processing", "shipped", "done"]) {
+    const transition = await json(
+      app.base + "/api/admin/orders/" + adminOrder.id,
+      { status },
+      { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
+    );
+    assert.equal(transition.status, 200);
+  }
+
+  const proofOrder = orders.find((row) => row.number === customerOrder.number);
+  assert.ok(proofOrder);
+  const requestMorePaymentInfo = await json(
+    app.base + "/api/admin/payments/" + proofOrder.payment.id,
+    { status: "waiting_for_customer" },
+    { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
+  );
+  assert.equal(requestMorePaymentInfo.status, 200);
+  const resubmitPayment = await json(
+    app.base + "/api/admin/payments/" + proofOrder.payment.id,
+    { status: "submitted" },
+    { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
+  );
+  assert.equal(resubmitPayment.status, 200);
 
   const paymentAllowed = await json(
     app.base + "/api/admin/payments/" + adminOrder.payment.id,
@@ -665,6 +1067,46 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
   );
   assert.equal(paymentAllowed.status, 200);
+  const invalidPaymentTransition = await json(
+    app.base + "/api/admin/payments/" + adminOrder.payment.id,
+    { status: "pending" },
+    { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
+  );
+  assert.equal(invalidPaymentTransition.status, 409);
+  assert.equal((await invalidPaymentTransition.json()).error, "invalid_payment_transition");
+  const refundPayment = await json(
+    app.base + "/api/admin/payments/" + adminOrder.payment.id,
+    { status: "refunded" },
+    { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
+  );
+  assert.equal(refundPayment.status, 200);
+
+  const managerLogin = await json(app.base + "/api/login", {
+    login: "manager",
+    password: "test-manager-password",
+  }, { headers: { Origin: app.base } });
+  assert.equal(managerLogin.status, 200);
+  const managerCookie = managerLogin.headers.get("set-cookie").split(";")[0];
+  const adminManagers = await fetch(app.base + "/api/admin/managers", { headers: { Cookie: cookie } });
+  const managerRecord = (await adminManagers.json()).find((row) => row.id === managerId);
+  assert.ok(managerRecord);
+  const rotateManagerPassword = await json(app.base + "/api/admin/managers/" + managerId, {
+    ...managerRecord,
+    password: "rotated-manager-password",
+    active: true,
+  }, { method: "PUT", headers: { Cookie: cookie, Origin: app.base } });
+  assert.equal(rotateManagerPassword.status, 200);
+  const revokedManagerSession = await fetch(app.base + "/api/admin/orders", {
+    headers: { Cookie: managerCookie },
+  });
+  assert.equal(revokedManagerSession.status, 401);
+  const rotatedManagerLogin = await json(app.base + "/api/login", {
+    login: "manager",
+    password: "rotated-manager-password",
+  }, { headers: { Origin: app.base } });
+  assert.equal(rotatedManagerLogin.status, 200);
+  assert.equal((await rotatedManagerLogin.json()).role, "manager");
+  assert.equal((await (await fetch(app.base + "/api/managers")).json()).some((row) => row.id === managerId), true);
 
   const adminCustomers = await fetch(app.base + "/api/admin/customers", { headers: { Cookie: cookie } });
   assert.equal(adminCustomers.status, 200);
@@ -680,13 +1122,24 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     headers: { Cookie: cookie, Origin: app.base },
   });
   assert.equal(reviewApprove.status, 200);
+  sqlite.prepare(`
+    INSERT INTO reviews
+      (product_id, product_slug, customer_id, rating, comment, verified_purchase, status)
+    VALUES (?,?,?,?,?,0,'approved')
+  `).run(product.id, product.slug, businessCustomer.id, 5, "Legacy unverified review");
   const publicReviews = await fetch(app.base + "/api/products/" + product.slug + "/reviews?product_id=" + product.id);
   assert.equal(publicReviews.status, 200);
-  assert.equal((await publicReviews.json()).summary.count, 1);
+  const publicReviewBody = await publicReviews.json();
+  assert.equal(publicReviewBody.summary.count, 1);
+  assert.equal(publicReviewBody.summary.rating, 5);
+  assert.equal(publicReviewBody.reviews.length, 1);
+  const ratedProduct = await (await fetch(app.base + "/api/products/" + product.slug)).json();
+  assert.equal(ratedProduct.reviews, 1);
+  assert.equal(ratedProduct.rating, 5);
 
   const adminChat = await fetch(app.base + "/api/admin/chat", { headers: { Cookie: cookie } });
   assert.equal(adminChat.status, 200);
-  assert.equal((await adminChat.json()).length, 2);
+  assert.equal((await adminChat.json()).length, 3);
 
   const subscribers = await fetch(app.base + "/api/admin/subscribers", { headers: { Cookie: cookie } });
   assert.equal(subscribers.status, 200);
@@ -706,4 +1159,166 @@ test("public API, order placement, newsletter, and admin protections work", asyn
     { method: "PUT", headers: { Cookie: cookie, Origin: app.base } }
   );
   assert.equal(supportDone.status, 200);
+});
+
+test("customer account deletion removes personal data and anonymizes required records", async (t) => {
+  const app = await startServer(t);
+  const sqlite = new DatabaseSync(path.join(app.dataDir, "milana.db"));
+  t.after(() => sqlite.close());
+
+  const email = "delete-me@example.com";
+  const phone = "+998 90 555 66 77";
+  const otpStart = await json(app.base + "/api/auth/email-otp/start", {
+    email,
+    purpose: "password_recovery",
+    lang: "en",
+  });
+  assert.equal(otpStart.status, 200);
+  const signupCode = (await otpStart.json()).dev_code;
+
+  const signup = await json(app.base + "/api/auth/signup", {
+    account_type: "individual",
+    terms: true,
+    name: "Deletion Customer",
+    phone,
+    city: "Tashkent",
+    address: "Amir Temur 12",
+    email,
+    password: "delete-me-2026",
+    email_code: signupCode,
+  });
+  assert.equal(signup.status, 201);
+  const signupBody = await signup.json();
+  const customer = signupBody.customer;
+  const token = signupBody.session_token;
+
+  const product = (await (await fetch(app.base + "/api/products?limit=1")).json())[0];
+  const orderCustomer = {
+    name: customer.name,
+    email,
+    phone,
+    city: customer.city,
+    address: customer.address,
+  };
+  sqlite.prepare(`
+    INSERT INTO orders (number, customer_id, customer, items, total, status)
+    VALUES (?,?,?,?,?,'new')
+  `).run(
+    "MP-DELETE-0001",
+    customer.id,
+    JSON.stringify(orderCustomer),
+    JSON.stringify([{ id: product.id, name: product.name, qty: 1 }]),
+    10,
+  );
+  sqlite.prepare(`
+    INSERT INTO support_requests
+      (number, customer_id, name, phone, email, topic, message)
+    VALUES (?,?,?,?,?,'general',?)
+  `).run("MS-DELETE-0001", customer.id, customer.name, phone, email, "Please delete my profile");
+  sqlite.prepare(`
+    INSERT INTO reviews (product_id, product_slug, customer_id, rating, comment)
+    VALUES (?,?,?,?,?)
+  `).run(product.id, product.slug, customer.id, 5, "Personal review");
+  sqlite.prepare(`
+    INSERT INTO likes (customer_id, product_id, product_slug)
+    VALUES (?,?,?)
+  `).run(customer.id, product.id, product.slug);
+  sqlite.prepare(`
+    INSERT INTO customer_coupons
+      (customer_id, code, title, description, discount_type, value)
+    VALUES (?,?,?,?,?,?)
+  `).run(customer.id, "DELETE10", "Personal coupon", "Customer-only coupon", "percent", 10);
+  const chat = sqlite.prepare(`
+    INSERT INTO chat_sessions (customer_id, visitor_name, visitor_phone, visitor_email)
+    VALUES (?,?,?,?)
+  `).run(customer.id, customer.name, phone, email);
+  sqlite.prepare(`
+    INSERT INTO chat_messages (session_id, sender_type, message)
+    VALUES (?,'customer','Private support message')
+  `).run(chat.lastInsertRowid);
+  sqlite.prepare(`
+    INSERT INTO subscribers (email, lang, source)
+    VALUES (?,'en','account')
+  `).run(email);
+
+  const missingConfirmation = await json(app.base + "/api/auth/account", { confirmation: "yes" }, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}`, Origin: app.base },
+  });
+  assert.equal(missingConfirmation.status, 400);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM customers WHERE id=?").get(customer.id).c, 1);
+
+  const deletion = await json(app.base + "/api/auth/account", { confirmation: "DELETE" }, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}`, Origin: app.base },
+  });
+  assert.equal(deletion.status, 200);
+  assert.equal((await deletion.json()).ok, true);
+
+  for (const table of ["customers", "customer_sessions", "reviews", "likes", "customer_coupons", "chat_sessions"]) {
+    assert.equal(
+      sqlite.prepare(`SELECT COUNT(*) AS c FROM ${table} WHERE ${table === "customers" ? "id" : "customer_id"}=?`).get(customer.id).c,
+      0,
+      `${table} customer data should be removed`,
+    );
+  }
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM email_otps WHERE email=?").get(email).c, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM subscribers WHERE email=?").get(email).c, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM chat_messages WHERE session_id=?").get(chat.lastInsertRowid).c, 0);
+
+  const retainedOrder = sqlite.prepare("SELECT customer_id, customer FROM orders WHERE number='MP-DELETE-0001'").get();
+  assert.equal(retainedOrder.customer_id, null);
+  assert.deepEqual(JSON.parse(retainedOrder.customer), {
+    name: "Deleted customer",
+    email: "",
+    phone: "",
+    city: "",
+    address: "",
+    deleted: true,
+  });
+  const retainedSupport = sqlite.prepare(`
+    SELECT customer_id, name, phone, email, message
+    FROM support_requests WHERE number='MS-DELETE-0001'
+  `).get();
+  assert.deepEqual({ ...retainedSupport }, {
+    customer_id: null,
+    name: "Deleted customer",
+    phone: "",
+    email: "",
+    message: "[Deleted at customer request]",
+  });
+
+  const deletedSession = await fetch(app.base + "/api/auth/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(deletedSession.status, 200);
+  assert.equal((await deletedSession.json()).customer, null);
+
+  const webEmail = "delete-by-code@example.com";
+  const webSignupOtp = await json(app.base + "/api/auth/email-otp/start", { email: webEmail, lang: "en" });
+  const webSignupCode = (await webSignupOtp.json()).dev_code;
+  const webSignup = await json(app.base + "/api/auth/signup", {
+    account_type: "individual",
+    terms: true,
+    name: "Web Deletion Customer",
+    email: webEmail,
+    password: "delete-web-2026",
+    email_code: webSignupCode,
+  });
+  assert.equal(webSignup.status, 201);
+
+  const deleteOtp = await json(app.base + "/api/auth/email-otp/start", {
+    email: webEmail,
+    purpose: "account_deletion",
+    lang: "en",
+  });
+  assert.equal(deleteOtp.status, 200);
+  const deleteCode = (await deleteOtp.json()).dev_code;
+  const webDeletion = await json(app.base + "/api/auth/account/delete-with-code", {
+    email: webEmail,
+    code: deleteCode,
+    confirmation: "DELETE",
+  }, { headers: { Origin: app.base } });
+  assert.equal(webDeletion.status, 200);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM customers WHERE email=?").get(webEmail).c, 0);
 });
