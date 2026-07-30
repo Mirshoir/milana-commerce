@@ -14,6 +14,7 @@ const dryRun = process.argv.includes("--dry-run");
 const TABLES = [
   "products",
   "customers",
+  "promo_codes",
   "orders",
   "payments",
   "support_requests",
@@ -21,6 +22,14 @@ const TABLES = [
   "settings",
   "sessions",
   "customer_sessions",
+  "customer_coupons",
+  "phone_otps",
+  "email_otps",
+  "likes",
+  "reviews",
+  "chat_sessions",
+  "chat_messages",
+  "catalog_product_overrides",
   "audit_events",
 ];
 
@@ -30,10 +39,20 @@ const JSON_COLUMNS = new Set([
   "orders.customer",
   "orders.items",
   "payments.payload",
+  "customer_coupons.metadata",
   "audit_events.meta",
 ]);
 
-const BOOLEAN_COLUMNS = new Set(["products.active"]);
+const BOOLEAN_COLUMNS = new Set([
+  "products.active",
+  "products.retail_enabled",
+  "products.copy_manual",
+  "customers.phone_verified",
+  "promo_codes.active",
+  "reviews.verified_purchase",
+  "catalog_product_overrides.active",
+]);
+const BATCH_ROWS = Math.max(50, Math.min(2000, Number(process.env.MIGRATION_BATCH_ROWS) || 500));
 
 function tableExists(db, table) {
   return Boolean(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table));
@@ -53,34 +72,67 @@ function parseJson(value, fallback) {
   }
 }
 
-function normalizeValue(table, column, value) {
+function normalizeValue(table, column, value, row = {}) {
   if (JSON_COLUMNS.has(`${table}.${column}`)) {
-    return parseJson(value, column.endsWith("s") ? [] : {});
+    return JSON.stringify(parseJson(value, column.endsWith("s") ? [] : {}));
   }
   if (BOOLEAN_COLUMNS.has(`${table}.${column}`)) return Boolean(value);
+  if ((column === "created_at" || column === "updated_at") && (value == null || value === "")) {
+    return row.created_at || new Date(0).toISOString();
+  }
   return value;
 }
 
 async function upsertRows(client, table, rows, columns) {
   if (!rows.length) return 0;
-  const conflictColumn = table === "settings" || table === "sessions" || table === "customer_sessions"
-    ? columns[0]
-    : "id";
+  const conflictColumn = ["settings", "sessions", "customer_sessions", "phone_otps", "email_otps", "catalog_product_overrides"].includes(table)
+    ? columns[0] : "id";
   const quotedColumns = columns.map((column) => `"${column}"`).join(", ");
-  const placeholders = columns.map((_, index) => `$${index + 1}`).join(", ");
   const updates = columns
     .filter((column) => column !== conflictColumn)
     .map((column) => `"${column}" = EXCLUDED."${column}"`)
     .join(", ");
-  const sql = `
-    INSERT INTO "${table}" (${quotedColumns})
-    VALUES (${placeholders})
-    ON CONFLICT ("${conflictColumn}") DO ${updates ? `UPDATE SET ${updates}` : "NOTHING"}
-  `;
-  for (const row of rows) {
-    await client.query(sql, columns.map((column) => normalizeValue(table, column, row[column])));
+  const maxRowsPerQuery = Math.max(1, Math.floor(60_000 / Math.max(1, columns.length)));
+  for (let start = 0; start < rows.length; start += maxRowsPerQuery) {
+    const chunk = rows.slice(start, start + maxRowsPerQuery);
+    const values = [];
+    const tuples = chunk.map((row) => {
+      const placeholders = columns.map((column) => {
+        values.push(normalizeValue(table, column, row[column], row));
+        return `$${values.length}`;
+      });
+      return `(${placeholders.join(", ")})`;
+    });
+    const sql = `
+      INSERT INTO "${table}" (${quotedColumns})
+      VALUES ${tuples.join(", ")}
+      ON CONFLICT ("${conflictColumn}") DO ${updates ? `UPDATE SET ${updates}` : "NOTHING"}
+    `;
+    await client.query(sql, values);
   }
   return rows.length;
+}
+
+async function migrateTable(client, sqlite, table, columns) {
+  const hasId = columns.includes("id");
+  let migrated = 0;
+  let lastId = 0;
+  while (true) {
+    const projection = columns.map((column) => `"${column}"`).join(", ");
+    const rows = hasId
+      ? sqlite.prepare(`SELECT ${projection} FROM ${table} WHERE id>? ORDER BY id LIMIT ?`).all(lastId, BATCH_ROWS)
+      : migrated === 0
+        ? sqlite.prepare(`SELECT ${projection} FROM ${table}`).all()
+        : [];
+    if (!rows.length) break;
+    await upsertRows(client, table, rows, columns);
+    migrated += rows.length;
+    if (hasId) lastId = Number(rows[rows.length - 1].id);
+    if (hasId && migrated % (BATCH_ROWS * 10) === 0) {
+      console.error(`Migrated ${table}: ${migrated} rows`);
+    }
+  }
+  return migrated;
 }
 
 async function resetSequence(client, table) {
@@ -91,11 +143,21 @@ async function resetSequence(client, table) {
     "payments",
     "support_requests",
     "subscribers",
+    "promo_codes",
+    "customer_coupons",
+    "likes",
+    "reviews",
+    "chat_sessions",
+    "chat_messages",
     "audit_events",
   ]);
   if (!identityTables.has(table)) return;
   await client.query(
-    `SELECT setval(pg_get_serial_sequence($1, 'id'), COALESCE((SELECT MAX(id) FROM "${table}"), 1), true)`,
+    `SELECT setval(
+       pg_get_serial_sequence($1, 'id'),
+       COALESCE((SELECT MAX(id) FROM "${table}"), 1),
+       EXISTS (SELECT 1 FROM "${table}")
+     )`,
     [table],
   );
 }
@@ -148,8 +210,7 @@ async function main() {
       );
       const allowed = new Set(postgresColumns.rows.map((row) => row.column_name));
       const columns = sqliteColumns.filter((column) => allowed.has(column));
-      const rows = sqlite.prepare(`SELECT ${columns.map((column) => `"${column}"`).join(", ")} FROM ${table}`).all();
-      const count = await upsertRows(client, table, rows, columns);
+      const count = await migrateTable(client, sqlite, table, columns);
       await resetSequence(client, table);
       migrated.push({ table, rows: count });
     }

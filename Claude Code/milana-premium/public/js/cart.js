@@ -7,6 +7,18 @@
 
   const KEY = "ml-cart";
   const BAG_SIZE = () => (window.I18N && I18N.BAG_SIZE) || 60;
+  const PACK_SIZE = () => (window.I18N && I18N.PACK_SIZE) || 6;
+  /* единица продажи строки: "pachka" — пачка (6 шт), "qop" — мешок (60 шт) */
+  const packOf = (i) => (i && i.pack === "pachka" ? "pachka" : "qop");
+  /* пачка = 1 изделие на размер, поэтому её объём равен размерному ряду позиции */
+  const packSize = (i) => {
+    if (packOf(i) !== "pachka") return BAG_SIZE();
+    const n = Number(i?.pack_pieces) || (Array.isArray(i?.sizes) ? i.sizes.length : 0);
+    /* один размер — пачка обычная, 6 изделий одного размера */
+    return n > 1 ? n : PACK_SIZE();
+  };
+  const packShort = (i) => t(packOf(i) === "pachka" ? "cart.packShort" : "cart.bagShort");
+  const packTotalLabel = (i) => t(packOf(i) === "pachka" ? "cart.packTotal" : "cart.bagTotal");
   let items = [];
   try { items = JSON.parse(localStorage.getItem(KEY) || "[]"); } catch {}
   if (!Array.isArray(items)) items = [];
@@ -15,17 +27,39 @@
   const save = () => { localStorage.setItem(KEY, JSON.stringify(items)); updateBadges(); };
   const count = () => items.reduce((s, i) => s + i.qty, 0);
   const pendingPrice = (i) => i.price_visible === false || i.price_pending === true;
-  const unitPrice = (i) => orderMode() === "retail" ? Number(i.retail_price || i.price || 0) : Number(i.price || 0);
-  const lineTotal = (i) => pendingPrice(i) ? 0 : unitPrice(i) * (orderMode() === "retail" ? 1 : BAG_SIZE()) * i.qty;
+  /* мешок — оптовая цена; пачка — розничная либо оптовая + наценка из настроек */
+  const packMarkup = () => {
+    const v = Number((window.I18N?.settings || {}).pack_markup);
+    return Number.isFinite(v) && v >= 0 ? v : 20;
+  };
+  const unitPrice = (i) => {
+    const base = Number(i.price || 0);
+    if (orderMode() === "retail") return Number(i.retail_price || base || 0);
+    if (packOf(i) !== "pachka") return base;
+    const retail = Number(i.retail_price || 0);
+    return retail > base ? retail : Math.round(base * (1 + packMarkup() / 100) * 100) / 100;
+  };
+  const lineTotal = (i) => pendingPrice(i) ? 0 : unitPrice(i) * (orderMode() === "retail" ? 1 : packSize(i)) * i.qty;
   const total = () => items.reduce((s, i) => s + lineTotal(i), 0);
   const hasPendingTotal = () => items.some(pendingPrice);
   const t = (k, v) => window.I18N ? I18N.t(k, v) : k;
   const fmt = (n) => window.I18N ? I18N.fmtPrice(n) : "$" + n;
   const priceText = (i, amount = unitPrice(i)) => pendingPrice(i) ? t("price.manager") : fmt(amount);
-  const mix = (sizes = []) => sizes.slice(0, 6).filter(Boolean);
-  const mixText = (sizes = []) => {
-    const list = mix(sizes);
-    return list.length ? list.map((s) => esc(s) + " × 10").join(", ") : t("cart.defaultMix");
+  /* пачка — по 1 на размер; мешок — 60 изделий, разложенных по ряду (остаток в первые размеры) */
+  const mixList = (i) => {
+    const list = (Array.isArray(i && i.sizes) ? i.sizes : []).filter(Boolean);
+    if (!list.length) return [];
+    if (packOf(i) === "pachka") {
+      return list.length === 1 ? [{ s: list[0], q: packSize(i) }] : list.map((s) => ({ s, q: 1 }));
+    }
+    const base = Math.floor(BAG_SIZE() / list.length);
+    let rest = BAG_SIZE() - base * list.length;
+    return list.map((s) => ({ s, q: base + (rest-- > 0 ? 1 : 0) }));
+  };
+  const mixText = (i) => {
+    const list = mixList(i);
+    const label = (v) => (window.I18N ? I18N.sizeLabel(v) : v);
+    return list.length ? list.map((x) => esc(label(x.s)) + " × " + x.q).join(", ") : t("cart.defaultMix");
   };
 
   /* ---------------- drawer skeleton ---------------- */
@@ -36,7 +70,7 @@
     <aside class="drawer__panel" role="dialog" aria-modal="true" aria-label="Cart">
       <header class="drawer__head">
         <h3 class="drawer__title"></h3>
-        <button class="drawer__x" data-cart-close aria-label="Close">&#10005;</button>
+        <button type="button" class="drawer__x" data-cart-close aria-label="Close">&#10005;</button>
       </header>
       <div class="drawer__body"></div>
       <footer class="drawer__foot"></footer>
@@ -46,11 +80,28 @@
   let view = "list"; // list | checkout | success
   let lastOrder = null;
   let lastPayment = null;
+  let managers = [];
+  let managersLoaded = false;
+
+  async function loadManagers() {
+    if (managersLoaded) return managers;
+    try {
+      const response = await fetch("/api/managers", { headers: { Accept: "application/json" } });
+      const data = await response.json().catch(() => []);
+      managers = response.ok && Array.isArray(data) ? data : [];
+    } catch {
+      managers = [];
+    }
+    managersLoaded = true;
+    return managers;
+  }
 
   const bodyEl = () => drawer.querySelector(".drawer__body");
   const footEl = () => drawer.querySelector(".drawer__foot");
 
   function render() {
+    drawer.querySelector(".drawer__panel").setAttribute("aria-label", t("cart.title"));
+    drawer.querySelector("[data-cart-close]").setAttribute("aria-label", t("aria.close"));
     drawer.querySelector(".drawer__title").textContent =
       view === "checkout" ? t("cart.checkout") : view === "success" ? t("cart.success1") : t("cart.title");
 
@@ -75,11 +126,18 @@
       const customer = window.MilanaAuth?.customer || {};
       const mode = orderMode();
       bodyEl().innerHTML = `
-        <form class="drawer__form" id="checkout-form" novalidate>
+        <form class="drawer__form" id="checkout-form">
           <label><span>${t("cart.name")} *</span><input name="name" required maxlength="80" autocomplete="name" value="${esc(customer.name || "")}"></label>
           <label><span>${t("cart.phone")} *</span><input name="phone" required maxlength="25" autocomplete="tel" placeholder="+998 90 123 45 67" value="${esc(customer.phone || "")}"></label>
           <label><span>${t("cart.city")}</span><input name="city" maxlength="80" autocomplete="address-level2"></label>
           <label><span>${t("cart.address")}</span><input name="address" maxlength="300" autocomplete="street-address"></label>
+          <label><span>${t("cart.manager")} *</span>
+            <select name="manager_id" required>
+              <option value="">${managersLoaded ? t("cart.managerChoose") : t("cart.managerLoading")}</option>
+              ${managers.map((manager) => `<option value="${esc(manager.id)}">${esc(manager.name)}</option>`).join("")}
+            </select>
+          </label>
+          ${managersLoaded && !managers.length ? `<p class="drawer__err">${t("cart.managerUnavailable")}</p>` : ""}
           <label><span>${t("cart.payment")} *</span>
             <select name="payment_method" required>
               <option value="manager">${t("cart.paymentManager")}</option>
@@ -94,12 +152,12 @@
           <p class="drawer__note">${mode === "retail" ? "Retail order: quantities are pieces. Manager confirms delivery and availability before dispatch." : t("cart.bagRule")}</p>
           <p class="drawer__note">${t("cart.paymentNote")}</p>
           <p class="drawer__note"><a href="/ordering" target="_blank">How ordering works</a> · ${t("cart.orderNote")}</p>
-          <p class="drawer__err" hidden></p>
         </form>`;
       footEl().innerHTML = `
         <div class="drawer__total"><span>${t("cart.total")}</span><strong>${hasPendingTotal() ? t("cart.totalPending") : fmt(total())}</strong></div>
-        <button class="btn btn--primary drawer__cta" data-place><span>${t("cart.place")}</span><svg class="ic"><use href="#i-arrow"/></svg></button>
-        <button class="drawer__backlink" data-back>&larr; ${t("cart.back")}</button>`;
+        <p class="drawer__err" data-order-error role="alert" aria-live="assertive" hidden></p>
+        <button type="submit" form="checkout-form" class="btn btn--primary drawer__cta" data-place><span>${t("cart.place")}</span><svg class="ic"><use href="#i-arrow"/></svg></button>
+        <button type="button" class="drawer__backlink" data-back>&larr; ${t("cart.back")}</button>`;
       return;
     }
 
@@ -119,21 +177,21 @@
       <div class="citem">
           <a class="citem__img" href="/p/${it.slug}"><img src="${it.image}" alt=""></a>
         <div class="citem__info">
-          <a class="citem__name" href="/p/${it.slug}">${esc(it.name)}</a>
+          <a class="citem__name" href="/p/${it.slug}">${esc(window.I18N?.productName ? I18N.productName(it) : it.name)}</a>
           <p class="citem__size">${t("cart.unitPrice")}: ${priceText(it)}</p>
-          ${mode === "retail" ? `<p class="citem__size">Retail pieces</p>` : `<p class="citem__size">${t("cart.sizeMix")}: ${mixText(it.sizes)}</p><p class="citem__size">${t("cart.bagTotal")}: ${priceText(it, it.price * BAG_SIZE())}</p>`}
+          ${mode === "retail" ? `<p class="citem__size">Retail pieces</p>` : `<p class="citem__size">${t("cart.sizeMix")}: ${mixText(it)}</p><p class="citem__size">${packTotalLabel(it)}: ${priceText(it, unitPrice(it) * packSize(it))} <i class="citem__unit">${packSize(it)} ${t("cart.pcs")}</i></p>`}
           <div class="citem__row">
             <div class="citem__qty">
-              <button data-qty="${idx}:-1" aria-label="−">−</button><span>${it.qty} ${mode === "retail" ? "pcs" : t("cart.bagShort")}</span><button data-qty="${idx}:1" aria-label="+">+</button>
+              <button type="button" data-qty="${idx}:-1" aria-label="−">−</button><span>${it.qty} ${mode === "retail" ? "pcs" : packShort(it)}</span><button type="button" data-qty="${idx}:1" aria-label="+">+</button>
             </div>
             <strong>${priceText(it, lineTotal(it))}</strong>
           </div>
         </div>
-        <button class="citem__x" data-del="${idx}" aria-label="Remove">&#10005;</button>
+        <button type="button" class="citem__x" data-del="${idx}" aria-label="Remove">&#10005;</button>
       </div>`).join("");
     footEl().innerHTML = `
       <div class="drawer__total"><span>${t("cart.total")}</span><strong>${hasPendingTotal() ? t("cart.totalPending") : fmt(total())}</strong></div>
-      <button class="btn btn--primary drawer__cta" data-checkout><span>${t("cart.checkout")}</span><svg class="ic"><use href="#i-arrow"/></svg></button>`;
+      <button type="button" class="btn btn--primary drawer__cta" data-checkout><span>${t("cart.checkout")}</span><svg class="ic"><use href="#i-arrow"/></svg></button>`;
   }
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -149,40 +207,72 @@
       items[idx].qty = Math.min(20, Math.max(1, items[idx].qty + d));
       save(); render(); return;
     }
-    if (e.target.closest("[data-checkout]")) { view = "checkout"; render(); return; }
+    if (e.target.closest("[data-checkout]")) {
+      view = "checkout";
+      render();
+      await loadManagers();
+      render();
+      return;
+    }
     if (e.target.closest("[data-back]")) { view = "list"; render(); return; }
-    if (e.target.closest("[data-place]")) return placeOrder(e.target.closest("[data-place]"));
+  });
+
+  drawer.addEventListener("submit", (e) => {
+    if (!e.target.matches("#checkout-form")) return;
+    e.preventDefault();
+    const btn = drawer.querySelector("[data-place]");
+    if (btn && !btn.disabled) placeOrder(btn);
   });
 
   async function placeOrder(btn) {
     const form = drawer.querySelector("#checkout-form");
-    const err = form.querySelector(".drawer__err");
+    if (!form) return;
+    const err = drawer.querySelector("[data-order-error]");
     const data = Object.fromEntries(new FormData(form));
-    if (data.name.trim().length < 2 || !/^[0-9+()\-\s]{5,25}$/.test(data.phone.trim())) {
-      err.textContent = t("cart.invalid"); err.hidden = false; return;
+    const name = String(data.name || "").trim();
+    const phone = String(data.phone || "").trim();
+    const managerId = Number(data.manager_id);
+    if (name.length < 2 || !/^[0-9+()\-\s]{5,25}$/.test(phone)) {
+      if (err) { err.textContent = t("cart.invalid"); err.hidden = false; }
+      form.reportValidity();
+      return;
     }
-    err.hidden = true;
+    if (!Number.isInteger(managerId) || managerId < 1) {
+      if (err) { err.textContent = t("cart.managerRequired"); err.hidden = false; }
+      form.reportValidity();
+      return;
+    }
+    if (err) err.hidden = true;
     btn.disabled = true; btn.style.opacity = ".6";
     try {
       const r = await fetch("/api/orders", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customer: data,
+          manager_id: managerId,
           payment: { method: data.payment_method || "manager" },
           order_type: orderMode() === "retail" ? "retail" : "wholesale",
-          items: items.map((i) => ({ id: i.id, qty: i.qty })),
+          items: items.map((i) => ({
+            id: i.id,
+            qty: i.qty,
+            unit_type: orderMode() === "retail" ? "piece" : packOf(i),
+          })),
           lang: window.I18N ? I18N.lang : "en",
           source: "website",
         }),
       });
-      const res = await r.json();
+      const res = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(res.error || "error");
       lastOrder = res.number;
       lastPayment = res.payment || null;
       items = []; save();
       view = "success"; render();
     } catch (ex) {
-      err.textContent = t("cart.invalid") + " (" + ex.message + ")"; err.hidden = false;
+      if (err) {
+        err.textContent = t("cart.invalid") + " (" + ex.message + ")";
+        err.hidden = false;
+        err.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
     } finally { btn.disabled = false; btn.style.opacity = ""; }
   }
 
@@ -214,12 +304,14 @@
     toastTimer = setTimeout(() => el.classList.remove("is-on"), 2200);
   }
 
-  function add({ id, slug, name, image, price, retail_price, price_visible = true, price_label = "", sizes = [], qty = 1 }) {
+  function add({ id, slug, name, image, price, retail_price, price_visible = true, price_label = "", sizes = [], qty = 1, pack = "qop" }) {
     qty = Math.max(1, Math.round(Number(qty) || 1));
     sizes = Array.isArray(sizes) ? sizes.slice(0, 12) : [];
-    const same = items.find((i) => i.id === id);
+    pack = pack === "pachka" ? "pachka" : "qop";
+    /* пачка и мешок одного товара — отдельные строки */
+    const same = items.find((i) => i.id === id && packOf(i) === pack);
     if (same) same.qty = Math.min(20, same.qty + qty);
-    else items.push({ id, slug, name, image, price, retail_price, price_visible: price_visible !== false, price_label, sizes, qty });
+    else items.push({ id, slug, name, image, price, retail_price, price_visible: price_visible !== false, price_label, sizes, qty, pack });
     save();
     toast(t("prod.added"));
     const btn = document.querySelector("[data-cart-open]");
