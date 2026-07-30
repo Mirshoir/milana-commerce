@@ -65,6 +65,7 @@ FIREBASE_PROJECT_ID=...
 FIREBASE_APP_ID=...
 FIREBASE_STORAGE_BUCKET=...              # optional
 FIREBASE_MESSAGING_SENDER_ID=...         # optional
+FIREBASE_APPLE_ENABLED=1                 # only after Apple is enabled in Firebase
 ```
 
 Для локального запуска эти значения можно положить в `data/firebase.env`
@@ -207,6 +208,8 @@ total, page count, and `has_more`. See `docs/scaling-plan.md` for the staged
 | POST | `/api/auth/signin` | Локальный вход клиента |
 | POST | `/api/auth/firebase` | Создание клиентской сессии по Firebase ID token |
 | POST | `/api/auth/logout` | Выход клиента |
+| DELETE | `/api/auth/account` | Удаление аккаунта текущего клиента с обезличиванием обязательных записей заказа |
+| POST | `/api/auth/account/delete-with-code` | Публичное удаление аккаунта по email-коду |
 
 Админские API находятся в `/api/admin/*` и доступны только после входа.
 

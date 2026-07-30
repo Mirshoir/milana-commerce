@@ -157,6 +157,7 @@ const I18N = {
     email: "Email",
     password: "Password",
     googleContinue: "Continue with Google",
+    appleContinue: "Continue with Apple",
     name: "Name",
     phone: "Phone",
     sendCode: "Send code",
@@ -195,6 +196,16 @@ const I18N = {
     supportSendFailed: "Could not send the message. Please try again.",
     settings: "Settings",
     account: "Account",
+    privacyPolicy: "Privacy Policy",
+    termsOfUse: "Terms of Use",
+    deleteAccount: "Delete Account",
+    deleteAccountCopy: "This permanently removes your profile, sessions, saved items, reviews and coupons.",
+    deleteAccountWarning: "Required order records are retained only after your personal details are anonymized.",
+    deleteAccountConfirm: "Type DELETE to confirm",
+    deleteAccountAction: "Permanently delete",
+    deleteAccountSuccess: "Your Milana Premium account has been deleted.",
+    deleteAccountFailed: "Your account could not be deleted. Please try again.",
+    deleteConfirmationError: "Type DELETE exactly to confirm.",
     loginProfile: "Login and profile",
     orders: "Orders",
     language: "Language",
@@ -382,6 +393,7 @@ const I18N = {
     email: "Email",
     password: "Parol",
     googleContinue: "Google orqali davom etish",
+    appleContinue: "Apple orqali davom etish",
     name: "Ism",
     phone: "Telefon",
     sendCode: "Kod yuborish",
@@ -420,6 +432,16 @@ const I18N = {
     supportSendFailed: "Xabar yuborilmadi. Qayta urinib ko'ring.",
     settings: "Sozlamalar",
     account: "Akkaunt",
+    privacyPolicy: "Maxfiylik siyosati",
+    termsOfUse: "Foydalanish shartlari",
+    deleteAccount: "Akkauntni o'chirish",
+    deleteAccountCopy: "Bu profil, sessiyalar, saqlangan mahsulotlar, sharhlar va kuponlarni butunlay o'chiradi.",
+    deleteAccountWarning: "Saqlanishi shart bo'lgan buyurtma yozuvlari shaxsiy ma'lumotlar anonimlashtirilgandan keyingina qoladi.",
+    deleteAccountConfirm: "Tasdiqlash uchun DELETE yozing",
+    deleteAccountAction: "Butunlay o'chirish",
+    deleteAccountSuccess: "Milana Premium akkauntingiz o'chirildi.",
+    deleteAccountFailed: "Akkauntni o'chirib bo'lmadi. Qayta urinib ko'ring.",
+    deleteConfirmationError: "Tasdiqlash uchun DELETE so'zini aynan yozing.",
     loginProfile: "Kirish va profil",
     orders: "Buyurtmalar",
     language: "Til",
@@ -607,6 +629,7 @@ const I18N = {
     email: "Email",
     password: "Пароль",
     googleContinue: "Продолжить с Google",
+    appleContinue: "Продолжить с Apple",
     name: "Имя",
     phone: "Телефон",
     sendCode: "Отправить код",
@@ -645,6 +668,16 @@ const I18N = {
     supportSendFailed: "Не удалось отправить сообщение. Попробуйте снова.",
     settings: "Настройки",
     account: "Аккаунт",
+    privacyPolicy: "Политика конфиденциальности",
+    termsOfUse: "Условия использования",
+    deleteAccount: "Удалить аккаунт",
+    deleteAccountCopy: "Профиль, сессии, сохранённые товары, отзывы и купоны будут удалены навсегда.",
+    deleteAccountWarning: "Обязательные записи заказов сохраняются только после обезличивания персональных данных.",
+    deleteAccountConfirm: "Введите DELETE для подтверждения",
+    deleteAccountAction: "Удалить навсегда",
+    deleteAccountSuccess: "Ваш аккаунт Milana Premium удалён.",
+    deleteAccountFailed: "Не удалось удалить аккаунт. Попробуйте ещё раз.",
+    deleteConfirmationError: "Для подтверждения введите DELETE точно.",
     loginProfile: "Вход и профиль",
     orders: "Заказы",
     language: "Язык",
@@ -834,6 +867,7 @@ const TEXT_BINDINGS = [
   ["[data-auth-tab='signup']", "create"],
   ["[data-auth-tab='recover']", "forgotKey"],
   ["#btn-google-auth [data-google-label]", "googleContinue"],
+  ["#btn-apple-auth [data-apple-label]", "appleContinue"],
   ["#auth-signin label:nth-of-type(1)", "email"],
   ["#auth-signin label:nth-of-type(2)", "password"],
   ["#auth-signin .auth-submit", "signIn"],
@@ -858,6 +892,9 @@ const TEXT_BINDINGS = [
   [".menu-list .menu-item:nth-child(3)", "paymentMethods"],
   [".menu-list .menu-item:nth-child(4)", "deliveryAddress"],
   [".menu-list .menu-item:nth-child(5)", "helpSupport"],
+  ["[data-privacy-label]", "privacyPolicy"],
+  ["[data-terms-label]", "termsOfUse"],
+  ["[data-delete-label]", "deleteAccount"],
   [".menu-list .menu-item[data-nav='settings']", "settings"],
   ["#screen-settings h1", "settings"],
   [".settings-section:nth-of-type(1) h3", "account"],
@@ -917,6 +954,12 @@ const TEXT_BINDINGS = [
   [".success-card h2", "orderPlaced"],
   [".success-card p", "successThanks"],
   ["#btn-success-done", "continueShopping"],
+  ["#delete-account-title", "deleteAccount"],
+  ["#delete-account-copy", "deleteAccountCopy"],
+  ["#delete-account-warning", "deleteAccountWarning"],
+  ["#delete-account-confirm-label", "deleteAccountConfirm"],
+  ["#btn-delete-account-cancel", "cancel"],
+  [".delete-account-submit", "deleteAccountAction"],
   ["#payment-sheet .sheet-title", "paymentMethods"],
   ["#payment-sheet .sheet-copy", "paymentIntro"],
   ["#payment-sheet .info-list div:nth-child(1) span", "confirmation"],
@@ -1103,8 +1146,10 @@ async function api(path, options = {}) {
 
 let firebaseAuth = null;
 let firebaseGoogleProvider = null;
+let firebaseAppleProvider = null;
 let firebaseAuthMod = null;
 let googleAuthReady = false;
+let appleAuthReady = false;
 
 function isNativeAppShell() {
   return IS_NATIVE;
@@ -1117,7 +1162,14 @@ function setGoogleButtonState({ hidden = false, disabled = false } = {}) {
   button.disabled = disabled;
 }
 
-async function initFirebaseAuth(config) {
+function setAppleButtonState({ hidden = false, disabled = false } = {}) {
+  const button = byId("btn-apple-auth");
+  if (!button) return;
+  button.hidden = hidden;
+  button.disabled = disabled;
+}
+
+async function initFirebaseAuth(config, appleEnabled = false) {
   if (!config || firebaseAuth) return Boolean(firebaseAuth);
   try {
     const appMod = await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js");
@@ -1126,12 +1178,20 @@ async function initFirebaseAuth(config) {
     firebaseAuth = authMod.getAuth(app);
     firebaseGoogleProvider = new authMod.GoogleAuthProvider();
     firebaseGoogleProvider.setCustomParameters({ prompt: "select_account" });
+    if (appleEnabled) {
+      firebaseAppleProvider = new authMod.OAuthProvider("apple.com");
+      firebaseAppleProvider.addScope("email");
+      firebaseAppleProvider.addScope("name");
+    }
     firebaseAuthMod = authMod;
     googleAuthReady = true;
+    appleAuthReady = Boolean(firebaseAppleProvider);
     setGoogleButtonState({ hidden: false });
+    setAppleButtonState({ hidden: !appleAuthReady });
     return true;
   } catch {
     googleAuthReady = false;
+    appleAuthReady = false;
     return false;
   }
 }
@@ -1141,10 +1201,12 @@ async function loadAuthConfig() {
     const config = await api("/api/auth/config");
     if (IS_NATIVE) {
       googleAuthReady = Boolean(config.firebase);
+      appleAuthReady = Boolean(config.firebase && config.appleEnabled);
       setGoogleButtonState({ hidden: !googleAuthReady });
+      setAppleButtonState({ hidden: !appleAuthReady });
       return;
     }
-    const ready = await initFirebaseAuth(config.firebase);
+    const ready = await initFirebaseAuth(config.firebase, config.appleEnabled);
     if (ready) await completeGoogleRedirectSignIn();
   } catch {}
 }
@@ -1200,13 +1262,62 @@ async function signInWithGoogle() {
       "operation-not-supported-in-this-environment",
       "cancelled-popup-request",
     ].includes(code);
-    if (shouldRedirect) {
+    if (!IS_NATIVE && shouldRedirect) {
       try {
         await firebaseAuthMod.signInWithRedirect(firebaseAuth, firebaseGoogleProvider);
         return;
       } catch (redirectErr) {
         const redirectCode = String(redirectErr?.code || redirectErr?.message || "").replace(/^auth\//, "");
         toast(authErrorMessage(redirectCode));
+      }
+    } else {
+      toast(authErrorMessage(code));
+    }
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function signInWithApple() {
+  if (!appleAuthReady) {
+    toast(authErrorMessage("firebase_not_configured"));
+    return;
+  }
+  if (!IS_NATIVE && (!firebaseAuth || !firebaseAppleProvider || !firebaseAuthMod)) {
+    toast(authErrorMessage("firebase_not_configured"));
+    return;
+  }
+  const button = byId("btn-apple-auth");
+  if (button) button.disabled = true;
+  try {
+    let idToken = "";
+    if (isNativeAppShell()) {
+      const nativeFirebase = window.Capacitor?.Plugins?.FirebaseAuthentication;
+      if (!nativeFirebase?.signInWithApple) throw new Error("firebase_not_configured");
+      const nativeResult = await nativeFirebase.signInWithApple();
+      idToken = nativeResult?.credential?.idToken || "";
+    } else {
+      const credential = await firebaseAuthMod.signInWithPopup(firebaseAuth, firebaseAppleProvider);
+      idToken = await credential.user.getIdToken();
+    }
+    if (!idToken) throw new Error("firebase_not_configured");
+    const result = await api("/api/auth/firebase", { method: "POST", body: { idToken } });
+    rememberAuth(result);
+    toast(t("signedInToast"));
+  } catch (error) {
+    const code = String(error?.code || error?.message || "").replace(/^auth\//, "");
+    const shouldRedirect = !IS_NATIVE && [
+      "popup-blocked",
+      "popup-closed-by-user",
+      "operation-not-supported-in-this-environment",
+      "cancelled-popup-request",
+    ].includes(code);
+    if (shouldRedirect) {
+      try {
+        await firebaseAuthMod.signInWithRedirect(firebaseAuth, firebaseAppleProvider);
+        return;
+      } catch (redirectError) {
+        toast(authErrorMessage(String(redirectError?.code || redirectError?.message || "").replace(/^auth\//, "")));
       }
     } else {
       toast(authErrorMessage(code));
@@ -1509,6 +1620,8 @@ function renderProfile(profile, orderCount = null) {
   if (authPanel) authPanel.hidden = Boolean(authCustomer);
   const logout = byId("btn-logout");
   if (logout) logout.hidden = !authCustomer;
+  const deleteAccount = byId("btn-delete-account");
+  if (deleteAccount) deleteAccount.hidden = !authCustomer;
   const orders = byId("btn-my-orders");
   if (orders && orderCount !== null) {
     orders.querySelector(".chev").textContent = orderCount ? `${orderCount}` : "›";
@@ -2977,6 +3090,7 @@ document.querySelectorAll("[data-lang]").forEach((btn) => {
 });
 
 byId("btn-google-auth")?.addEventListener("click", signInWithGoogle);
+byId("btn-apple-auth")?.addEventListener("click", signInWithApple);
 
 document.querySelectorAll("[data-assistant-tab]").forEach((btn) => {
   btn.addEventListener("click", () => switchAssistantTab(btn.dataset.assistantTab));
@@ -3060,6 +3174,65 @@ byId("btn-logout")?.addEventListener("click", async () => {
   forgetAuth();
   switchAuthTab("signin");
   toast(t("loggedOut"));
+});
+
+function closeDeleteAccount() {
+  const overlay = byId("delete-account-overlay");
+  if (overlay) overlay.hidden = true;
+}
+
+function openDeleteAccount() {
+  if (!authCustomer) {
+    window.open("https://milanapremium.uz/account/delete", "_blank", "noopener");
+    return;
+  }
+  const form = byId("delete-account-form");
+  form?.reset();
+  const error = byId("delete-account-error");
+  if (error) {
+    error.hidden = true;
+    error.textContent = "";
+  }
+  byId("delete-account-overlay").hidden = false;
+  requestAnimationFrame(() => form?.elements?.confirmation?.focus());
+}
+
+byId("btn-delete-account")?.addEventListener("click", openDeleteAccount);
+byId("btn-delete-account-close")?.addEventListener("click", closeDeleteAccount);
+byId("btn-delete-account-cancel")?.addEventListener("click", closeDeleteAccount);
+byId("delete-account-overlay")?.addEventListener("click", (event) => {
+  if (event.target.id === "delete-account-overlay") closeDeleteAccount();
+});
+byId("delete-account-form")?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const confirmation = String(new FormData(form).get("confirmation") || "").trim().toUpperCase();
+  const error = byId("delete-account-error");
+  if (confirmation !== "DELETE") {
+    error.textContent = t("deleteConfirmationError");
+    error.hidden = false;
+    return;
+  }
+  const submit = form.querySelector('[type="submit"]');
+  submit.disabled = true;
+  error.hidden = true;
+  try {
+    await api("/api/auth/account", { method: "DELETE", body: { confirmation } });
+    closeDeleteAccount();
+    store.remove("profile");
+    store.remove("wishlist");
+    wishlist = [];
+    forgetAuth();
+    renderWishlist();
+    switchAuthTab("signin");
+    toast(t("deleteAccountSuccess"));
+    show("home");
+  } catch {
+    error.textContent = t("deleteAccountFailed");
+    error.hidden = false;
+  } finally {
+    submit.disabled = false;
+  }
 });
 
 /* checkout */

@@ -1811,6 +1811,63 @@ function authResponse(req, res, code, customer, token) {
   send(res, code, { customer: publicCustomer(customer), session_token: token }, { "Set-Cookie": customerCookie(req, token, 30 * 24 * 3600) });
 }
 
+async function deleteCustomerAccount(customer) {
+  if (postgresCommerce) {
+    await postgresCommerce.deleteCustomerAccount(customer);
+    return;
+  }
+  const deletedCustomer = JSON.stringify({
+    name: "Deleted customer",
+    email: "",
+    phone: "",
+    city: "",
+    address: "",
+    deleted: true,
+  });
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare(`
+      UPDATE orders
+      SET customer_id=NULL, customer=?, updated_at=datetime('now')
+      WHERE customer_id=?
+    `).run(deletedCustomer, customer.id);
+    db.prepare(`
+      UPDATE support_requests
+      SET customer_id=NULL, name='Deleted customer', phone='', email='',
+          message='[Deleted at customer request]', updated_at=datetime('now')
+      WHERE customer_id=?
+    `).run(customer.id);
+    db.prepare("DELETE FROM chat_sessions WHERE customer_id=?").run(customer.id);
+    db.prepare("DELETE FROM reviews WHERE customer_id=?").run(customer.id);
+    db.prepare("DELETE FROM likes WHERE customer_id=?").run(customer.id);
+    db.prepare("DELETE FROM customer_coupons WHERE customer_id=?").run(customer.id);
+    db.prepare("DELETE FROM customer_sessions WHERE customer_id=?").run(customer.id);
+    db.prepare("DELETE FROM email_otps WHERE email=?").run(customer.email);
+    db.prepare("DELETE FROM subscribers WHERE email=?").run(customer.email);
+    if (customer.phone) db.prepare("DELETE FROM phone_otps WHERE phone=?").run(normalizePhone(customer.phone));
+    const removed = db.prepare("DELETE FROM customers WHERE id=?").run(customer.id);
+    if (removed.changes !== 1) throw new Error("customer_delete_failed");
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+async function verifyEmailOtpForDeletion(email, code) {
+  const row = postgresCommerce
+    ? await postgresCommerce.otp("email", email)
+    : db.prepare("SELECT * FROM email_otps WHERE email=?").get(email);
+  if (!row || Date.now() > Number(row.expires_at || 0)) return "otp_expired";
+  if (Number(row.attempts || 0) >= 6) return "otp_locked";
+  if (row.code_hash !== hashEmailOtp(email, code)) {
+    if (postgresCommerce) await postgresCommerce.incrementOtp("email", email);
+    else db.prepare("UPDATE email_otps SET attempts=attempts+1 WHERE email=?").run(email);
+    return "otp_wrong";
+  }
+  return "";
+}
+
 function firebasePublicConfig() {
   if (!FIREBASE_ENABLED) return null;
   return Object.fromEntries(Object.entries(FIREBASE_CONFIG).filter(([, v]) => Boolean(v)));
@@ -2903,7 +2960,7 @@ function sitemapDate(product) {
 }
 
 async function sitemapXml() {
-  const staticPaths = ["/", "/shop", "/ordering", "/support", "/terms"];
+  const staticPaths = ["/", "/shop", "/ordering", "/support", "/terms", "/privacy", "/account/delete"];
   const products = await activeProductsForCatalog();
   const urls = staticPaths.map((pathname) => ({ loc: absoluteSiteUrl(pathname), lastmod: "" }))
     .concat(products.map((product) => ({
@@ -3453,12 +3510,13 @@ const api = {
     if (!emailOk(email)) return fail(res, 400, "email");
     if (!rateLimit("customer-email-otp-address:" + email, 4, 3600e3)) return fail(res, 429, "rate_limited");
     const lang = ["en", "ru", "uz"].includes(b.lang) ? b.lang : "uz";
+    const purpose = b.purpose === "account_deletion" ? "account_deletion" : "password_recovery";
     const code = String(100000 + crypto.randomInt(900000));
     const shouldSendEmail = NODE_ENV === "production" || EMAIL_SEND_IN_DEV;
     let emailDelivery = shouldSendEmail ? "sent" : "local";
     if (shouldSendEmail) {
       const message = otpEmailMessage(code, lang);
-      const sent = await sendEmail(email, message.subject, message.text, { purpose: "password_recovery", lang });
+      const sent = await sendEmail(email, message.subject, message.text, { purpose, lang });
       if (!sent.ok) {
         if (NODE_ENV === "production") return fail(res, sent.error === "email_not_configured" ? 503 : 502, sent.error || "email_failed");
         emailDelivery = "local_fallback";
@@ -3475,7 +3533,11 @@ const api = {
         verified_at='',
         created_at=datetime('now')
     `).run(email, hashEmailOtp(email, code), Date.now() + 10 * 60e3, 0);
-    audit("customer", "auth.email_otp_started", { email: email.replace(/^(.).+(@.+)$/, "$1***$2"), email_delivery: emailDelivery });
+    audit("customer", "auth.email_otp_started", {
+      email: email.replace(/^(.).+(@.+)$/, "$1***$2"),
+      email_delivery: emailDelivery,
+      purpose,
+    });
     const body = { ok: true, expires_in: 600 };
     if (!shouldSendEmail || emailDelivery === "local_fallback") body.dev_code = code;
     send(res, 200, body);
@@ -3794,6 +3856,42 @@ const api = {
     const token = await createCustomerSession(customer.id);
     audit("customer", "auth.google", { id: customer.id, uid: payload.sub });
     authResponse(req, res, 200, customer, token);
+  },
+
+  "DELETE /api/auth/account": async (req, res) => {
+    const customer = await customerFromRequest(req);
+    if (!customer) return fail(res, 401, "unauthorized");
+    if (!rateLimit("customer-delete:" + customer.id, 5, 24 * 3600e3)) return fail(res, 429, "rate_limited");
+    const b = await readJson(req, 4e3);
+    if (String(b.confirmation || "").trim().toUpperCase() !== "DELETE") {
+      return fail(res, 400, "delete_confirmation");
+    }
+    const emailHash = sha256(normalizeEmail(customer.email)).slice(0, 16);
+    const customerId = customer.id;
+    await deleteCustomerAccount(customer);
+    audit("customer", "auth.account_deleted", { id: customerId, email_hash: emailHash, source: "authenticated" });
+    send(res, 200, { ok: true }, { "Set-Cookie": customerCookie(req, "x", 0) });
+  },
+
+  "POST /api/auth/account/delete-with-code": async (req, res) => {
+    if (!rateLimit("customer-delete-code:" + ipOf(req), 8, 24 * 3600e3)) return fail(res, 429, "rate_limited");
+    const b = await readJson(req, 8e3);
+    const email = normalizeEmail(b.email);
+    const code = str(b.code || b.email_code, 12);
+    if (!emailOk(email) || !/^\d{6}$/.test(code)) return fail(res, 400, "otp");
+    if (String(b.confirmation || "").trim().toUpperCase() !== "DELETE") {
+      return fail(res, 400, "delete_confirmation");
+    }
+    const customer = postgresCommerce
+      ? await postgresCommerce.customerByEmail(email)
+      : db.prepare("SELECT * FROM customers WHERE email=?").get(email);
+    const otpError = await verifyEmailOtpForDeletion(email, code);
+    if (!customer || otpError) return fail(res, otpError === "otp_locked" ? 429 : 401, otpError || "otp_wrong");
+    const emailHash = sha256(email).slice(0, 16);
+    const customerId = customer.id;
+    await deleteCustomerAccount(customer);
+    audit("customer", "auth.account_deleted", { id: customerId, email_hash: emailHash, source: "email_code" });
+    send(res, 200, { ok: true }, { "Set-Cookie": customerCookie(req, "x", 0) });
   },
 
   "POST /api/auth/logout": async (req, res) => {
@@ -5448,7 +5546,10 @@ const PAGE_ALIASES = {
   "/signin": storefrontPage("signin.html"),
   "/signup": storefrontPage("signin.html"),
   "/account": storefrontPage("signin.html"),
+  "/account/delete": "account-delete.html",
+  "/delete-account": "account-delete.html",
   "/checkout": storefrontPage("shop.html"),
+  "/privacy": "privacy.html",
   "/terms": "terms.html",
   "/ordering": "ordering.html",
 };
@@ -5492,7 +5593,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method !== "GET" && req.method !== "HEAD") return fail(res, 405, "method_not_allowed");
 
     if (pathname === "/robots.txt") {
-      const body = `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /account\nDisallow: /checkout\nDisallow: /signin\nDisallow: /signup\n\nSitemap: ${SITE_ORIGIN}/sitemap.xml\n`;
+      const body = `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\nDisallow: /account\nDisallow: /delete-account\nDisallow: /checkout\nDisallow: /signin\nDisallow: /signup\n\nSitemap: ${SITE_ORIGIN}/sitemap.xml\n`;
       return sendText(req, res, 200, body, "text/plain; charset=utf-8", "public, max-age=3600");
     }
 

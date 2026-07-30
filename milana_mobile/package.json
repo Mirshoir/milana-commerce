@@ -9,9 +9,11 @@
     "prepare:android": "npm run prepare:mobile",
     "android:sync": "npm run prepare:mobile && npx cap sync android",
     "android:debug": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "android:bundle": "npm run android:sync && cd android && ./gradlew bundleRelease",
     "ios:sync": "npm run prepare:mobile && npx cap sync ios",
     "mobile:sync": "npm run prepare:mobile && npx cap sync",
     "check:production": "node scripts/production-check.js",
+    "check:store": "node scripts/store-readiness.js",
     "test": "node --test && npm run check:production"
   },
   "engines": {

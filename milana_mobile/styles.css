@@ -873,6 +873,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .auth-code-row button,
 .auth-submit,
 .auth-google,
+.auth-apple,
 .logout-btn {
   min-height: 44px;
   border-radius: 13px;
@@ -885,7 +886,8 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
   border: 1px solid rgba(163, 69, 60, .48);
   font-size: 12.5px;
 }
-.auth-google {
+.auth-google,
+.auth-apple {
   background: #fff;
   color: #161a1d;
   border: 1px solid rgba(255,255,255,.32);
@@ -895,8 +897,15 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
   justify-content: center;
   gap: 10px;
 }
-.auth-google[hidden] { display: none; }
-.auth-google:disabled { opacity: .68; }
+.auth-apple {
+  background: #050505;
+  color: #fff;
+  border-color: rgba(255,255,255,.22);
+}
+.auth-google[hidden],
+.auth-apple[hidden] { display: none; }
+.auth-google:disabled,
+.auth-apple:disabled { opacity: .68; }
 .google-mark {
   width: 22px;
   height: 22px;
@@ -908,6 +917,14 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
   font-family: Arial, sans-serif;
   font-weight: 700;
   box-shadow: 0 0 0 1px rgba(0,0,0,.08);
+}
+.apple-mark {
+  width: 22px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 13px;
+  color: #fff;
 }
 .auth-check {
   display: flex !important;
@@ -924,6 +941,11 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
   min-height: 18px;
   height: 18px;
   flex: 0 0 18px;
+}
+.auth-check a {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .auth-message {
   color: #ff9a9a;
@@ -983,8 +1005,12 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
   color: var(--text); text-align: left;
   border-bottom: 1px solid var(--line);
 }
+.menu-list a.menu-item,
+.settings-section a.menu-item { text-decoration: none; }
 .menu-item svg { width: 21px; height: 21px; color: var(--text-2); }
 .menu-item .chev { margin-left: auto; color: var(--text-3); font-size: 20px; }
+.delete-account-item,
+.delete-account-item svg { color: #ef8f87; }
 
 /* ============ settings ============ */
 .settings-section {
@@ -1471,7 +1497,7 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 /* Refined account entry */
 #screen-profile .profile-card, #screen-profile .auth-panel { border-radius: 7px; }
 #screen-profile .auth-tabs { border-radius: 5px; }
-#screen-profile .auth-tabs button, #screen-profile .auth-submit, #screen-profile .auth-google { border-radius: 4px; }
+#screen-profile .auth-tabs button, #screen-profile .auth-submit, #screen-profile .auth-google, #screen-profile .auth-apple { border-radius: 4px; }
 #screen-profile .auth-form input { border-radius: 4px; }
 
 /* Six destinations remain comfortably tappable. */
@@ -1595,6 +1621,24 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .checkout-submit {
   background: #FF3338;
   color: #080D28;
+}
+.delete-account-card {
+  background: #111516;
+  border-color: rgba(239, 91, 78, .48);
+}
+.delete-account-card .checkout-head p { color: #ef8f87; }
+.delete-account-warning {
+  margin: 22px 0 18px;
+  border-left: 3px solid #ef5b4e;
+  background: rgba(239, 91, 78, .09);
+  padding: 14px 15px;
+  color: rgba(244,242,239,.76);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.delete-account-submit {
+  background: #b53f36;
+  color: #fff;
 }
 
 .success-overlay[hidden] { display: none; }

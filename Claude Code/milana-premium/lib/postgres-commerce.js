@@ -170,6 +170,48 @@ class PostgresCommerce {
     await this.pool.query("DELETE FROM customer_sessions WHERE customer_id=$1", [customerId]);
   }
 
+  async deleteCustomerAccount(customer) {
+    const client = await this.pool.connect();
+    const deletedCustomer = {
+      name: "Deleted customer",
+      email: "",
+      phone: "",
+      city: "",
+      address: "",
+      deleted: true,
+    };
+    try {
+      await client.query("BEGIN");
+      await client.query(
+        "UPDATE orders SET customer_id=NULL, customer=$2::jsonb, updated_at=now() WHERE customer_id=$1",
+        [customer.id, JSON.stringify(deletedCustomer)],
+      );
+      await client.query(`
+        UPDATE support_requests
+        SET customer_id=NULL, name='Deleted customer', phone='', email='',
+            message='[Deleted at customer request]', updated_at=now()
+        WHERE customer_id=$1
+      `, [customer.id]);
+      await client.query("DELETE FROM chat_sessions WHERE customer_id=$1", [customer.id]);
+      await client.query("DELETE FROM reviews WHERE customer_id=$1", [customer.id]);
+      await client.query("DELETE FROM likes WHERE customer_id=$1", [customer.id]);
+      await client.query("DELETE FROM customer_coupons WHERE customer_id=$1", [customer.id]);
+      await client.query("DELETE FROM customer_sessions WHERE customer_id=$1", [customer.id]);
+      await client.query("DELETE FROM email_otps WHERE email=$1", [customer.email]);
+      await client.query("DELETE FROM subscribers WHERE email=$1", [customer.email]);
+      if (customer.phone) await client.query("DELETE FROM phone_otps WHERE phone=$1", [customer.phone.replace(/\D/g, "")]);
+      const result = await client.query("DELETE FROM customers WHERE id=$1", [customer.id]);
+      if (result.rowCount !== 1) throw new Error("customer_delete_failed");
+      await client.query("COMMIT");
+      return true;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async updateCustomerProfile(id, profile) {
     return (await this.pool.query(`
       UPDATE customers SET name=$1, phone=$2, city=$3, address=$4, updated_at=now()

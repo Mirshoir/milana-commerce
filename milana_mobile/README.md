@@ -54,8 +54,9 @@ website API, whose production database source is SQLite.
 | `POST` | `/api/auth/signup` | Customer account creation |
 | `POST` | `/api/auth/email-otp/start` | Email verification code for signup and forgot key |
 | `POST` | `/api/auth/recover` | Reset customer key/password |
-| `POST` | `/api/auth/firebase` | Google/Firebase customer sign-in when website Firebase config is enabled |
+| `POST` | `/api/auth/firebase` | Google or Apple/Firebase customer sign-in when configured |
 | `POST` | `/api/auth/logout` | Customer logout |
+| `DELETE` | `/api/auth/account` | Delete the signed-in customer account and anonymize retained order records |
 | `GET` | `/api/auth/orders` | Signed-in customer orders |
 | `GET` / `PUT` | `/api/wishlist` | Wishlist IDs/products for the current browser session |
 | `POST` | `/api/orders` | Creates an order in the website backend database |
@@ -75,7 +76,8 @@ website API, whose production database source is SQLite.
 
 - Paginated, API-backed catalog with remote search and stable deep links
 - Working cart and cross-device wishlist; native auth tokens stay out of browser storage
-- Customer auth, email-code signup, logout, Google/Firebase sign-in when configured, and forgot key/password recovery through the website backend
+- Customer auth, email-code signup, logout, Google and Apple/Firebase sign-in when configured, and forgot key/password recovery through the website backend
+- In-app account deletion plus a public email-code deletion path at `https://milanapremium.uz/account/delete`
 - Offline detection, retry UI, request timeouts, and safe network retries
 - Category tabs, color/size selection, cart badge with bump animation
 - Qop/qadoq cart unit selection with website-matching totals
@@ -88,20 +90,27 @@ website API, whose production database source is SQLite.
 npm test
 npm run mobile:sync
 npm run android:debug
+npm run check:store
 ```
 
 `npm test` runs behavior checks and a native production preflight. Android debug
-and unsigned release APKs can be built without release credentials. The iOS
-project can be compiled for Simulator without an Apple signing identity.
+builds can run without release credentials. Release App Bundles intentionally
+fail until the ignored upload-keystore configuration and Android Firebase file
+are present. The iOS project can be compiled for Simulator without an Apple
+signing identity.
 
-## Deferred Release Credentials
+`npm run check:store` is the strict publication gate. It remains red until
+private native Firebase/signing files, current Xcode, Apple membership, Play
+account verification, the required Play closed test, and production access are
+all genuinely complete. See [`store/README.md`](store/README.md).
 
-The following are intentionally completed at signed-release time and must not be
-committed to the repository:
+## Private Release Credentials
 
-- Android upload keystore, Play App Signing configuration, and signed `.aab`
+The following must not be committed to the repository:
+
+- Android upload keystore, `android/key.properties`, and signed `.aab`
 - Android Firebase `google-services.json` plus release SHA-1/SHA-256 fingerprints
-- Apple Developer team, distribution certificate, provisioning profile, and App Store metadata
+- Apple distribution certificate and provisioning profile
 - iOS Firebase `GoogleService-Info.plist` and Google reversed-client URL scheme
 
 ## Structure

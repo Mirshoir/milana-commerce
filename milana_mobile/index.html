@@ -339,6 +339,10 @@
           <span class="google-mark">G</span>
           <span data-google-label>Continue with Google</span>
         </button>
+        <button class="auth-apple" type="button" id="btn-apple-auth" hidden>
+          <span class="apple-mark" aria-hidden="true">●</span>
+          <span data-apple-label>Continue with Apple</span>
+        </button>
 
         <form class="auth-form active" id="auth-signin" data-auth-form="signin" novalidate>
           <label>Email<input name="email" type="email" autocomplete="email" placeholder="you@example.com" required></label>
@@ -359,7 +363,10 @@
           <label>City / region<input name="city" autocomplete="address-level2" maxlength="80" placeholder="Tashkent"></label>
           <label>Delivery address<input name="address" autocomplete="street-address" maxlength="300" placeholder="Street, building, landmark"></label>
           <input type="hidden" name="account_type" value="individual">
-          <label class="auth-check"><input name="terms" type="checkbox" value="1" required><span>I agree to create a Milana customer account.</span></label>
+          <label class="auth-check">
+            <input name="terms" type="checkbox" value="1" required>
+            <span>I agree to create a Milana customer account. <a href="https://milanapremium.uz/terms" target="_blank" rel="noopener">Terms</a> · <a href="https://milanapremium.uz/privacy" target="_blank" rel="noopener">Privacy</a></span>
+          </label>
           <p class="auth-message" data-auth-message="signup" hidden></p>
           <button class="auth-submit" type="submit">Create account</button>
         </form>
@@ -389,7 +396,9 @@
         <button class="menu-item" data-action="payment"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>Payment Methods<span class="chev">›</span></button>
         <button class="menu-item" data-action="delivery"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.4-7-10a7 7 0 0 1 14 0c0 5.6-7 10-7 10z"/><circle cx="12" cy="11" r="2.5"/></svg>Delivery Address<span class="chev">›</span></button>
         <button class="menu-item" data-action="support"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></svg>Help &amp; Support<span class="chev">›</span></button>
+        <a class="menu-item" href="https://milanapremium.uz/privacy" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.8 2.8 8.2 7 10 4.2-1.8 7-5.2 7-10V6z"/><path d="M9.5 12 11 13.5l3.5-4"/></svg><span data-privacy-label>Privacy Policy</span><span class="chev">›</span></a>
         <button class="menu-item" data-nav="settings"><svg viewBox="0 0 24 24"><path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5z"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2 3.4-.2-.1a1.7 1.7 0 0 0-1.9.1 7.7 7.7 0 0 1-1.7 1 1.7 1.7 0 0 0-1.1 1.6v.2H9.1V23A1.7 1.7 0 0 0 8 21.4a7.7 7.7 0 0 1-1.7-1 1.7 1.7 0 0 0-1.9-.1l-.2.1-2-3.4.1-.1A1.7 1.7 0 0 0 2.6 15a7.8 7.8 0 0 1 0-2 1.7 1.7 0 0 0-.3-1.9l-.1-.1 2-3.4.2.1a1.7 1.7 0 0 0 1.9-.1 7.7 7.7 0 0 1 1.7-1A1.7 1.7 0 0 0 9.1 5V4.8h3.8V5A1.7 1.7 0 0 0 14 6.6a7.7 7.7 0 0 1 1.7 1 1.7 1.7 0 0 0 1.9.1l.2-.1 2 3.4-.1.1a1.7 1.7 0 0 0-.3 1.9 7.8 7.8 0 0 1 0 2z"/></svg>Settings<span class="chev">›</span></button>
+        <button class="menu-item delete-account-item" id="btn-delete-account" hidden><svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6"/></svg><span data-delete-label>Delete Account</span><span class="chev">›</span></button>
       </div>
     <div class="bottom-spacer"></div>
     </main>
@@ -409,6 +418,8 @@
         <h3>Account</h3>
         <button class="menu-item" data-nav="profile"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M5 20c1-3.6 3.8-5.4 7-5.4S18 16.4 19 20"/></svg>Login and profile<span class="chev">›</span></button>
         <button class="menu-item" id="btn-settings-orders"><svg viewBox="0 0 24 24"><path d="M6 7h12l1 14H5L6 7z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/></svg>Orders<span class="chev">›</span></button>
+        <a class="menu-item" href="https://milanapremium.uz/terms" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6z"/><path d="M9 11h6M9 15h6M9 7h3"/></svg><span data-terms-label>Terms of Use</span><span class="chev">›</span></a>
+        <a class="menu-item" href="https://milanapremium.uz/privacy" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 4.8 2.8 8.2 7 10 4.2-1.8 7-5.2 7-10V6z"/><path d="M9.5 12 11 13.5l3.5-4"/></svg><span data-privacy-label>Privacy Policy</span><span class="chev">›</span></a>
       </div>
       <div class="settings-section">
         <h3>Language</h3>
@@ -596,6 +607,28 @@
       <p>Thank you for shopping with<br>Milana Premium.</p>
       <button class="primary-btn slim" id="btn-success-done">Continue Shopping</button>
     </div>
+  </div>
+
+  <div class="checkout-overlay" id="delete-account-overlay" hidden>
+    <form class="checkout-card delete-account-card" id="delete-account-form" novalidate>
+      <div class="checkout-head">
+        <div>
+          <p>MILANA PREMIUM</p>
+          <h2 id="delete-account-title">Delete Account</h2>
+          <span id="delete-account-copy">This permanently removes your profile, sessions, saved items, reviews and coupons.</span>
+        </div>
+        <button type="button" class="checkout-x" id="btn-delete-account-close" aria-label="Close">×</button>
+      </div>
+      <div class="delete-account-warning" id="delete-account-warning">Required order records are retained only after your personal details are anonymized.</div>
+      <label id="delete-account-confirm-label">Type DELETE to confirm
+        <input name="confirmation" autocomplete="off" placeholder="DELETE" required>
+      </label>
+      <p class="checkout-error" id="delete-account-error" hidden></p>
+      <div class="checkout-actions">
+        <button type="button" class="checkout-cancel" id="btn-delete-account-cancel">Cancel</button>
+        <button type="submit" class="checkout-submit delete-account-submit">Permanently delete</button>
+      </div>
+    </form>
   </div>
 
   <div class="media-fullscreen" id="media-fullscreen" hidden>

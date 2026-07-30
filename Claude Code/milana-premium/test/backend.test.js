@@ -1160,3 +1160,165 @@ test("public API, order placement, newsletter, and admin protections work", asyn
   );
   assert.equal(supportDone.status, 200);
 });
+
+test("customer account deletion removes personal data and anonymizes required records", async (t) => {
+  const app = await startServer(t);
+  const sqlite = new DatabaseSync(path.join(app.dataDir, "milana.db"));
+  t.after(() => sqlite.close());
+
+  const email = "delete-me@example.com";
+  const phone = "+998 90 555 66 77";
+  const otpStart = await json(app.base + "/api/auth/email-otp/start", {
+    email,
+    purpose: "password_recovery",
+    lang: "en",
+  });
+  assert.equal(otpStart.status, 200);
+  const signupCode = (await otpStart.json()).dev_code;
+
+  const signup = await json(app.base + "/api/auth/signup", {
+    account_type: "individual",
+    terms: true,
+    name: "Deletion Customer",
+    phone,
+    city: "Tashkent",
+    address: "Amir Temur 12",
+    email,
+    password: "delete-me-2026",
+    email_code: signupCode,
+  });
+  assert.equal(signup.status, 201);
+  const signupBody = await signup.json();
+  const customer = signupBody.customer;
+  const token = signupBody.session_token;
+
+  const product = (await (await fetch(app.base + "/api/products?limit=1")).json())[0];
+  const orderCustomer = {
+    name: customer.name,
+    email,
+    phone,
+    city: customer.city,
+    address: customer.address,
+  };
+  sqlite.prepare(`
+    INSERT INTO orders (number, customer_id, customer, items, total, status)
+    VALUES (?,?,?,?,?,'new')
+  `).run(
+    "MP-DELETE-0001",
+    customer.id,
+    JSON.stringify(orderCustomer),
+    JSON.stringify([{ id: product.id, name: product.name, qty: 1 }]),
+    10,
+  );
+  sqlite.prepare(`
+    INSERT INTO support_requests
+      (number, customer_id, name, phone, email, topic, message)
+    VALUES (?,?,?,?,?,'general',?)
+  `).run("MS-DELETE-0001", customer.id, customer.name, phone, email, "Please delete my profile");
+  sqlite.prepare(`
+    INSERT INTO reviews (product_id, product_slug, customer_id, rating, comment)
+    VALUES (?,?,?,?,?)
+  `).run(product.id, product.slug, customer.id, 5, "Personal review");
+  sqlite.prepare(`
+    INSERT INTO likes (customer_id, product_id, product_slug)
+    VALUES (?,?,?)
+  `).run(customer.id, product.id, product.slug);
+  sqlite.prepare(`
+    INSERT INTO customer_coupons
+      (customer_id, code, title, description, discount_type, value)
+    VALUES (?,?,?,?,?,?)
+  `).run(customer.id, "DELETE10", "Personal coupon", "Customer-only coupon", "percent", 10);
+  const chat = sqlite.prepare(`
+    INSERT INTO chat_sessions (customer_id, visitor_name, visitor_phone, visitor_email)
+    VALUES (?,?,?,?)
+  `).run(customer.id, customer.name, phone, email);
+  sqlite.prepare(`
+    INSERT INTO chat_messages (session_id, sender_type, message)
+    VALUES (?,'customer','Private support message')
+  `).run(chat.lastInsertRowid);
+  sqlite.prepare(`
+    INSERT INTO subscribers (email, lang, source)
+    VALUES (?,'en','account')
+  `).run(email);
+
+  const missingConfirmation = await json(app.base + "/api/auth/account", { confirmation: "yes" }, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}`, Origin: app.base },
+  });
+  assert.equal(missingConfirmation.status, 400);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM customers WHERE id=?").get(customer.id).c, 1);
+
+  const deletion = await json(app.base + "/api/auth/account", { confirmation: "DELETE" }, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}`, Origin: app.base },
+  });
+  assert.equal(deletion.status, 200);
+  assert.equal((await deletion.json()).ok, true);
+
+  for (const table of ["customers", "customer_sessions", "reviews", "likes", "customer_coupons", "chat_sessions"]) {
+    assert.equal(
+      sqlite.prepare(`SELECT COUNT(*) AS c FROM ${table} WHERE ${table === "customers" ? "id" : "customer_id"}=?`).get(customer.id).c,
+      0,
+      `${table} customer data should be removed`,
+    );
+  }
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM email_otps WHERE email=?").get(email).c, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM subscribers WHERE email=?").get(email).c, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM chat_messages WHERE session_id=?").get(chat.lastInsertRowid).c, 0);
+
+  const retainedOrder = sqlite.prepare("SELECT customer_id, customer FROM orders WHERE number='MP-DELETE-0001'").get();
+  assert.equal(retainedOrder.customer_id, null);
+  assert.deepEqual(JSON.parse(retainedOrder.customer), {
+    name: "Deleted customer",
+    email: "",
+    phone: "",
+    city: "",
+    address: "",
+    deleted: true,
+  });
+  const retainedSupport = sqlite.prepare(`
+    SELECT customer_id, name, phone, email, message
+    FROM support_requests WHERE number='MS-DELETE-0001'
+  `).get();
+  assert.deepEqual({ ...retainedSupport }, {
+    customer_id: null,
+    name: "Deleted customer",
+    phone: "",
+    email: "",
+    message: "[Deleted at customer request]",
+  });
+
+  const deletedSession = await fetch(app.base + "/api/auth/me", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assert.equal(deletedSession.status, 200);
+  assert.equal((await deletedSession.json()).customer, null);
+
+  const webEmail = "delete-by-code@example.com";
+  const webSignupOtp = await json(app.base + "/api/auth/email-otp/start", { email: webEmail, lang: "en" });
+  const webSignupCode = (await webSignupOtp.json()).dev_code;
+  const webSignup = await json(app.base + "/api/auth/signup", {
+    account_type: "individual",
+    terms: true,
+    name: "Web Deletion Customer",
+    email: webEmail,
+    password: "delete-web-2026",
+    email_code: webSignupCode,
+  });
+  assert.equal(webSignup.status, 201);
+
+  const deleteOtp = await json(app.base + "/api/auth/email-otp/start", {
+    email: webEmail,
+    purpose: "account_deletion",
+    lang: "en",
+  });
+  assert.equal(deleteOtp.status, 200);
+  const deleteCode = (await deleteOtp.json()).dev_code;
+  const webDeletion = await json(app.base + "/api/auth/account/delete-with-code", {
+    email: webEmail,
+    code: deleteCode,
+    confirmation: "DELETE",
+  }, { headers: { Origin: app.base } });
+  assert.equal(webDeletion.status, 200);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS c FROM customers WHERE email=?").get(webEmail).c, 0);
+});
