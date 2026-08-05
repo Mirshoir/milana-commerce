@@ -12,14 +12,49 @@ service cloud.firestore {
 
     function validCustomerProfile(customerId) {
       return ownsCustomerDoc(customerId) &&
-        request.resource.data.keys().hasAll(['email', 'name', 'phone', 'updated_at']) &&
+        request.resource.data.keys().hasAll([
+          'email', 'name', 'phone', 'city', 'address', 'status',
+          'created_at', 'updated_at'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'email', 'name', 'phone', 'city', 'address', 'status',
+          'saved_product_ids', 'recent_product_ids', 'cart_items',
+          'legal_consent_version', 'legal_accepted_at',
+          'created_at', 'updated_at'
+        ]) &&
         isText(request.resource.data.email, 120) &&
+        request.auth.token.email is string &&
+        request.resource.data.email == request.auth.token.email &&
         isText(request.resource.data.name, 80) &&
+        request.resource.data.name.size() >= 2 &&
         isText(request.resource.data.phone, 25) &&
+        (request.resource.data.phone.size() == 0 ||
+          request.resource.data.phone.size() >= 5) &&
+        request.resource.data.status == 'active' &&
+        isText(request.resource.data.created_at, 40) &&
+        isText(request.resource.data.updated_at, 40) &&
+        validLegalConsent() &&
         validCustomerDeliveryProfile() &&
         validSavedProducts() &&
         validRecentProducts() &&
         validProfileCart();
+    }
+
+    function validLegalConsent() {
+      return (!request.resource.data.keys().hasAny(['legal_consent_version']) ||
+          isText(request.resource.data.legal_consent_version, 40)) &&
+        (!request.resource.data.keys().hasAny(['legal_accepted_at']) ||
+          isText(request.resource.data.legal_accepted_at, 40));
+    }
+
+    function immutableCustomerAuditFields() {
+      return request.resource.data.email == resource.data.email &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.created_at == resource.data.created_at &&
+        request.resource.data.get('legal_consent_version', null) ==
+          resource.data.get('legal_consent_version', null) &&
+        request.resource.data.get('legal_accepted_at', null) ==
+          resource.data.get('legal_accepted_at', null);
     }
 
     function validCustomerDeliveryProfile() {
@@ -65,7 +100,9 @@ service cloud.firestore {
 
     match /customers/{customerId} {
       allow read: if ownsCustomerDoc(customerId);
-      allow create, update: if validCustomerProfile(customerId);
+      allow create: if validCustomerProfile(customerId);
+      allow update: if validCustomerProfile(customerId) &&
+        immutableCustomerAuditFields();
       allow delete: if false;
     }
 

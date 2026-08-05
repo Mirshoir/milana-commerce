@@ -36,6 +36,47 @@ const {
   verifyPaymentWebhookSignature,
 } = require('../payment');
 const { normalizeAckRequest, normalizeClaimRequest } = require('../erp');
+const {
+  defaultPublicApiBaseUrl,
+  publicApiBaseUrl,
+  requestPublicApi,
+} = require('../public_api');
+
+test('public API proxy uses production HTTPS and preserves manager routing', async () => {
+  assert.equal(publicApiBaseUrl(), defaultPublicApiBaseUrl);
+  assert.throws(
+    () => publicApiBaseUrl('http://example.com'),
+    /invalid-public-api-url/,
+  );
+
+  const requests = [];
+  const result = await requestPublicApi({
+    path: '/api/orders',
+    method: 'POST',
+    data: { manager_id: 4, source: 'flutter' },
+    headers: { Authorization: 'Bearer website-session' },
+    fetchImpl: async (url, options) => {
+      requests.push({ url, options });
+      return {
+        ok: true,
+        status: 201,
+        json: async () => ({ number: 'MP-2026-0001' }),
+      };
+    },
+  });
+
+  assert.equal(requests[0].url, 'https://milanapremium.uz/api/orders');
+  assert.equal(
+    requests[0].options.headers.Authorization,
+    'Bearer website-session',
+  );
+  assert.deepEqual(JSON.parse(requests[0].options.body), {
+    manager_id: 4,
+    source: 'flutter',
+  });
+  assert.equal(result.status, 201);
+  assert.equal(result.body.number, 'MP-2026-0001');
+});
 
 test('normalizes checkout and calculates one-qop total server-side', () => {
   const request = normalizeRequest({

@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "allowedStatuses": ["unknown", "not-applicable", "owner-approved"],
+  "sets": [
+    {
+      "id": "google-play-phone-en-US",
+      "platform": "android",
+      "store": "google-play",
+      "locale": "en-US",
+      "deviceClass": "phone",
+      "directory": "store/google-play/screenshots/en-US/phone",
+      "requiredForSubmission": true,
+      "minimum": 4,
+      "maximum": 8,
+      "recommendedPortraitSize": [1080, 1920],
+      "approval": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Four polished physical-device captures are planned but not yet available.",
+        "evidence": [],
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      "images": []
+    },
+    {
+      "id": "google-play-phone-ru-RU",
+      "platform": "android",
+      "store": "google-play",
+      "locale": "ru-RU",
+      "deviceClass": "phone",
+      "directory": "store/google-play/screenshots/ru-RU/phone",
+      "requiredForSubmission": false,
+      "minimum": 4,
+      "maximum": 8,
+      "recommendedPortraitSize": [1080, 1920],
+      "approval": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Localized Russian captions are recommended after the primary set is approved.",
+        "evidence": [],
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      "images": []
+    },
+    {
+      "id": "app-store-iphone-en-US",
+      "platform": "ios",
+      "store": "app-store",
+      "locale": "en-US",
+      "deviceClass": "iphone-6.9",
+      "directory": "store/app-store/screenshots/en-US/iphone-6.9",
+      "requiredForSubmission": true,
+      "minimum": 1,
+      "maximum": 10,
+      "acceptedPortraitSizes": [[1260, 2736], [1290, 2796], [1320, 2868]],
+      "approval": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "A highest-resolution physical iPhone capture set is not yet available.",
+        "evidence": [],
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      "images": []
+    },
+    {
+      "id": "app-store-ipad-en-US",
+      "platform": "ios",
+      "store": "app-store",
+      "locale": "en-US",
+      "deviceClass": "ipad-13",
+      "directory": "store/app-store/screenshots/en-US/ipad-13",
+      "requiredForSubmission": true,
+      "minimum": 1,
+      "maximum": 10,
+      "acceptedPortraitSizes": [[2048, 2732], [2064, 2752]],
+      "approval": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "The universal binary requires an approved highest-resolution iPad set.",
+        "evidence": [{"kind": "source-code", "ref": "ios/Runner.xcodeproj/project.pbxproj"}],
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      "images": []
+    },
+    {
+      "id": "app-store-iphone-ru-RU",
+      "platform": "ios",
+      "store": "app-store",
+      "locale": "ru-RU",
+      "deviceClass": "iphone-6.9",
+      "directory": "store/app-store/screenshots/ru-RU/iphone-6.9",
+      "requiredForSubmission": false,
+      "minimum": 1,
+      "maximum": 10,
+      "acceptedPortraitSizes": [[1260, 2736], [1290, 2796], [1320, 2868]],
+      "approval": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Russian-localized captions are optional and not yet captured.",
+        "evidence": [],
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      "images": []
+    },
+    {
+      "id": "app-store-ipad-ru-RU",
+      "platform": "ios",
+      "store": "app-store",
+      "locale": "ru-RU",
+      "deviceClass": "ipad-13",
+      "directory": "store/app-store/screenshots/ru-RU/ipad-13",
+      "requiredForSubmission": false,
+      "minimum": 1,
+      "maximum": 10,
+      "acceptedPortraitSizes": [[2048, 2732], [2064, 2752]],
+      "approval": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Russian-localized captions are optional and not yet captured.",
+        "evidence": [],
+        "approvedBy": null,
+        "approvedAt": null
+      },
+      "images": []
+    }
+  ]
+}

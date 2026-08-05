@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:milana_flutter/src/services/auth_forms.dart';
 import 'package:milana_flutter/src/services/auth_service.dart';
+import 'package:milana_flutter/src/services/legal_links.dart';
 
 void main() {
   test('normalizeEmail trims and lowercases addresses', () {
@@ -51,6 +52,53 @@ void main() {
       contains('akkaunt mavjud'),
     );
     expect(authErrorMessage(Exception('weak-password')), contains('oddiy'));
+    expect(authErrorMessage(ArgumentError('Rozilik kerak.')), 'Rozilik kerak.');
+  });
+
+  test('legal links require public HTTPS destinations', () {
+    expect(isSecurePublicUrl('https://milanapremium.uz/privacy'), isTrue);
+    expect(isSecurePublicUrl('http://milanapremium.uz/privacy'), isFalse);
+    expect(isSecurePublicUrl('https://localhost/privacy'), isFalse);
+    expect(isSecurePublicUrl('https://preview.test/privacy'), isFalse);
+    expect(isSecurePublicUrl(supportUrl), isTrue);
+  });
+
+  test('account creation requires legal consent', () async {
+    final auth = AuthService(firebaseEnabled: false);
+    addTearDown(auth.dispose);
+
+    await expectLater(
+      auth.signUp(
+        name: 'Buyer',
+        phone: '+998 90 123 45 67',
+        email: 'buyer@example.com',
+        password: 'strong-pass',
+        legalAccepted: false,
+      ),
+      throwsA(isA<ArgumentError>()),
+    );
+    expect(auth.customer, isNull);
+  });
+
+  test('local account deletion is explicit and clears the session', () async {
+    final auth = AuthService(firebaseEnabled: false);
+    addTearDown(auth.dispose);
+    await auth.signUp(
+      name: 'Buyer',
+      phone: '+998 90 123 45 67',
+      email: 'buyer@example.com',
+      password: 'strong-pass',
+      legalAccepted: true,
+    );
+
+    await expectLater(
+      auth.deleteAccount(confirmation: 'keep'),
+      throwsA(isA<ArgumentError>()),
+    );
+    expect(auth.customer, isNotNull);
+
+    await auth.deleteAccount(confirmation: ' delete ');
+    expect(auth.customer, isNull);
   });
 
   test('local auth normalizes emails and accepts password reset', () async {
@@ -62,6 +110,7 @@ void main() {
       address: ' Qoratut 605 ',
       email: ' Buyer@Example.COM ',
       password: 'strong-pass',
+      legalAccepted: true,
     );
     expect(auth.customer?.email, 'buyer@example.com');
     expect(auth.customer?.phone, '+998 90 123 45 67');

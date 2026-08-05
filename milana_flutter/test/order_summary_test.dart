@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:milana_flutter/src/models/cart_item.dart';
 import 'package:milana_flutter/src/models/order.dart';
 
 void main() {
@@ -17,10 +18,11 @@ void main() {
           'model_no': 'F-2219',
           'variant': 'V-100',
           'qty': 2,
+          'unit_type': 'pachka',
           'unit_price': 4.5,
-          'bag_size': 60,
-          'price': 270,
-          'line_total': 540,
+          'bag_size': 6,
+          'price': 27,
+          'line_total': 54,
           'image': '/uploads/f-2219.jpg',
           'images': ['/uploads/f-2219.jpg'],
           'sizes': ['44', '46', '48', '50', '52', '54'],
@@ -65,10 +67,11 @@ void main() {
           'created_at': '2026-06-27T14:00:00.000Z',
         },
       ],
-    });
+    }, provenance: BackendProvenance.website);
 
     expect(order.number, 'MP-2026-ABCD');
     expect(order.id, 'order-1');
+    expect(order.provenance, BackendProvenance.website);
     expect(order.itemCount, 2);
     expect(order.items, hasLength(1));
     expect(order.items.first.name, 'F-2219');
@@ -76,9 +79,10 @@ void main() {
     expect(order.items.first.variant, 'V-100');
     expect(order.items.first.qty, 2);
     expect(order.items.first.unitPrice, 4.5);
-    expect(order.items.first.bagSize, 60);
-    expect(order.items.first.bagPrice, 270);
-    expect(order.items.first.lineTotal, 540);
+    expect(order.items.first.unitType, packUnitType);
+    expect(order.items.first.bagSize, 6);
+    expect(order.items.first.bagPrice, 27);
+    expect(order.items.first.lineTotal, 54);
     expect(order.items.first.image, '/uploads/f-2219.jpg');
     expect(order.items.first.images, ['/uploads/f-2219.jpg']);
     expect(order.items.first.sizes, ['44', '46', '48', '50', '52', '54']);
@@ -91,6 +95,8 @@ void main() {
     expect(cartItem.product.price, 4.5);
     expect(cartItem.product.images, ['/uploads/f-2219.jpg']);
     expect(cartItem.quantity, 2);
+    expect(cartItem.unitType, packUnitType);
+    expect(cartItem.piecesPerUnit, 6);
     expect(order.total, 540);
     expect(order.status, 'confirmed');
     expect(order.paymentLabel, 'Payme');

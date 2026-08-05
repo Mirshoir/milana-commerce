@@ -14,6 +14,9 @@
   async function boot() {
     await window.I18N?.ready;
     document.querySelector("#year") && (document.querySelector("#year").textContent = new Date().getFullYear());
+    const requestedTopic = new URLSearchParams(window.location.search).get("topic");
+    const topicOption = form?.querySelector(`option[value="${CSS.escape(requestedTopic || "")}"]`);
+    if (topicOption) form.elements.topic.value = requestedTopic;
     const customer = window.MilanaAuth?.customer;
     if (customer) {
       form.elements.name.value = customer.name || "";

@@ -11,11 +11,12 @@ void main() {
     final bag = milanaSupportFaqs.firstWhere((faq) => faq.id == 'bag-size');
     final price = milanaSupportFaqs.firstWhere((faq) => faq.id == 'price');
 
-    expect(minimum.answer, contains('1 qop'));
-    expect(minimum.answer, contains('60 ta'));
+    expect(minimum.answer, contains('Qadoq odatda 6 ta'));
+    expect(minimum.answer, contains('standart qop esa 60 ta'));
     expect(bag.answer, contains('6 ta o‘lcham'));
     expect(bag.answer, contains('10 tadan'));
-    expect(price.answer, contains('60 × dona narxi'));
+    expect(price.answer, contains('Tanlangan qadoq yoki qop narxi'));
+    expect(price.answer, contains('dona soniga ko‘paytirib'));
   });
 
   test('filterSupportFaqs searches questions answers and keywords', () {

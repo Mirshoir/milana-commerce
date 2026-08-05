@@ -42,6 +42,7 @@ dependencies:
   cloud_functions: ^5.6.2
   shared_preferences: ^2.5.3
   cached_network_image: ^3.4.1
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
@@ -64,6 +65,14 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/hero-poster.jpg
+
+  fonts:
+    - family: MilanaDisplay
+      fonts:
+        - asset: assets/Anticva-Regular.otf
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -1,4 +1,3 @@
-import '../models/cart_item.dart';
 import '../models/order.dart';
 import '../models/support_ticket.dart';
 
@@ -7,9 +6,9 @@ class AccountOverview {
     required this.totalOrders,
     required this.activeOrders,
     required this.pendingPaymentOrders,
-    required this.totalQop,
-    required this.activeQop,
-    required this.activeClothes,
+    required this.totalPackages,
+    required this.activePackages,
+    required this.activePieces,
     required this.confirmedSpend,
     required this.openSupportTickets,
     this.latestOrderAt,
@@ -18,9 +17,9 @@ class AccountOverview {
   final int totalOrders;
   final int activeOrders;
   final int pendingPaymentOrders;
-  final int totalQop;
-  final int activeQop;
-  final int activeClothes;
+  final int totalPackages;
+  final int activePackages;
+  final int activePieces;
   final double confirmedSpend;
   final int openSupportTickets;
   final DateTime? latestOrderAt;
@@ -33,12 +32,22 @@ AccountOverview buildAccountOverview({
   required List<SupportTicketSummary> supportTickets,
 }) {
   final activeOrders = orders.where((order) => !isClosedOrder(order)).toList();
-  final totalQop = orders
+  int packages(OrderSummary order) => order.items.isEmpty
+      ? order.itemCount
+      : order.items.fold(0, (sum, item) => sum + item.qty);
+  int pieces(OrderSummary order) => order.items.isEmpty
+      ? order.itemCount * 60
+      : order.items.fold(0, (sum, item) => sum + item.qty * item.bagSize);
+  final totalPackages = orders
       .where((order) => order.status != 'cancelled' && order.status != 'failed')
-      .fold<int>(0, (sum, order) => sum + order.itemCount);
-  final activeQop = activeOrders.fold<int>(
+      .fold<int>(0, (sum, order) => sum + packages(order));
+  final activePackages = activeOrders.fold<int>(
     0,
-    (sum, order) => sum + order.itemCount,
+    (sum, order) => sum + packages(order),
+  );
+  final activePieces = activeOrders.fold<int>(
+    0,
+    (sum, order) => sum + pieces(order),
   );
   final paidSpend = orders
       .where((order) => order.paymentStatus == 'paid')
@@ -63,9 +72,9 @@ AccountOverview buildAccountOverview({
           }.contains(order.paymentStatus),
         )
         .length,
-    totalQop: totalQop,
-    activeQop: activeQop,
-    activeClothes: activeQop * bagSize,
+    totalPackages: totalPackages,
+    activePackages: activePackages,
+    activePieces: activePieces,
     confirmedSpend: double.parse(paidSpend.toStringAsFixed(2)),
     openSupportTickets: supportTickets
         .where(

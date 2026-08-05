@@ -1,191 +1,360 @@
-<!doctype html>
-<html lang="en" class="no-js">
+<!DOCTYPE html>
+<html lang="ru">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sign in — MILANA PREMIUM</title>
-  <meta name="description" content="Sign in or create a MILANA PREMIUM wholesale customer account.">
-  <meta name="theme-color" content="#5c1f2d">
-  <link rel="icon" href="/favicon.ico?v=20260713-white-icon" sizes="any">
-  <link rel="icon" type="image/png" sizes="64x64" href="/assets/icons/milana-favicon.png?v=20260713-white-icon">
-  <link rel="apple-touch-icon" href="/assets/icons/milana-apple-touch.png?v=20260713-white-icon">
-  <link rel="stylesheet" href="/css/fonts.css">
-  <link rel="stylesheet" href="/css/style.css?v=20260702-responsive1">
-  <link rel="stylesheet" href="/css/shop.css?v=20260703-zoom1">
-  <link rel="stylesheet" href="/css/auth-modern.css?v=20260710-auth3">
-  <script>document.documentElement.classList.replace('no-js','js');</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Вход и личный кабинет — MILANA PREMIUM</title>
+  <meta name="description" content="Вход или регистрация в MILANA PREMIUM: история заказов, сохранённые модели и данные доставки в одном кабинете.">
+  <meta name="robots" content="noindex,follow">
+  <link rel="canonical" href="https://milanapremium.uz/signin">
+  <meta name="theme-color" content="#FFFFFF">
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/css/luxe.css?v=20260729-hardqa2">
+  <link rel="stylesheet" href="/css/luxe-pages.css?v=20260729-hardqa2">
 </head>
-<body class="auth-modern" data-keep-title="1">
-  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
-    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15M13 5.5 19.5 12 13 18.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
-    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M4 7h16l-1.3 11.2a2 2 0 0 1-2 1.8H7.3a2 2 0 0 1-2-1.8Z M8.5 9.5V6a3.5 3.5 0 0 1 7 0v3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
-    <symbol id="i-wa" viewBox="0 0 24 24"><path d="M12 3a9 9 0 0 0-7.8 13.5L3 21l4.7-1.2A9 9 0 1 0 12 3Zm4.4 12.6c-.2.6-1.2 1.1-1.7 1.1-.4.1-1 .1-1.6-.1a13 13 0 0 1-1.5-.5c-2.6-1.1-4.3-3.7-4.4-3.9-.1-.2-1.1-1.4-1.1-2.7 0-1.3.7-1.9.9-2.2.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.4l.9 2.1c.1.2.1.4 0 .6l-.4.6-.5.5c-.2.2-.3.4-.1.7.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.5 1.5.3.2.5.1.7-.1l1-1.2c.2-.3.4-.2.7-.1l2 1c.3.1.5.2.6.4 0 .1 0 .7-.2 1.2Z" fill="currentColor" fill-rule="evenodd"/></symbol>
-    <symbol id="i-tg" viewBox="0 0 24 24"><path d="m21 4.4-3 14.7c-.2.9-.8 1.1-1.6.7l-4.4-3.3-2.2 2.1c-.2.3-.4.5-.9.5l.3-4.6L17.7 7c.4-.3-.1-.5-.6-.2L7 13.3l-4.4-1.4c-1-.3-1-1 .2-1.4l17-6.6c.8-.3 1.5.2 1.2 1.5Z" fill="currentColor"/></symbol>
+<body data-keep-title="1" class="page-auth">
+
+  <!-- svg sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16M13 5l7 7-7 7"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M6 7h12l1.5 13.5H4.5L6 7ZM8.5 9.5V6a3.5 3.5 0 0 1 7 0v3.5"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.5S3.5 15.2 3.5 9.3C3.5 6.4 5.7 4.5 8 4.5c1.7 0 3.2.9 4 2.3.8-1.4 2.3-2.3 4-2.3 2.3 0 4.5 1.9 4.5 4.8 0 5.9-8.5 11.2-8.5 11.2Z"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.8 6.3.8-4.6 4.3 1.2 6.2L12 17l-5.6 3.1 1.2-6.2L3 9.6l6.3-.8L12 3Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.2-3.6 4.1-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6 3.5h4l1.5 5-2.5 1.5a12 12 0 0 0 5 5L15.5 12.5l5 1.5v4a2 2 0 0 1-2 2C9.6 20 4 14.4 4 5.5a2 2 0 0 1 2-2Z"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 3 10.5l7 3 3 7L21 3Z"/><path d="m10 14 4.5-4.5"/></symbol>
   </svg>
 
-  <div class="grain" aria-hidden="true"></div>
-
-  <header class="header is-solid">
-    <div class="header__inner">
-      <a class="brand" href="/" aria-label="Milana Premium — home">
-        <span class="brand__name">Milana</span>
-        <span class="brand__sup">Premium · Uzbekistan</span>
-      </a>
-      <nav class="nav" aria-label="Primary">
-        <a href="/shop" data-i18n="nav.shop">Shop</a>
-        <a href="/#collection" data-i18n="nav.collection">Collection</a>
-        <a href="/#categories" data-i18n="nav.categories">Categories</a>
-        <a href="/#maison" data-i18n="nav.maison">Brand</a>
-        <a href="/#wholesale" data-i18n="nav.wholesale">Wholesale</a>
-        <a href="/support" data-i18n="nav.support">Support</a>
-      </nav>
-      <div class="header__end">
-        <div class="lang" data-lang-mount></div>
-        <a class="header__tel" data-dyn="tel" href="tel:+998501551010">+998 50 155 10 10</a>
-        <a class="auth-link is-active" href="/signin" data-auth-link data-i18n="auth.signIn">Sign in</a>
-        <button class="cartbtn" data-cart-open aria-label="Cart">
+  <!-- header -->
+  <header class="header">
+    <div class="promo"><span data-i18n="best.ship">Оптовый заказ начинается с одной упаковки или одного мешка на модель · наличие подтверждает менеджер</span></div>
+    <div class="header__main">
+      <div class="header__side">
+        <button class="burger" aria-label="Открыть меню" aria-expanded="false"><i></i><i></i><i></i></button>
+        <button type="button" class="header__search" data-search-open><svg class="ic"><use href="#i-search"/></svg><span data-i18n="search.site">Поиск по сайту…</span></button>
+      </div>
+      <a class="logo" href="/" aria-label="Milana Premium">MILANA <span>Premium</span></a>
+      <div class="header__side header__side--r">
+        <div class="langsel">
+          <button type="button" class="langsel__btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Til / Язык / Language">
+            <span data-lang-current>RU</span>
+          </button>
+          <div class="lang langsel__menu" role="listbox">
+            <button type="button" data-lang="uz" role="option">O‘zbekcha</button>
+            <button type="button" data-lang="ru" role="option">Русский</button>
+            <button type="button" data-lang="en" role="option">English</button>
+          </div>
+        </div>
+        <a class="iconbtn" href="/signin" aria-label="Аккаунт"><svg class="ic"><use href="#i-user"/></svg></a>
+        <a class="iconbtn" href="/shop?wish=1" aria-label="Избранное" data-wish-link>
+          <svg class="ic"><use href="#i-heart"/></svg>
+          <span data-wish-count class="is-zero">0</span>
+        </a>
+        <button class="iconbtn" data-cart-open aria-label="Корзина">
           <svg class="ic"><use href="#i-cart"/></svg>
-          <i class="cartbtn__n is-zero" data-cart-count>0</i>
-        </button>
-        <button class="burger" aria-label="Open menu" aria-expanded="false" aria-controls="menu">
-          <span></span><span></span>
+          <span data-cart-count class="is-zero">0</span>
         </button>
       </div>
     </div>
   </header>
 
-  <div class="menu" id="menu" aria-hidden="true">
-    <nav class="menu__nav" aria-label="Mobile">
-      <a href="/shop"><i>01</i><b data-i18n="nav.shop">Shop</b></a>
-      <a href="/#collection"><i>02</i><b data-i18n="nav.collection">Collection</b></a>
-      <a href="/#categories"><i>03</i><b data-i18n="nav.categories">Categories</b></a>
-      <a href="/#maison"><i>04</i><b data-i18n="nav.maison">Brand</b></a>
-      <a href="/#wholesale"><i>05</i><b data-i18n="nav.wholesale">Wholesale</b></a>
-      <a href="/support"><i>06</i><b data-i18n="nav.support">Support</b></a>
-      <a href="/signin"><i>07</i><b data-auth-link data-i18n="auth.signIn">Sign in</b></a>
-    </nav>
-    <div class="menu__foot">
-      <a data-dyn="wa" href="https://wa.me/998501551010" target="_blank" rel="noopener"><svg class="ic"><use href="#i-wa"/></svg>WhatsApp</a>
-      <a data-dyn="tg" href="https://t.me/milanapremium2" target="_blank" rel="noopener"><svg class="ic"><use href="#i-tg"/></svg>Telegram</a>
-      <div class="lang lang--menu" data-lang-mount></div>
+  <!-- mobile menu -->
+  <nav class="menu" id="menu" aria-hidden="true" aria-label="Мобильное меню">
+    <a href="/shop" data-i18n="nav.shop">Каталог</a>
+    <a href="/shop?gender=women" data-i18n="cats.women">Женщинам</a>
+    <a href="/shop?gender=men" data-i18n="cats.men">Мужчинам</a>
+    <a href="/ordering" data-i18n="terms.navOrdering">Как заказать</a>
+    <a href="/support" data-i18n="nav.support">Поддержка</a>
+    <div class="menu__meta">
+      <span>+998 50 155 10 10</span>
+      <span data-i18n="menu.showroom">Шоурум</span>
     </div>
-  </div>
+  </nav>
 
-  <main class="page auth-page">
-    <div class="container auth-shell">
-      <section class="auth-panel">
-        <p class="overline"><span class="overline__num">MILANA</span><span class="overline__rule"></span><span data-i18n="auth.overline">Secure account</span></p>
-        <h1 data-i18n="auth.title" data-auth-title>Account access</h1>
-        <p class="auth-panel__lead" data-i18n="auth.lead" data-auth-lead>Sign in, recover your password, or create a customer account for Milana orders.</p>
-        <div class="auth-benefits">
-          <p data-i18n="auth.b1">Qadoq and qop package rules are saved with every order.</p>
-          <p data-i18n="auth.b2">Order history, delivery details, and saved models stay in one place.</p>
-          <p data-i18n="auth.b3">Password recovery uses a secure email verification code.</p>
+  <main>
+
+    <!-- вход / личный кабинет: слайдер + карточка -->
+    <section class="auth2">
+      <div class="auth2__grid">
+
+        <aside class="auth2__visual" aria-hidden="true">
+          <div class="auth2__slider" id="auth-slider">
+            <img src="/uploads/thumbs/pmrlo8czo-400f22ac.webp" alt="" class="is-on">
+            <img src="/uploads/thumbs/pmrlk7am3-dd1aa8f4.webp" alt="" loading="lazy">
+            <img src="/uploads/thumbs/pmrlkb3hu-8f34e700.webp" alt="" loading="lazy">
+            <img src="/uploads/thumbs/pmrloe62a-800dfd84.webp" alt="" loading="lazy">
+            <img src="/uploads/thumbs/pmrofns1v-3384c037.webp" alt="" loading="lazy">
+          </div>
+          <div class="auth2__shade"></div>
+          <div class="auth2__brand">MILANA <span>Premium</span></div>
+          <div class="auth2__dots" id="auth-dots" role="tablist" aria-label="Слайды"></div>
+        </aside>
+
+        <div class="auth2__panel">
+          <section class="auth2__card" data-auth-page>
+            <span class="overline" data-i18n="auth.overline">Личный кабинет</span>
+            <h1 class="t-display t-lg auth2__title" data-auth-title data-i18n="auth.title">Вход в аккаунт</h1>
+            <p class="auth2__lead" data-auth-lead data-i18n="auth.lead">Войдите, восстановите пароль или создайте аккаунт покупателя Milana.</p>
+
+            <div class="auth-tabs" role="tablist">
+              <button type="button" class="is-on" data-auth-tab="signin" data-i18n="auth.signIn">Войти</button>
+              <button type="button" data-auth-tab="signup" data-i18n="auth.signUp">Регистрация</button>
+            </div>
+
+            <form class="auth-form is-on" data-auth-form="signin" novalidate>
+              <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
+              <label><span data-i18n="auth.password">Пароль</span><input name="password" type="password" autocomplete="current-password" required minlength="8"></label>
+              <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.signIn">Войти</span></button>
+              <button class="auth-alt" type="button" data-auth-recover-open data-i18n="auth.forgot">Забыли пароль?</button>
+              <p class="auth-message" data-auth-message="signin" hidden></p>
+            </form>
+
+            <form class="auth-form" data-auth-form="signup" novalidate>
+              <label><span data-i18n="auth.name">Имя и фамилия</span><input name="name" autocomplete="name" maxlength="80" required></label>
+              <div class="auth2__two">
+                <label><span data-i18n="cart.city">Город</span><input name="city" autocomplete="address-level2" maxlength="80" data-i18n-ph="auth.cityPh" placeholder="Например: Ташкент"></label>
+                <label><span data-i18n="auth.phone">Телефон</span><input name="phone" autocomplete="tel" maxlength="25" placeholder="+998 90 123 45 67" required></label>
+              </div>
+              <label><span data-i18n="cart.address">Адрес доставки</span><input name="address" autocomplete="street-address" maxlength="300" data-i18n-ph="auth.addressPh" placeholder="Улица, дом, ориентир"></label>
+              <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
+              <div class="otp-row">
+                <label><span data-i18n="auth.emailCode">Код из письма</span><input name="email_code" inputmode="numeric" maxlength="6" data-i18n-ph="auth.codePh" placeholder="6-значный код"></label>
+                <button class="btn btn--ghost" type="button" data-auth-otp-send data-i18n="auth.sendCode">Получить код</button>
+              </div>
+              <label><span data-i18n="auth.password">Пароль</span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+              <label class="terms-check"><input name="terms" type="checkbox" required><span><span data-i18n="auth.acceptTerms">Принимаю</span> <a href="/terms" target="_blank" data-i18n="auth.terms">условия и правила</a>.</span></label>
+              <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.createAccount">Создать аккаунт</span></button>
+              <p class="auth-message" data-auth-message="signup" hidden></p>
+            </form>
+
+            <form class="auth-form" data-auth-form="recover" novalidate>
+              <p class="auth-help" data-i18n="auth.recoverLead">Укажите email аккаунта, подтвердите код и задайте новый пароль.</p>
+              <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
+              <div class="otp-row" data-local-recovery>
+                <label><span data-i18n="auth.emailCode">Код из письма</span><input name="email_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" data-i18n-ph="auth.codePh" placeholder="6-значный код"></label>
+                <button class="btn btn--ghost" type="button" data-auth-email-otp-send><span data-i18n="auth.sendCode">Получить код</span></button>
+              </div>
+              <label data-local-recovery><span data-i18n="auth.newPassword">Новый пароль</span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
+              <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.resetPassword">Сбросить пароль</span></button>
+              <button class="auth-alt" type="button" data-auth-back-signin data-i18n="auth.backToSignIn">Назад ко входу</button>
+              <p class="auth-message" data-auth-message="recover" hidden></p>
+            </form>
+
+            <div class="auth-firebase" data-firebase-auth hidden>
+              <button type="button" class="btn btn--ghost auth-provider" data-google-signin>
+                <svg class="auth-provider__icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.18-2.06H12v3.9h5.38a4.6 4.6 0 0 1-2 3.02v2.53h3.24c1.9-1.75 2.98-4.33 2.98-7.39Z"/>
+                  <path fill="#34A853" d="M12 22c2.7 0 4.97-.9 6.63-2.38l-3.24-2.53c-.9.6-2.05.96-3.39.96-2.61 0-4.82-1.76-5.61-4.13H3.04v2.61A10 10 0 0 0 12 22Z"/>
+                  <path fill="#FBBC05" d="M6.39 13.92A6 6 0 0 1 6.08 12c0-.67.12-1.32.31-1.92V7.47H3.04A10 10 0 0 0 2 12c0 1.63.39 3.17 1.04 4.53l3.35-2.61Z"/>
+                  <path fill="#EA4335" d="M12 5.95c1.47 0 2.79.51 3.83 1.5l2.87-2.88A9.63 9.63 0 0 0 12 2a10 10 0 0 0-8.96 5.47l3.35 2.61C7.18 7.71 9.39 5.95 12 5.95Z"/>
+                </svg>
+                <span data-i18n="auth.google">Продолжить с Google</span>
+              </button>
+              <button type="button" class="btn auth-provider auth-provider--apple" data-apple-signin>
+                <svg class="auth-provider__icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="currentColor" d="M17.05 12.54c-.03-3.05 2.49-4.53 2.6-4.6a5.58 5.58 0 0 0-4.39-2.37c-1.85-.2-3.65 1.11-4.59 1.11-.96 0-2.41-1.09-3.97-1.05a5.82 5.82 0 0 0-4.9 2.98c-2.13 3.69-.54 9.12 1.5 12.1 1.02 1.46 2.2 3.1 3.76 3.04 1.53-.06 2.1-.98 3.94-.98 1.82 0 2.36.98 3.95.94 1.64-.03 2.68-1.47 3.66-2.94a12.1 12.1 0 0 0 1.68-3.43 5.26 5.26 0 0 1-3.24-4.8ZM14.05 3.61A5.32 5.32 0 0 0 15.27 0a5.41 5.41 0 0 0-3.5 1.72 5.07 5.07 0 0 0-1.25 3.47 4.47 4.47 0 0 0 3.53-1.58Z"/>
+                </svg>
+                <span data-i18n="auth.apple">Продолжить с Apple</span>
+              </button>
+            </div>
+
+            <div class="account" data-auth-account hidden>
+              <div class="account__bar">
+                <div class="account__id">
+                  <span class="account__avatar" data-account-initial aria-hidden="true">M</span>
+                  <div class="account__who">
+                    <p class="account__hello" data-i18n="auth.signedInAs">Вы вошли как</p>
+                    <strong data-auth-name></strong>
+                    <span data-auth-email></span>
+                  </div>
+                </div>
+                <div class="account__bar-side">
+                  <div class="account__badges" data-account-badges></div>
+                  <button type="button" class="auth-logout" data-auth-logout data-i18n="auth.logout">Выйти</button>
+                </div>
+              </div>
+
+              <div class="account__kpis" data-account-stats>
+                <div class="account-stat"><b data-account-orders>0</b><i data-i18n="auth.orders">Заказы</i></div>
+                <div class="account-stat"><b data-account-wishlist>0</b><i data-i18n="auth.wishlist">Избранное</i></div>
+                <div class="account-stat"><b>60</b><i data-i18n="auth.bagPieces">Штук в мешке</i></div>
+              </div>
+
+              <div class="account__grid">
+                <section class="account-card account-card--profile">
+                  <div class="account-card__head">
+                    <p class="account-card__kicker overline" data-i18n="auth.profile">Профиль</p>
+                    <div class="account-card__hd-right">
+                      <span class="account-card__meta" data-account-progress-label></span>
+                      <button type="button" class="account-edit" data-profile-edit hidden aria-label="Edit profile">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L18.5 9.5a2 2 0 0 0 0-2.83l-1.17-1.17a2 2 0 0 0-2.83 0L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="account-progress" data-account-progress hidden><i></i></div>
+                  <div class="account-profile" data-account-profile></div>
+                </section>
+
+                <section class="account-card account-card--orders">
+                  <p class="account-card__kicker overline" data-i18n="auth.orderHistory">История заказов</p>
+                  <div class="account-orders" data-account-orders-list></div>
+                </section>
+
+                <section class="account-card account-card--saved">
+                  <p class="account-card__kicker overline" data-i18n="auth.savedModels">Сохранённые модели</p>
+                  <div class="account-wishlist" data-account-wishlist-list></div>
+                </section>
+              </div>
+
+              <div class="account__cta">
+                <a class="btn btn--primary" href="/shop"><span data-i18n="auth.continueShopping">Продолжить покупки</span></a>
+                <a class="btn btn--ghost" href="/ordering"><span data-i18n="terms.navOrdering">Как работает заказ</span></a>
+              </div>
+            </div>
+          </section>
         </div>
-      </section>
+      </div>
+    </section>
 
-      <section class="auth-card" data-auth-page>
-        <div class="auth-tabs" role="tablist">
-          <button type="button" class="is-on" data-auth-tab="signin" data-i18n="auth.signIn">Sign in</button>
-          <button type="button" data-auth-tab="signup" data-i18n="auth.signUp">Sign up</button>
-        </div>
+    <script>
+      /* слайдер фото каталога: кроссфейд каждые 5 секунд + точки */
+      (() => {
+        const box = document.getElementById("auth-slider");
+        const dotsBox = document.getElementById("auth-dots");
+        if (!box || !dotsBox) return;
+        const imgs = Array.from(box.querySelectorAll("img"));
+        let cur = 0, timer = null;
+        const dots = imgs.map((_, i) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.setAttribute("aria-label", "Слайд " + (i + 1));
+          b.addEventListener("click", () => { go(i); restart(); });
+          dotsBox.appendChild(b);
+          return b;
+        });
+        function go(i) {
+          imgs[cur].classList.remove("is-on"); imgs[cur].classList.add("is-out");
+          const prev = cur;
+          setTimeout(() => imgs[prev].classList.remove("is-out"), 900);
+          cur = (i + imgs.length) % imgs.length;
+          imgs[cur].classList.add("is-on");
+          dots.forEach((d, k) => d.classList.toggle("is-on", k === cur));
+        }
+        function restart() {
+          clearInterval(timer);
+          if (!matchMedia("(prefers-reduced-motion: reduce)").matches)
+            timer = setInterval(() => go(cur + 1), 5000);
+        }
+        dots[0].classList.add("is-on");
+        restart();
+      })();
+    </script>
 
-        <form class="auth-form is-on" data-auth-form="signin" novalidate>
-          <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
-          <label><span data-i18n="auth.password">Password</span><input name="password" type="password" autocomplete="current-password" required minlength="8"></label>
-          <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.signIn">Sign in</span><svg class="ic"><use href="#i-arrow"/></svg></button>
-          <button class="auth-alt" type="button" data-auth-recover-open data-i18n="auth.forgot">Forgot password?</button>
-          <p class="auth-message" data-auth-message="signin" hidden></p>
-        </form>
-
-        <form class="auth-form" data-auth-form="signup" novalidate>
-          <div class="account-type" role="radiogroup" aria-label="Account type">
-            <label><input type="radio" name="account_type" value="business"><span><b data-i18n="auth.business">Business</b><i data-i18n="auth.businessDesc">Wholesale qop ordering for larger purchases</i></span></label>
-            <label><input type="radio" name="account_type" value="individual"><span><b data-i18n="auth.individual">Individual</b><i data-i18n="auth.individualDesc">Retail piece ordering for enabled products</i></span></label>
-          </div>
-          <div class="auth-fields">
-            <label><span data-i18n="auth.name">Full name</span><input name="name" autocomplete="name" maxlength="80" required></label>
-            <label><span data-i18n="cart.city">City</span><input name="city" autocomplete="address-level2" maxlength="80" data-i18n-ph="auth.cityPh" placeholder="Example: Tashkent"></label>
-            <label><span data-i18n="cart.address">Delivery address</span><input name="address" autocomplete="street-address" maxlength="300" data-i18n-ph="auth.addressPh" placeholder="Street, building, landmark"></label>
-          </div>
-          <label><span data-i18n="auth.phone">Phone</span><input name="phone" autocomplete="tel" maxlength="25" placeholder="+998 90 123 45 67" required></label>
-          <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
-          <div class="otp-row">
-            <label><span data-i18n="auth.emailCode">Email code</span><input name="email_code" inputmode="numeric" maxlength="6" data-i18n-ph="auth.codePh" placeholder="6-digit code"></label>
-            <button class="btn btn--ghost" type="button" data-auth-otp-send data-i18n="auth.sendCode">Send code</button>
-          </div>
-          <label><span data-i18n="auth.password">Password</span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
-          <label class="terms-check"><input name="terms" type="checkbox" required><span><span data-i18n="auth.acceptTerms">I accept the</span> <a href="/terms" target="_blank" data-i18n="auth.terms">Terms & Conditions</a>.</span></label>
-          <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.createAccount">Create account</span><svg class="ic"><use href="#i-arrow"/></svg></button>
-          <p class="auth-message" data-auth-message="signup" hidden></p>
-        </form>
-
-        <form class="auth-form" data-auth-form="recover" novalidate>
-          <p class="auth-help" data-i18n="auth.recoverLead">Enter your account email, verify the code, then set a new password.</p>
-          <label><span data-i18n="auth.email">Email</span><input name="email" type="email" autocomplete="email" required></label>
-          <div class="otp-row">
-            <label><span data-i18n="auth.emailCode">Email code</span><input name="email_code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" data-i18n-ph="auth.codePh"></label>
-            <button class="btn btn--ghost" type="button" data-auth-email-otp-send><span data-i18n="auth.sendCode">Get code</span></button>
-          </div>
-          <label><span data-i18n="auth.newPassword">New password</span><input name="password" type="password" autocomplete="new-password" required minlength="8"></label>
-          <button class="btn btn--primary auth-submit" type="submit"><span data-i18n="auth.resetPassword">Reset password</span><svg class="ic"><use href="#i-arrow"/></svg></button>
-          <button class="auth-alt" type="button" data-auth-back-signin data-i18n="auth.backToSignIn">Back to sign in</button>
-          <p class="auth-message" data-auth-message="recover" hidden></p>
-        </form>
-
-        <div class="auth-firebase" data-firebase-auth hidden>
-          <span></span>
-          <button type="button" class="btn btn--ghost" data-google-signin><span data-i18n="auth.google">Continue with Google</span></button>
-        </div>
-
-        <div class="auth-account" data-auth-account hidden>
-          <p class="auth-account__label" data-i18n="auth.signedInAs">Signed in as</p>
-          <strong data-auth-name></strong>
-          <span data-auth-email></span>
-          <div class="account-stats" data-account-stats>
-            <span><b data-account-orders>0</b><i data-i18n="auth.orders">Orders</i></span>
-            <span><b data-account-wishlist>0</b><i data-i18n="auth.wishlist">Wishlist</i></span>
-            <span><b>60</b><i data-i18n="auth.bagPieces">Pieces / bag</i></span>
-          </div>
-          <div class="account-panel">
-            <p class="account-panel__kicker" data-i18n="auth.profile">Profile</p>
-            <div class="account-profile" data-account-profile></div>
-          </div>
-          <div class="account-panel">
-            <p class="account-panel__kicker" data-i18n="auth.orderHistory">Order history</p>
-            <div class="account-orders" data-account-orders-list></div>
-          </div>
-          <div class="account-panel">
-            <p class="account-panel__kicker" data-i18n="auth.savedModels">Saved models</p>
-            <div class="account-wishlist" data-account-wishlist-list></div>
-          </div>
-          <div class="auth-account__actions">
-            <a class="btn btn--primary" href="/shop"><span data-i18n="auth.continueShopping">Continue shopping</span><svg class="ic"><use href="#i-arrow"/></svg></a>
-            <button type="button" class="auth-logout" data-auth-logout data-i18n="auth.logout">Log out</button>
-          </div>
-        </div>
-      </section>
-    </div>
   </main>
 
-  <footer class="footer footer--slim">
+  <footer class="footer">
     <div class="container">
-      <div class="footer__bottom">
-        <p>© <span id="year">2026</span> Milana Premium — Uzbekistan, Andijan</p>
-        <div class="footer__legal">
-          <a data-dyn="wa" href="#" target="_blank" rel="noopener">WhatsApp</a>
-          <a data-dyn="tg" href="#" target="_blank" rel="noopener">Telegram</a>
-          <a data-dyn="tel" href="#">+998 50 155 10 10</a>
+      <div class="footer__grid footer__grid--wide">
+        <div>
+          <a class="logo" href="/">MILANA <span>Premium</span></a>
+          <p class="footer__tag" data-i18n="foot.tag">Фабрика одежды в Узбекистане: домашняя и повседневная одежда для женщин, мужчин и детей.</p>
+          <p class="footer__addr" data-dyn="address">Узбекистан, Андижан, Коратут 605 · Пн–Сб 08:00–18:00</p>
         </div>
+        <div>
+          <h5 data-i18n="foot.buyers">Покупателям</h5>
+          <ul>
+            <li><a href="/shop" data-i18n="shop.title">Все товары</a></li>
+            <li><a href="/shop?tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a></li>
+            <li><a href="/ordering" data-i18n="terms.navOrdering">Как работает заказ</a></li>
+            <li><a href="/#faq" data-i18n="foot.faq">Частые вопросы</a></li>
+            <li><a href="/terms" data-i18n="foot.terms">Условия</a></li>
+            <li><a href="/privacy" data-i18n="foot.privacy">Конфиденциальность</a></li>
+            <li><a href="/delete-account" data-i18n="foot.deleteAccount">Удаление аккаунта</a></li>
+          </ul>
+        </div>
+        <div>
+          <h5 data-i18n="foot.company">О компании</h5>
+          <ul>
+            <li><a href="/#maison" data-i18n="foot.about">О фабрике</a></li>
+            <li><a href="/#map" data-i18n="map.title">Как нас найти</a></li>
+            <li><a href="/support" data-i18n="nav.support">Поддержка</a></li>
+            <li><a href="/signin" data-i18n="auth.account">Аккаунт</a></li>
+          </ul>
+        </div>
+        <div>
+          <h5 data-i18n="foot.contact">Связаться с нами</h5>
+          <ul class="footer__contact">
+            <li><a data-dyn="tel" href="tel:+998501551010">+998 50 155 10 10</a></li>
+            <li><a data-dyn="mail" href="#"></a></li>
+            <li><a data-dyn="wa" href="https://wa.me/998501551010" target="_blank" rel="noopener" data-i18n="ws.wa">Написать в WhatsApp</a></li>
+            <li><a data-dyn="tg" href="https://t.me/milanapremium2" target="_blank" rel="noopener" data-i18n="ws.tg">Написать в Telegram</a></li>
+          </ul>
+          <h5 class="footer__socht" data-i18n="foot.social">Мы в соцсетях</h5>
+          <div class="footer__soc">
+            <a data-dyn="ig" href="https://www.instagram.com/milanapremium" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1" fill="currentColor" stroke="none"/></svg><span>Instagram</span></a>
+            <a data-dyn="tg" href="https://t.me/milanapremium2" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><path d="M21 4.4 3.6 11l4.9 1.7 1.8 5.6 3-3.4 4.6 3.3L21 4.4Z"/><path d="m8.5 12.7 8.5-6.2"/></svg><span>Telegram</span></a>
+            <a data-dyn="wa" href="https://wa.me/998501551010" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.3-1.1A8.5 8.5 0 1 0 12 3.5Z"/><path d="M9 8.8c.5 2.6 2.6 4.8 5.2 5.4l1-1.5-2-1-.8.6a5.4 5.4 0 0 1-1.7-1.8l.6-.8-1-2-1.3 1.1Z"/></svg><span>WhatsApp</span></a>
+          </div>
+        </div>
+        <div>
+          <h5 data-i18n="foot.nl">Каталог и новинки</h5>
+          <form class="newsletter" novalidate>
+            <input type="email" required data-i18n-ph="foot.nlPh" placeholder="ваш@email.com" autocomplete="email" aria-label="Email">
+            <button type="submit" data-i18n="reviews.submit">Отправить</button>
+          </form>
+          <p class="newsletter__note" data-i18n="foot.nlNote">Новые модели и новости сотрудничества. Без лишних сообщений.</p>
+          <div class="footer__apps">
+            <a class="appbadge" href="#" onclick="return false" data-app="ios" aria-label="App Store">
+              <svg class="appbadge__logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M16.36 12.9c-.02-2.4 1.96-3.55 2.05-3.61-1.12-1.64-2.86-1.86-3.48-1.89-1.48-.15-2.89.87-3.64.87-.75 0-1.91-.85-3.14-.83-1.61.02-3.1.94-3.93 2.38-1.68 2.91-.43 7.22 1.2 9.59.8 1.16 1.75 2.46 2.99 2.41 1.2-.05 1.65-.78 3.1-.78 1.45 0 1.85.78 3.11.75 1.29-.02 2.1-1.18 2.89-2.35.91-1.35 1.28-2.66 1.3-2.72-.03-.01-2.49-.96-2.51-3.8M14.3 5.31c.66-.8 1.11-1.91.99-3.02-.95.04-2.11.63-2.79 1.43-.61.71-1.14 1.84-1 2.93 1.06.08 2.14-.54 2.8-1.34"/></svg>
+              <span><i data-i18n="foot.appApple">Загрузите в</i><b>App Store</b></span>
+            </a>
+            <a class="appbadge" href="#" onclick="return false" data-app="android" aria-label="Google Play">
+              <svg class="appbadge__logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#00D3FF" d="M3.9 2.3c-.29.3-.46.77-.46 1.38v16.64c0 .61.17 1.08.47 1.36l.06.05 9.32-9.32v-.22L3.9 2.3z"/><path fill="#FFCE00" d="M16.9 15.35l-3.11-3.11v-.22l3.12-3.12.07.04 3.69 2.1c1.05.6 1.05 1.58 0 2.18l-3.77 2.13z"/><path fill="#FF3A44" d="M16.97 15.31 13.79 12.13l-9.9 9.9c.35.37.92.41 1.57.05l11.51-6.77z"/><path fill="#00E676" d="M16.97 8.9 5.46 2.14c-.65-.37-1.22-.32-1.57.05l9.9 9.9 3.18-3.19z"/></svg>
+              <span><i data-i18n="foot.appGoogle">Доступно в</i><b>Google Play</b></span>
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="footer__base">
+        <span>© <span id="year">2026</span> MILANA PREMIUM</span>
+        <span data-dyn="address">Узбекистан, Андижан, Коратут 605 · Пн–Сб 08:00–18:00</span>
+        <span><a href="tel:+998501551010" data-dyn="tel">+998 50 155 10 10</a> · <a href="https://www.instagram.com/milanapremium" data-dyn="ig" target="_blank" rel="noopener">Instagram</a></span>
       </div>
     </div>
   </footer>
 
-  <script src="/js/i18n.js" defer></script>
-  <script src="/js/app-state.js?v=20260702-responsive1" defer></script>
-  <script src="/js/auth.js?v=20260710-auth3" defer></script>
-  <script src="/js/cart.js" defer></script>
-  <script src="/js/chat-widget.js?v=20260703-chatbot2" defer></script>
-  <script src="/js/menu.js?v=20260702-responsive1" defer></script>
+  <script>
+    /* шапка, год, рассылка */
+    (() => {
+      const h = document.querySelector(".header");
+      addEventListener("scroll", () => h.classList.toggle("is-solid", scrollY > 8), { passive: true });
+      const y = document.getElementById("year");
+      if (y) y.textContent = new Date().getFullYear();
+      const form = document.querySelector(".newsletter");
+      form && form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const input = form.querySelector("input");
+        const note = document.querySelector(".newsletter__note");
+        try {
+          const r = await fetch("/api/newsletter", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: input.value.trim(), lang: window.I18N ? I18N.lang : "en", source: "signin" }) });
+          if (!r.ok) throw new Error();
+          note.textContent = (window.I18N ? I18N.t("foot.nlOk") : "OK") + " " + input.value.trim();
+          input.value = "";
+        } catch { note.textContent = window.I18N ? I18N.t("cart.invalid") : "Error"; }
+      });
+    })();
+  </script>
+
+  <!-- engine -->
+  <script src="/js/i18n.js?v=20260803-basic-dicts1" defer></script>
+  <script src="/js/site-config.js?v=3" defer></script>
+  <script src="/js/app-state.js?v=20260731-integration2" defer></script>
+  <script src="/js/auth.js?v=20260731-integration2" defer></script>
+  <script src="/js/cart.js?v=20260731-integration4" defer></script>
+  <script src="/js/menu.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/header.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/search.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/chat-widget.js?v=2" defer></script>
 </body>
 </html>

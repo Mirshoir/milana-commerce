@@ -18,13 +18,17 @@ for (let i = 2; i < process.argv.length; i += 1) {
 const definesFile = args.get('--defines') || 'firebase/mobile-dart-defines.env';
 const platform = args.get('--platform') || 'android';
 const mode = args.get('--mode') || 'release';
-const artifact = args.get('--artifact') || 'apk';
+const artifact = args.get('--artifact') || 'appbundle';
 const noCodesign = args.has('--no-codesign');
 const dryRun = args.has('--dry-run');
 
 function run(command, commandArgs) {
   if (dryRun) {
-    console.log([command, ...commandArgs].join(' '));
+    const printableArgs = commandArgs.map((argument) => {
+      const match = argument.match(/^--dart-define=([^=]+)=/);
+      return match ? `--dart-define=${match[1]}=[redacted]` : argument;
+    });
+    console.log([command, ...printableArgs].join(' '));
     return;
   }
   const result = spawnSync(command, commandArgs, { stdio: 'inherit', shell: false });
@@ -44,12 +48,15 @@ async function dartDefines() {
 
 const defines = await dartDefines();
 const buildMode = mode === 'debug' ? '--debug' : mode === 'profile' ? '--profile' : '--release';
+const releaseHardening = mode === 'release'
+  ? ['--obfuscate', `--split-debug-info=build/symbols/${platform}`]
+  : [];
 
 if (platform === 'android') {
   const target = artifact === 'appbundle' ? 'appbundle' : 'apk';
-  run('flutter', ['build', target, buildMode, ...defines]);
+  run('flutter', ['build', target, buildMode, ...releaseHardening, ...defines]);
 } else if (platform === 'ios') {
-  const iosArgs = ['build', 'ios', buildMode, ...defines];
+  const iosArgs = ['build', 'ios', buildMode, ...releaseHardening, ...defines];
   if (noCodesign) iosArgs.push('--no-codesign');
   run('flutter', iosArgs);
 } else {

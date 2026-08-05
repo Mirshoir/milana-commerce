@@ -48,6 +48,7 @@ async function writeProjectFiles(config, appId) {
       `FIREBASE_AUTH_DOMAIN=${config.authDomain || `${projectId}.firebaseapp.com`}`,
       `FIREBASE_STORAGE_BUCKET=${config.storageBucket || `${projectId}.appspot.com`}`,
       `FIREBASE_ASSET_BASE_URL=https://${projectId}.web.app`,
+      'API_BASE_URL=https://milanapremium.uz',
     ].join('\n') + '\n',
   );
 }

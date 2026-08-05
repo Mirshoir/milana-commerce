@@ -14,7 +14,9 @@ int orderProgressStepFor(String status, String paymentStatus) {
   return 0;
 }
 
-int orderClothesCount(OrderSummary order) => order.itemCount * bagSize;
+int orderClothesCount(OrderSummary order) => order.items.isEmpty
+    ? order.itemCount * bagSize
+    : order.items.fold(0, (sum, item) => sum + item.qty * item.bagSize);
 
 bool canCustomerCancelOrder(OrderSummary order) {
   return order.id.isNotEmpty &&
@@ -47,7 +49,18 @@ String orderNextAction(OrderSummary order) {
 
 String orderTrackingSummary(OrderSummary order) {
   final clothes = orderClothesCount(order);
-  return '${order.itemCount} qop · $clothes ta kiyim';
+  if (order.items.isEmpty) return '${order.itemCount} qop · $clothes ta kiyim';
+  final packs = order.items
+      .where((item) => normalizeOrderUnitType(item.unitType) == packUnitType)
+      .fold(0, (sum, item) => sum + item.qty);
+  final bags = order.items
+      .where((item) => normalizeOrderUnitType(item.unitType) == bagUnitType)
+      .fold(0, (sum, item) => sum + item.qty);
+  final packages = [
+    if (packs > 0) '$packs qadoq',
+    if (bags > 0) '$bags qop',
+  ].join(' + ');
+  return '$packages · $clothes ta kiyim';
 }
 
 String orderSizeMixSummary(OrderLineItem item) {
@@ -62,7 +75,7 @@ String orderLineItemSubtitle(OrderLineItem item) {
   ].where((value) => value.trim().isNotEmpty).join(' / ');
   final parts = [
     if (model.isNotEmpty) model,
-    '${item.qty} qop',
+    '${item.qty} ${orderUnitLabel(item.unitType).toLowerCase()}',
     '${item.qty * item.bagSize} ta kiyim',
   ];
   return parts.join(' · ');
@@ -76,7 +89,7 @@ String customerOrderShareText(OrderSummary order) {
     'Tarkib: ${orderTrackingSummary(order)}',
     ...order.items.map(
       (item) =>
-          '- ${item.name}: ${item.qty} qop, \$${item.lineTotal.toStringAsFixed(2)}',
+          '- ${item.name}: ${item.qty} ${orderUnitLabel(item.unitType).toLowerCase()}, \$${item.lineTotal.toStringAsFixed(2)}',
     ),
     'Buyurtma holati: ${order.status}',
     'To‘lov holati: ${order.paymentStatus}',

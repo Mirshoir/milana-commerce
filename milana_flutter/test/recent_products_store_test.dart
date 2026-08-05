@@ -32,4 +32,26 @@ void main() {
     expect(rows.first, 'product-0');
     expect(rows.last, 'product-19');
   });
+
+  test('recent products remain isolated by account scope', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = RecentProductsStore();
+
+    await store.save(['a-product'], scope: 'buyer-a');
+    await store.save(['b-product'], scope: 'buyer-b');
+
+    expect(await store.load(scope: 'buyer-a'), ['a-product']);
+    expect(await store.load(scope: 'buyer-b'), ['b-product']);
+    expect(await store.load(), isEmpty);
+  });
+
+  test('recent scope can be erased for account deletion', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = RecentProductsStore();
+    await store.save(['recent-product'], scope: 'delete-me');
+
+    await store.clear(scope: 'delete-me');
+
+    expect(await store.load(scope: 'delete-me'), isEmpty);
+  });
 }

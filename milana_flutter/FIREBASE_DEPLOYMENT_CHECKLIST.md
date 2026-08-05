@@ -51,11 +51,13 @@ The GitHub deploy workflow writes `MILANA_PAYMENT_WEBHOOK_SECRET` into `function
    - Catalog shows products.
    - Product image URLs in Firestore use `/uploads/...`, not Supabase URLs.
    - Several `/uploads/...` product image URLs open from Firebase Hosting.
+   - Those image responses have an `image/*` content type and render as images;
+     an HTTP 200 containing `index.html` is a failed deployment.
    - Firebase Console has Web, Android, and iOS apps for Milana.
-   - Firebase Console has the `placeOrder`, `createSupportTicket`, `submitPaymentProof`, `cancelOrder`, `updatePaymentStatus`, `paymentWebhook`, `updateOrderStatus`, `updateSupportStatus`, `updateProductAvailability`, `claimErpEvents`, and `ackErpEvent` functions in `asia-southeast1`.
+   - Firebase Console has the `placeOrder`, `createSupportTicket`, `deleteCustomerAccount`, `submitPaymentProof`, `cancelOrder`, `updatePaymentStatus`, `paymentWebhook`, `updateOrderStatus`, `updateSupportStatus`, `updateProductAvailability`, `claimErpEvents`, and `ackErpEvent` functions in `asia-southeast1`.
    - Firebase Console has `products`, `customers`, `orders`, `payments`, and `support_requests` collections.
    - Firestore indexes include customer latest orders, customer latest support requests, ERP pending event claim order (`erp_events.status + created_at`), and expired ERP lease reclaim order (`erp_events.status + lease_until`).
-   - The workflow `Verify Firebase deployment` step reports Web, Android, iOS, product count, product image checks, Hosting, `placeOrder`, `createSupportTicket`, `submitPaymentProof`, `cancelOrder`, `updatePaymentStatus`, `paymentWebhook`, `updateOrderStatus`, `updateSupportStatus`, `updateProductAvailability`, `claimErpEvents`, and `ackErpEvent`.
+   - The workflow `Verify Firebase deployment` step reports Web, Android, iOS, product count, product image checks, Hosting, `placeOrder`, `createSupportTicket`, `deleteCustomerAccount`, `submitPaymentProof`, `cancelOrder`, `updatePaymentStatus`, `paymentWebhook`, `updateOrderStatus`, `updateSupportStatus`, `updateProductAvailability`, `claimErpEvents`, and `ackErpEvent`.
    - The same verification output shows `paymentWebhook.requiredEnvironment.PAYMENT_WEBHOOK_SECRET` as configured.
    - A staging payment callback can POST to `paymentWebhook` with `x-milana-signature: sha256=<hmac>` and mark a test order as paid once; repeated delivery returns `duplicate: true`.
    - Manager/admin Firebase Auth accounts have the custom claim `admin: true`.

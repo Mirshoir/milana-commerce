@@ -32,6 +32,7 @@ void main() {
       address: 'Qoratut 605',
       comment: 'Retry-safe checkout',
       paymentMethod: 'click',
+      managerId: 4,
       clientOrderId: 'co_2026_checkout',
       items: [CartItem(product: product, quantity: 2)],
     );
@@ -39,13 +40,70 @@ void main() {
     final json = request.toFunctionJson();
 
     expect(json['client_order_id'], 'co_2026_checkout');
+    expect(json['manager_id'], 4);
+    expect(json['source'], 'flutter');
     expect(json['items'], [
-      {'product_id': '5287', 'slug': 'catalog-item', 'qty': 2},
+      {
+        'product_id': '5287',
+        'slug': 'catalog-item',
+        'qty': 2,
+        'unit_type': 'qop',
+      },
+    ]);
+  });
+
+  test('checkout preserves a selected pack order unit', () {
+    const request = CheckoutRequest(
+      name: 'Ali',
+      phone: '+998 90 123 45 67',
+      city: 'Andijon',
+      address: 'Qoratut 605',
+      comment: '',
+      paymentMethod: 'manager',
+      managerId: 2,
+      clientOrderId: 'co_pack',
+      items: [CartItem(product: product, quantity: 2, unitType: packUnitType)],
+    );
+
+    expect(request.toBackendJson()['items'], [
+      {'id': 5287, 'qty': 2, 'unit_type': 'pachka'},
+    ]);
+    expect(request.toFunctionJson()['items'], [
+      {
+        'product_id': '5287',
+        'slug': 'catalog-item',
+        'qty': 2,
+        'unit_type': 'pachka',
+      },
+    ]);
+  });
+
+  test('checkout request sends selected manager to the public API', () {
+    const request = CheckoutRequest(
+      name: 'Ali',
+      phone: '+998 90 123 45 67',
+      city: 'Andijon',
+      address: 'Qoratut 605',
+      comment: '',
+      paymentMethod: 'manager',
+      managerId: 2,
+      clientOrderId: 'co_public_api',
+      items: [CartItem(product: product, quantity: 3)],
+    );
+
+    final json = request.toBackendJson();
+
+    expect(json['manager_id'], 2);
+    expect(json['source'], 'flutter');
+    expect(json['order_type'], 'wholesale');
+    expect(json['items'], [
+      {'id': 5287, 'qty': 3, 'unit_type': 'qop'},
     ]);
   });
 
   test('payment submission sends order payment proof to callable', () {
     const submission = PaymentSubmission(
+      provenance: BackendProvenance.firebaseLegacy,
       orderId: 'order-1',
       method: 'bank',
       amount: 540,
@@ -66,6 +124,7 @@ void main() {
     'cancel order request sends order id and trimmed reason to callable',
     () {
       const request = CancelOrderRequest(
+        provenance: BackendProvenance.firebaseLegacy,
         orderId: 'order-1',
         reason: '  Wrong model selected  ',
       );
@@ -79,6 +138,7 @@ void main() {
 
   test('orderReceiptShareText builds copyable customer receipt', () {
     final receipt = OrderReceipt(
+      provenance: BackendProvenance.website,
       number: 'MP-2026-ABCD',
       total: 540,
       paymentStatus: 'pending',

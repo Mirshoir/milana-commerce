@@ -11,6 +11,10 @@ void main() {
     required double price,
     List<String> sizes = const ['44', '46', '48'],
     String fabric = 'Suprem',
+    String tag = '',
+    bool preorder = false,
+    bool inStock = true,
+    bool canOrderWholesale = true,
   }) {
     return Product(
       id: id,
@@ -23,6 +27,10 @@ void main() {
       images: const [],
       modelNo: name,
       fabric: fabric,
+      tag: tag,
+      preorder: preorder,
+      inStock: inStock,
+      canOrderWholesale: canOrderWholesale,
     );
   }
 
@@ -102,5 +110,91 @@ void main() {
 
   test('availableSizes returns numeric sizes in ascending order', () {
     expect(availableSizes(rows), ['44', '46', '48', '50', '52', '54']);
+  });
+
+  test('filterCatalog keeps Cyrillic search terms meaningful', () {
+    final russianRows = [
+      product(
+        id: 'robe',
+        name: 'Женский халат',
+        gender: 'women',
+        category: 'robes',
+        price: 7,
+      ),
+      product(
+        id: 'men-pajamas',
+        name: 'Мужская пижама',
+        gender: 'men',
+        category: 'pajamas',
+        price: 8,
+      ),
+    ];
+
+    expect(
+      filterCatalog(
+        russianRows,
+        const CatalogFilterOptions(query: 'халат'),
+      ).map((row) => row.id),
+      ['robe'],
+    );
+    expect(
+      filterCatalog(
+        russianRows,
+        const CatalogFilterOptions(query: 'мужчины'),
+      ).map((row) => row.id),
+      ['men-pajamas'],
+    );
+  });
+
+  test('filterCatalog supports website curation and availability fields', () {
+    final websiteRows = [
+      product(
+        id: 'new',
+        name: 'New arrival',
+        gender: 'women',
+        category: 'robes',
+        price: 7,
+        tag: 'new',
+      ),
+      product(
+        id: 'bestseller',
+        name: 'Bestseller',
+        gender: 'women',
+        category: 'robes',
+        price: 7,
+        tag: 'bestseller',
+      ),
+      product(
+        id: 'preorder',
+        name: 'Preorder',
+        gender: 'women',
+        category: 'robes',
+        price: 7,
+        preorder: true,
+        inStock: false,
+      ),
+    ];
+
+    expect(
+      filterCatalog(
+        websiteRows,
+        const CatalogFilterOptions(curation: CurationFilter.bestseller),
+      ).map((row) => row.id),
+      ['bestseller'],
+    );
+    expect(
+      filterCatalog(
+        websiteRows,
+        const CatalogFilterOptions(availability: AvailabilityFilter.preorder),
+      ).map((row) => row.id),
+      ['preorder'],
+    );
+    expect(
+      filterCatalog(
+        websiteRows,
+        const CatalogFilterOptions(availability: AvailabilityFilter.inStock),
+      ).map((row) => row.id),
+      containsAll(['new', 'bestseller']),
+    );
   });
 }

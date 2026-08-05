@@ -4,6 +4,10 @@ enum CatalogSort { featured, priceLow, priceHigh, name }
 
 enum PriceBand { all, under5, from5To7, over7 }
 
+enum AvailabilityFilter { all, inStock, preorder }
+
+enum CurationFilter { all, newArrival, bestseller, sale }
+
 class CatalogFilterOptions {
   const CatalogFilterOptions({
     this.query = '',
@@ -11,6 +15,8 @@ class CatalogFilterOptions {
     this.category = 'all',
     this.size = 'all',
     this.priceBand = PriceBand.all,
+    this.availability = AvailabilityFilter.all,
+    this.curation = CurationFilter.all,
     this.sort = CatalogSort.featured,
     this.savedOnly = false,
     this.savedProductIds = const <String>{},
@@ -21,6 +27,8 @@ class CatalogFilterOptions {
   final String category;
   final String size;
   final PriceBand priceBand;
+  final AvailabilityFilter availability;
+  final CurationFilter curation;
   final CatalogSort sort;
   final bool savedOnly;
   final Set<String> savedProductIds;
@@ -40,6 +48,8 @@ List<Product> filterCatalog(
                 product.category == options.category) &&
             (options.size == 'all' || product.sizes.contains(options.size)) &&
             _matchesPriceBand(product.price, options.priceBand) &&
+            _matchesAvailability(product, options.availability) &&
+            _matchesCuration(product, options.curation) &&
             (!options.savedOnly ||
                 options.savedProductIds.contains(product.id)) &&
             (query.isEmpty || row.score > 0);
@@ -93,17 +103,58 @@ const _smartSynonyms = {
   'loungewear': 'loungewear',
   'komplekt': 'loungewear',
   'set': 'loungewear',
+  'женщина': 'women',
+  'женщины': 'women',
+  'женский': 'women',
+  'мужчина': 'men',
+  'мужчины': 'men',
+  'мужской': 'men',
+  'дети': 'kids',
+  'детский': 'kids',
+  'ребенок': 'kids',
+  'пижама': 'pajamas',
+  'пижамы': 'pajamas',
+  'халат': 'robes',
+  'халаты': 'robes',
+  'домашняя': 'homewear',
+  'домашнее': 'homewear',
   'paxta': 'cotton',
   'cotton': 'cotton',
   'suprem': 'suprem',
+};
+
+const _taxonomyTokens = <String>{
+  'women',
+  'men',
+  'kids',
+  'pajamas',
+  'robes',
+  'homewear',
+  'loungewear',
 };
 
 String _smartNormalize(String value) {
   return value
       .toLowerCase()
       .replaceAll(RegExp(r"['’`ʻ]"), '')
-      .replaceAll(RegExp(r'[^a-z0-9.$]+'), ' ')
+      .runes
+      .map((rune) => _isSearchRune(rune) ? String.fromCharCode(rune) : ' ')
+      .join()
+      .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
+}
+
+bool _isSearchRune(int rune) {
+  final isAsciiLetter = rune >= 0x61 && rune <= 0x7a;
+  final isDigit = rune >= 0x30 && rune <= 0x39;
+  final isLatinExtended = rune >= 0x00c0 && rune <= 0x024f;
+  final isCyrillic = rune >= 0x0400 && rune <= 0x052f;
+  return isAsciiLetter ||
+      isDigit ||
+      isLatinExtended ||
+      isCyrillic ||
+      rune == 0x24 ||
+      rune == 0x2e;
 }
 
 List<String> _smartTokens(String query) {
@@ -127,7 +178,12 @@ String _productText(Product product) {
       product.gender,
       product.category,
       product.fabric,
+      product.material,
+      product.composition,
       product.description,
+      product.season,
+      product.tag,
+      product.collection,
       product.sizes.join(' '),
     ].where((value) => value.trim().isNotEmpty).join(' '),
   );
@@ -135,7 +191,7 @@ String _productText(Product product) {
 
 int _smartScore(Product product, String query) {
   final tokens = _smartTokens(query);
-  if (tokens.isEmpty) return 0;
+  if (tokens.isEmpty) return _featureScore(product);
   final text = _productText(product);
   final model = _smartNormalize(
     [
@@ -145,15 +201,30 @@ int _smartScore(Product product, String query) {
     ].where((value) => value.trim().isNotEmpty).join(' '),
   );
   return tokens.fold(0, (sum, token) {
-    if (!text.contains(token)) return sum;
+    final taxonomyMatch = product.gender == token || product.category == token;
+    final textMatch = _taxonomyTokens.contains(token)
+        ? taxonomyMatch
+        : text.contains(token);
+    if (!textMatch) return sum;
     var score = sum + 8;
     if (model.contains(token)) score += 18;
-    if (product.gender == token || product.category == token) score += 12;
+    if (taxonomyMatch) score += 12;
     if (product.sizes.any((size) => _smartNormalize(size) == token)) {
       score += 10;
     }
     return score;
   });
+}
+
+int _featureScore(Product product) {
+  final tagScore = switch (product.tag) {
+    'new' => 40,
+    'bestseller' => 32,
+    'sale' => 24,
+    _ => 0,
+  };
+  final stockScore = product.canOrderWholesale && product.inStock ? 10 : 0;
+  return tagScore + stockScore + product.rating.round();
 }
 
 List<String> availableSizes(List<Product> products) {
@@ -179,6 +250,24 @@ bool _matchesPriceBand(double price, PriceBand band) {
     PriceBand.under5 => price > 0 && price < 5,
     PriceBand.from5To7 => price >= 5 && price <= 7,
     PriceBand.over7 => price > 7,
+  };
+}
+
+bool _matchesAvailability(Product product, AvailabilityFilter filter) {
+  return switch (filter) {
+    AvailabilityFilter.all => true,
+    AvailabilityFilter.inStock =>
+      product.inStock && product.canOrderWholesale && !product.preorder,
+    AvailabilityFilter.preorder => product.preorder,
+  };
+}
+
+bool _matchesCuration(Product product, CurationFilter filter) {
+  return switch (filter) {
+    CurationFilter.all => true,
+    CurationFilter.newArrival => product.tag == 'new',
+    CurationFilter.bestseller => product.tag == 'bestseller',
+    CurationFilter.sale => product.tag == 'sale',
   };
 }
 

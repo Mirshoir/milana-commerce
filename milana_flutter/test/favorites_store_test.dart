@@ -16,4 +16,26 @@ void main() {
       'kj-13018',
     ]);
   });
+
+  test('favorites remain isolated by account scope', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = FavoritesStore();
+
+    await store.save({'a-product'}, scope: 'buyer-a');
+    await store.save({'b-product'}, scope: 'buyer-b');
+
+    expect(await store.load(scope: 'buyer-a'), {'a-product'});
+    expect(await store.load(scope: 'buyer-b'), {'b-product'});
+    expect(await store.load(), isEmpty);
+  });
+
+  test('favorites scope can be erased for account deletion', () async {
+    SharedPreferences.setMockInitialValues({});
+    final store = FavoritesStore();
+    await store.save({'saved-product'}, scope: 'delete-me');
+
+    await store.clear(scope: 'delete-me');
+
+    expect(await store.load(scope: 'delete-me'), isEmpty);
+  });
 }

@@ -3,7 +3,14 @@ import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 
 const require = createRequire(new URL('../functions/package.json', import.meta.url));
-const admin = require('firebase-admin');
+const {
+  applicationDefault,
+  cert,
+  getApps,
+  initializeApp,
+} = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
+let auth;
 
 const args = new Map();
 for (let i = 2; i < process.argv.length; i += 1) {
@@ -84,19 +91,20 @@ async function readServiceAccount() {
 }
 
 async function initializeAdmin() {
-  if (admin.apps.length) return;
+  if (auth) return;
   const serviceAccount = await readServiceAccount();
-  admin.initializeApp({
-    projectId,
-    credential: serviceAccount
-      ? admin.credential.cert(serviceAccount)
-      : admin.credential.applicationDefault(),
-  });
+  const app =
+    getApps()[0] ||
+    initializeApp({
+      projectId,
+      credential: serviceAccount ? cert(serviceAccount) : applicationDefault(),
+    });
+  auth = getAuth(app);
 }
 
 async function getUser() {
   try {
-    return uid ? await admin.auth().getUser(uid) : await admin.auth().getUserByEmail(email);
+    return uid ? await auth.getUser(uid) : await auth.getUserByEmail(email);
   } catch (error) {
     if (error?.code !== 'auth/user-not-found' || !createUser) throw error;
     if (dryRun) {
@@ -106,7 +114,7 @@ async function getUser() {
         customClaims: {},
       };
     }
-    return admin.auth().createUser({
+    return auth.createUser({
       email,
       password: password || undefined,
       emailVerified: false,
@@ -141,10 +149,10 @@ if (dryRun) {
 }
 
 if (password && user.uid !== '<new-user>') {
-  await admin.auth().updateUser(user.uid, { password });
+  await auth.updateUser(user.uid, { password });
 }
-await admin.auth().setCustomUserClaims(user.uid, mergedClaims);
-const updated = await admin.auth().getUser(user.uid);
+await auth.setCustomUserClaims(user.uid, mergedClaims);
+const updated = await auth.getUser(user.uid);
 
 console.log(JSON.stringify({
   ok: true,

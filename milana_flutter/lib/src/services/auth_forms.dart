@@ -51,7 +51,13 @@ String? validatePhone(String? value) {
 }
 
 String authErrorMessage(Object error) {
+  if (error is ArgumentError && error.message != null) {
+    return '${error.message}';
+  }
   final text = error.toString();
+  if (text.contains('auth-backend-unavailable')) {
+    return 'Akkaunt xizmati vaqtincha mavjud emas.';
+  }
   if (text.contains('user-not-found') || text.contains('invalid-credential')) {
     return 'Email yoki parol noto‘g‘ri.';
   }
@@ -61,5 +67,14 @@ String authErrorMessage(Object error) {
   }
   if (text.contains('weak-password')) return 'Parol juda oddiy.';
   if (text.contains('invalid-email')) return 'Email noto‘g‘ri.';
+  if (text.contains('requires-recent-login')) {
+    return 'Xavfsizlik uchun qayta kiring va amalni takrorlang.';
+  }
+  if (text.contains('unauthenticated')) {
+    return 'Davom etish uchun akkauntga qayta kiring.';
+  }
+  if (text.contains('unavailable') || text.contains('deadline-exceeded')) {
+    return 'Xizmat bilan bog‘lanib bo‘lmadi. Birozdan keyin qayta urinib ko‘ring.';
+  }
   return text;
 }

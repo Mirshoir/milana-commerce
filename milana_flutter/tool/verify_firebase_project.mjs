@@ -2,6 +2,7 @@
 import fs from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { googleAccessToken } from './google_access_token.mjs';
+import { defaultFirebaseFunctionNames } from './firebase_function_names.mjs';
 
 const args = new Map();
 for (let i = 2; i < process.argv.length; i += 1) {
@@ -24,7 +25,7 @@ const minImageChecks = Number(args.get('--min-image-checks') || 3);
 const functionNames = (
   args.get('--function-name') ||
   args.get('--functions') ||
-  'placeOrder,createSupportTicket,submitPaymentProof,cancelOrder,updatePaymentStatus,paymentWebhook,updateOrderStatus,updateSupportStatus,updateProductAvailability,claimErpEvents,ackErpEvent'
+  defaultFirebaseFunctionNames.join(',')
 )
   .split(',')
   .map((name) => name.trim())

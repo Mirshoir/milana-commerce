@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "allowedStatuses": ["unknown", "not-applicable", "owner-approved"],
+  "appStore": [
+    {
+      "id": "pricing",
+      "status": "unknown",
+      "answer": {"price": null, "taxCategory": null},
+      "rationale": "Price and tax category require owner approval.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "territories",
+      "status": "unknown",
+      "answer": {"availableTerritories": null, "excludedTerritories": null},
+      "rationale": "Storefront availability has not been selected.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "release-method",
+      "status": "unknown",
+      "answer": {"method": null, "scheduledAt": null},
+      "rationale": "Manual, automatic, or scheduled release requires an owner decision.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "device-availability",
+      "status": "unknown",
+      "answer": {"iphone": true, "ipad": true, "appleSiliconMac": null, "visionOS": null},
+      "rationale": "The binary targets iPhone and iPad; optional compatibility storefronts remain undecided.",
+      "evidence": [{"kind": "source-code", "ref": "ios/Runner.xcodeproj/project.pbxproj"}],
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ],
+  "googlePlay": [
+    {
+      "id": "pricing",
+      "status": "unknown",
+      "answer": {"free": null},
+      "rationale": "The irreversible free/paid listing choice requires owner approval.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "countries",
+      "status": "unknown",
+      "answer": {"availableCountries": null, "excludedCountries": null},
+      "rationale": "Distribution countries have not been selected.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "managed-publishing",
+      "status": "unknown",
+      "answer": {"enabled": null},
+      "rationale": "Managed publishing is a release-operations decision.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "device-form-factors",
+      "status": "unknown",
+      "answer": {"phone": true, "tablet7": null, "tablet10": null, "chromebook": null},
+      "rationale": "Phone support is planned; large-screen distribution and assets require owner confirmation.",
+      "evidence": [{"kind": "source-code", "ref": "android/app/src/main/AndroidManifest.xml"}],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "developer-account-type",
+      "status": "unknown",
+      "answer": {"type": null, "createdAt": null},
+      "rationale": "Organization versus personal account status controls additional production-access gates.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "production-access",
+      "status": "unknown",
+      "answer": {
+        "personalAccountTestingRequired": null,
+        "twelveTestersForFourteenDaysComplete": null,
+        "physicalDeviceVerified": null
+      },
+      "rationale": "New personal accounts may require closed testing and device verification before production access.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ]
+}

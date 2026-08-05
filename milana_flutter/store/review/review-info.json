@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "containsSecrets": false,
+  "securityNotice": "Credentials belong only in protected App Store Connect or Play Console fields and must never be committed.",
+  "appStore": {
+    "requiresSignIn": true,
+    "contact": {
+      "name": null,
+      "email": null,
+      "phone": null,
+      "timeZone": "Asia/Tashkent",
+      "responseHours": null
+    },
+    "instructionsFile": "store/REVIEW_NOTES.md",
+    "credentialsLocation": "app-store-connect-protected-fields",
+    "credentialRefs": {
+      "primary": "APP_STORE_REVIEW_PRIMARY",
+      "deletion": "APP_STORE_REVIEW_DELETION"
+    },
+    "syntheticOrder": {
+      "managerLabel": null,
+      "marker": null,
+      "cleanupInstructions": null
+    },
+    "readiness": {
+      "status": "unknown",
+      "answer": null,
+      "rationale": "Review contacts, durable accounts, and non-fulfilling order cleanup are owner-controlled.",
+      "evidence": [{"kind": "source-code", "ref": "store/REVIEW_NOTES.md"}],
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  },
+  "googlePlay": {
+    "requiresSignIn": true,
+    "contact": {
+      "name": null,
+      "email": null,
+      "phone": null,
+      "timeZone": "Asia/Tashkent",
+      "responseHours": null
+    },
+    "instructionsFile": "store/REVIEW_NOTES.md",
+    "credentialsLocation": "play-console-app-access-protected-fields",
+    "credentialRefs": {
+      "primary": "GOOGLE_PLAY_REVIEW_PRIMARY",
+      "deletion": "GOOGLE_PLAY_REVIEW_DELETION"
+    },
+    "syntheticOrder": {
+      "managerLabel": null,
+      "marker": null,
+      "cleanupInstructions": null
+    },
+    "readiness": {
+      "status": "unknown",
+      "answer": null,
+      "rationale": "Reusable credentials and production-safe synthetic-order instructions require owner approval.",
+      "evidence": [{"kind": "source-code", "ref": "store/REVIEW_NOTES.md"}],
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  }
+}

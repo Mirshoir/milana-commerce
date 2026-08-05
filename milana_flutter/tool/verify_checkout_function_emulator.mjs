@@ -10,11 +10,13 @@ const region = process.env.FIREBASE_FUNCTIONS_REGION || 'asia-southeast1';
 const paymentWebhookSecret = process.env.PAYMENT_WEBHOOK_SECRET || 'local-payment-webhook-secret';
 const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const require = createRequire(new URL('../functions/package.json', import.meta.url));
-const admin = require('firebase-admin');
+const { getApps, initializeApp } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
+const { getFirestore } = require('firebase-admin/firestore');
 
-if (!admin.apps.length) {
-  admin.initializeApp({ projectId });
-}
+const adminApp = getApps()[0] || initializeApp({ projectId });
+const adminAuth = getAuth(adminApp);
+const adminDb = getFirestore(adminApp);
 
 function firestoreValue(value) {
   if (value === null || value === undefined) return { nullValue: null };
@@ -84,7 +86,7 @@ async function signIn(email) {
 
 async function signUpAdmin(label) {
   const user = await signUp(label);
-  await admin.auth().setCustomUserClaims(user.uid, { admin: true });
+  await adminAuth.setCustomUserClaims(user.uid, { admin: true });
   return signIn(user.email);
 }
 
@@ -341,8 +343,7 @@ async function readDoc(collection, id, token, expectedStatus = 200) {
 }
 
 async function erpEventsFor(entityId) {
-  const snap = await admin
-    .firestore()
+  const snap = await adminDb
     .collection('erp_events')
     .where('entity_id', '==', entityId)
     .get();
@@ -563,7 +564,7 @@ if (productAfterCustomerCancel.available_qop !== 5) {
   throw new Error(`Customer-cancel stock release mismatch: ${JSON.stringify(productAfterCustomerCancel)}`);
 }
 const customerCancelledOrder = await readDoc('orders', customerCancelReceipt.order_id, customer.token);
-const customerCancelledPayment = await admin.firestore()
+const customerCancelledPayment = await adminDb
   .collection('payments')
   .doc(customerCancelReceipt.order_id)
   .get();
@@ -837,7 +838,7 @@ const claimed = await callClaimErpEvents(adminUser.token, {
 if (claimed.claimed !== 2 || claimed.events.length !== 2 || !claimed.events[0].lease_until) {
   throw new Error(`ERP claim mismatch: ${JSON.stringify(claimed)}`);
 }
-const claimedDoc = await admin.firestore().collection('erp_events').doc(claimed.events[0].id).get();
+const claimedDoc = await adminDb.collection('erp_events').doc(claimed.events[0].id).get();
 if (
   claimedDoc.data()?.status !== 'processing' ||
   claimedDoc.data()?.lease_owner !== 'milana-erp-test'
@@ -853,7 +854,7 @@ const ackProcessed = await callAckErpEvent(adminUser.token, {
 if (ackProcessed.status !== 'processed') {
   throw new Error(`ERP processed ack mismatch: ${JSON.stringify(ackProcessed)}`);
 }
-const processedDoc = await admin.firestore().collection('erp_events').doc(claimed.events[0].id).get();
+const processedDoc = await adminDb.collection('erp_events').doc(claimed.events[0].id).get();
 if (
   processedDoc.data()?.status !== 'processed' ||
   processedDoc.data()?.external_id !== `ERP-${runId}`
@@ -869,15 +870,15 @@ const ackFailed = await callAckErpEvent(adminUser.token, {
 if (ackFailed.status !== 'failed') {
   throw new Error(`ERP failed ack mismatch: ${JSON.stringify(ackFailed)}`);
 }
-const failedDoc = await admin.firestore().collection('erp_events').doc(claimed.events[1].id).get();
+const failedDoc = await adminDb.collection('erp_events').doc(claimed.events[1].id).get();
 if (
   failedDoc.data()?.status !== 'failed' ||
   failedDoc.data()?.last_error !== 'ERP test failure'
 ) {
   throw new Error(`ERP failed doc mismatch: ${JSON.stringify(failedDoc.data())}`);
 }
-const expiredLeaseRef = admin.firestore().collection('erp_events').doc(`expired-lease-${runId}`);
-const activeLeaseRef = admin.firestore().collection('erp_events').doc(`active-lease-${runId}`);
+const expiredLeaseRef = adminDb.collection('erp_events').doc(`expired-lease-${runId}`);
+const activeLeaseRef = adminDb.collection('erp_events').doc(`active-lease-${runId}`);
 await expiredLeaseRef.set({
   type: 'test.expired_lease',
   entity_type: 'test',

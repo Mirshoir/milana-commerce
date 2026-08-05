@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
 import 'models/cart_item.dart';
+import 'models/checkout_manager.dart';
 import 'models/order.dart';
 import 'models/product.dart';
 import 'models/support_ticket.dart';
@@ -17,7 +19,9 @@ import 'services/cart_controller.dart';
 import 'services/catalog_filter.dart';
 import 'services/catalog_paging.dart';
 import 'services/catalog_repository.dart';
+import 'services/checkout_recovery_store.dart';
 import 'services/favorites_store.dart';
+import 'services/legal_links.dart';
 import 'services/order_repository.dart';
 import 'services/order_presentation.dart';
 import 'services/product_presentation.dart';
@@ -29,15 +33,25 @@ final shortDate = DateFormat('dd MMM yyyy', 'uz');
 final shortDateTime = DateFormat('dd MMM HH:mm', 'uz');
 const firebaseAssetBaseUrl = String.fromEnvironment('FIREBASE_ASSET_BASE_URL');
 const salesPhone = '+998501551010';
-const milanaBurgundy = Color(0xff6b1f34);
-const milanaInk = Color(0xff2d2522);
-const milanaIvory = Color(0xfffffbf3);
-const milanaBlush = Color(0xffffeef2);
-const milanaSand = Color(0xffefe4d2);
+const milanaBurgundy = Color(0xff171717);
+const milanaInk = Color(0xff171717);
+const milanaIvory = Color(0xffffffff);
+const milanaBlush = Color(0xfff7f5f3);
+const milanaSand = Color(0xffeeeae5);
 const milanaMoss = Color(0xff566246);
+const milanaMuted = Color(0xff666666);
 
 String resolveImageUrl(String image) {
-  if (image.startsWith('http')) return image;
+  final absolute = Uri.tryParse(image);
+  if (absolute != null && absolute.hasScheme) {
+    if (absolute.scheme == 'https') return absolute.toString();
+    if (!kReleaseMode &&
+        absolute.scheme == 'http' &&
+        (absolute.host == '127.0.0.1' || absolute.host == 'localhost')) {
+      return absolute.toString();
+    }
+    return '';
+  }
   if (image.startsWith('/') && firebaseAssetBaseUrl.isNotEmpty) {
     return firebaseAssetBaseUrl.replaceAll(RegExp(r'/+$'), '') + image;
   }
@@ -45,20 +59,35 @@ String resolveImageUrl(String image) {
   return image;
 }
 
-int qopUiLimit(Product product) {
+int packageUiLimit(Product product, {String unitType = bagUnitType}) {
+  if (!product.active || !product.canOrderWholesale) return 0;
   final available = product.availableQop;
   if (available == null) return 20;
-  return available.clamp(0, 20).toInt();
+  final pieces = product.orderUnitFor(unitType).pieces;
+  return (available * bagSize / pieces).floor().clamp(0, 20).toInt();
 }
 
-bool isOutOfQop(Product product) =>
-    product.availableQop != null && product.availableQop! <= 0;
+int qopUiLimit(Product product) => packageUiLimit(product);
+
+bool isOutOfQop(Product product) => !product.canOrderWholesale;
 
 String qopAvailabilityLabel(Product product) {
-  if (product.availableQop == null) return '60 ta';
-  if (product.availableQop! <= 0) return 'Mavjud emas';
-  return '${product.availableQop} qop';
+  if (product.preorder) return 'Oldindan buyurtma';
+  if (!product.canOrderWholesale) return 'Mavjud emas';
+  if (product.availableQop == null) return 'Menejer tasdiqlaydi';
+  final stock = product.availableQop!;
+  final label = stock == stock.roundToDouble()
+      ? stock.toInt().toString()
+      : stock.toStringAsFixed(1);
+  return '$label qop';
 }
+
+String productTagLabel(Product product) => switch (product.tag) {
+  'new' => 'Yangi',
+  'bestseller' => 'Bestseller',
+  'sale' => 'Chegirma',
+  _ => '',
+};
 
 String paymentMethodLabel(String method) {
   switch (method) {
@@ -244,6 +273,9 @@ class _MilanaAppState extends State<MilanaApp> {
   @override
   void dispose() {
     cart.dispose();
+    widget.catalog.close();
+    widget.orders.close();
+    widget.auth.dispose();
     super.dispose();
   }
 
@@ -269,7 +301,7 @@ class _MilanaAppState extends State<MilanaApp> {
         cardTheme: CardThemeData(
           color: Colors.white,
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: const RoundedRectangleBorder(),
         ),
         inputDecorationTheme: const InputDecorationTheme(
           border: OutlineInputBorder(),
@@ -278,13 +310,15 @@ class _MilanaAppState extends State<MilanaApp> {
         ),
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
-            backgroundColor: milanaBurgundy,
+            backgroundColor: milanaInk,
             foregroundColor: Colors.white,
+            shape: const RoundedRectangleBorder(),
+            minimumSize: const Size(48, 48),
           ),
         ),
         navigationBarTheme: NavigationBarThemeData(
           backgroundColor: milanaBlush,
-          indicatorColor: Colors.white,
+          indicatorColor: milanaBlush,
           labelTextStyle: WidgetStateProperty.resolveWith(
             (states) => TextStyle(
               color: states.contains(WidgetState.selected)
@@ -301,8 +335,25 @@ class _MilanaAppState extends State<MilanaApp> {
           selectedColor: milanaBurgundy,
           labelStyle: const TextStyle(color: milanaInk),
           secondaryLabelStyle: const TextStyle(color: Colors.white),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: const RoundedRectangleBorder(),
           side: BorderSide(color: milanaInk.withValues(alpha: .12)),
+        ),
+        snackBarTheme: SnackBarThemeData(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: milanaInk,
+          contentTextStyle: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w600,
+          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        ),
+        bottomSheetTheme: const BottomSheetThemeData(
+          backgroundColor: milanaIvory,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
         ),
       ),
       home: AppShell(
@@ -336,11 +387,17 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late int index;
   late final AssistantService assistant = AssistantService();
+  int catalogRequestId = 0;
+  CatalogLaunchMode catalogLaunchMode = CatalogLaunchMode.browse;
+  String catalogRequestedGender = 'all';
+  String catalogRequestedCategory = 'all';
+  final visitedTabs = <int>{0};
 
   @override
   void initState() {
     super.initState();
     index = tabIndexFromLaunchUri(Uri.base);
+    visitedTabs.add(index);
   }
 
   @override
@@ -355,76 +412,173 @@ class _AppShellState extends State<AppShell> {
       HomeScreen(
         catalog: widget.catalog,
         cart: widget.cart,
-        onOpenCatalog: () => setState(() => index = 1),
-        onOpenSupport: () => setState(() => index = 3),
+        isActive: index == 0,
+        onOpenCatalog: _openCatalog,
+        onOpenGender: (gender) => _openCatalogSelection(gender: gender),
+        onOpenSearch: () => _openCatalog(CatalogLaunchMode.search),
+        onOpenSaved: () => _openCatalog(CatalogLaunchMode.saved),
+        onOpenCart: () => _selectTab(2),
+        onOpenSupport: () => _selectTab(3),
       ),
-      CatalogScreen(
-        catalog: widget.catalog,
-        cart: widget.cart,
-        auth: widget.auth,
-      ),
-      CartScreen(cart: widget.cart, orders: widget.orders, auth: widget.auth),
-      SupportScreen(orders: widget.orders, auth: widget.auth),
-      AccountScreen(
-        auth: widget.auth,
-        orders: widget.orders,
-        cart: widget.cart,
-      ),
+      visitedTabs.contains(1)
+          ? CatalogScreen(
+              catalog: widget.catalog,
+              cart: widget.cart,
+              auth: widget.auth,
+              launchRequestId: catalogRequestId,
+              launchMode: catalogLaunchMode,
+              requestedGender: catalogRequestedGender,
+              requestedCategory: catalogRequestedCategory,
+            )
+          : const SizedBox.shrink(),
+      visitedTabs.contains(2)
+          ? CartScreen(
+              cart: widget.cart,
+              orders: widget.orders,
+              auth: widget.auth,
+              onOpenCatalog: _openCatalog,
+            )
+          : const SizedBox.shrink(),
+      visitedTabs.contains(3)
+          ? SupportScreen(orders: widget.orders, auth: widget.auth)
+          : const SizedBox.shrink(),
+      visitedTabs.contains(4)
+          ? AccountScreen(
+              auth: widget.auth,
+              orders: widget.orders,
+              cart: widget.cart,
+            )
+          : const SizedBox.shrink(),
     ];
     return AnimatedBuilder(
       animation: Listenable.merge([widget.cart, widget.auth]),
       builder: (context, _) {
-        return Scaffold(
-          appBar: AppBar(
-            title: const _BrandLockup(),
-            actions: [
-              TextButton.icon(
-                onPressed: () => setState(() => index = 2),
-                icon: const Icon(Icons.shopping_bag_outlined),
-                label: Text('${widget.cart.count}'),
-              ),
-            ],
-          ),
-          body: pages[index],
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: _openAssistant,
-            icon: const Icon(Icons.auto_awesome),
-            label: const Text('AI yordam'),
-          ),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: index,
-            onDestinationSelected: (value) => setState(() => index = value),
-            destinations: const [
-              NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.storefront_outlined),
-                selectedIcon: Icon(Icons.storefront),
-                label: 'Katalog',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.shopping_bag_outlined),
-                selectedIcon: Icon(Icons.shopping_bag),
-                label: 'Savat',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.support_agent_outlined),
-                selectedIcon: Icon(Icons.support_agent),
-                label: 'Yordam',
-              ),
-              NavigationDestination(
-                icon: Icon(Icons.person_outline),
-                selectedIcon: Icon(Icons.person),
-                label: 'Akkaunt',
-              ),
-            ],
+        return PopScope(
+          canPop: index == 0,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && index != 0) _selectTab(0);
+          },
+          child: Scaffold(
+            appBar: index == 0
+                ? null
+                : AppBar(
+                    toolbarHeight: MediaQuery.textScalerOf(
+                      context,
+                    ).scale(56).clamp(56, 80),
+                    title: const _BrandLockup(),
+                    actions: [
+                      IconButton(
+                        onPressed: () => _openCatalog(CatalogLaunchMode.search),
+                        icon: const Icon(Icons.search),
+                        tooltip: 'Qidirish',
+                      ),
+                      IconButton(
+                        onPressed: () => _openCatalog(CatalogLaunchMode.saved),
+                        icon: const Icon(Icons.favorite_border),
+                        tooltip: 'Saqlanganlar',
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: Badge(
+                          isLabelVisible: widget.cart.count > 0,
+                          label: Text('${widget.cart.count}'),
+                          child: IconButton(
+                            onPressed: () => _selectTab(2),
+                            icon: const Icon(Icons.shopping_bag_outlined),
+                            tooltip: 'Savat',
+                          ),
+                        ),
+                      ),
+                    ],
+                    bottom: const PreferredSize(
+                      preferredSize: Size.fromHeight(24),
+                      child: _WholesaleTicker(),
+                    ),
+                  ),
+            body: IndexedStack(index: index, children: pages),
+            floatingActionButton: FloatingActionButton.small(
+              onPressed: _openAssistant,
+              tooltip: 'AI yordamchi',
+              backgroundColor: milanaInk,
+              foregroundColor: Colors.white,
+              child: const Icon(Icons.auto_awesome),
+            ),
+            bottomNavigationBar: NavigationBar(
+              selectedIndex: index,
+              height: 70,
+              onDestinationSelected: (value) {
+                HapticFeedback.selectionClick();
+                _selectTab(value);
+              },
+              destinations: [
+                const NavigationDestination(
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home),
+                  label: 'Asosiy',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.storefront_outlined),
+                  selectedIcon: Icon(Icons.storefront),
+                  label: 'Katalog',
+                ),
+                NavigationDestination(
+                  icon: Badge(
+                    isLabelVisible: widget.cart.count > 0,
+                    label: Text('${widget.cart.count}'),
+                    child: const Icon(Icons.shopping_bag_outlined),
+                  ),
+                  selectedIcon: Badge(
+                    isLabelVisible: widget.cart.count > 0,
+                    label: Text('${widget.cart.count}'),
+                    child: const Icon(Icons.shopping_bag),
+                  ),
+                  label: 'Savat',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.support_agent_outlined),
+                  selectedIcon: Icon(Icons.support_agent),
+                  label: 'Yordam',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person),
+                  label: 'Akkaunt',
+                ),
+              ],
+            ),
           ),
         );
       },
     );
+  }
+
+  void _selectTab(int value) {
+    setState(() {
+      index = value;
+      visitedTabs.add(value);
+    });
+  }
+
+  void _openCatalog([CatalogLaunchMode mode = CatalogLaunchMode.browse]) {
+    setState(() {
+      index = 1;
+      visitedTabs.add(1);
+      catalogLaunchMode = mode;
+      catalogRequestedGender = 'all';
+      catalogRequestedCategory = 'all';
+      catalogRequestId += 1;
+    });
+  }
+
+  void _openCatalogSelection({String gender = 'all', String category = 'all'}) {
+    setState(() {
+      index = 1;
+      visitedTabs.add(1);
+      catalogLaunchMode = CatalogLaunchMode.browse;
+      catalogRequestedGender = gender;
+      catalogRequestedCategory = category;
+      catalogRequestId += 1;
+    });
   }
 
   void _openAssistant() {
@@ -441,16 +595,32 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _addAssistantProduct(Product product) {
-    if (!widget.cart.canAdd(product)) {
+    _addAssistantItem(CartItem(product: product, unitType: packUnitType));
+  }
+
+  bool _addAssistantItem(CartItem item) {
+    if (!widget.cart.canAdd(
+      item.product,
+      quantity: item.quantity,
+      unitType: item.unitType,
+    )) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${product.name} hozircha mavjud emas')),
+        SnackBar(content: Text('${item.product.name} hozircha mavjud emas')),
       );
-      return;
+      return false;
     }
-    widget.cart.add(product);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${product.name} · 1 qop savatga qo‘shildi')),
-    );
+    widget.cart.addItem(item);
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            '${item.product.name} · ${item.quantity} ${orderUnitLabel(item.unitType).toLowerCase()} savatga qo‘shildi',
+          ),
+        ),
+      );
+    return true;
   }
 
   void _openAssistantProduct(Product product) {
@@ -461,13 +631,37 @@ class _AppShellState extends State<AppShell> {
       builder: (context) => ProductSheet(
         product: product,
         relatedProducts: const <Product>[],
-        onAdd: (qty) {
-          for (var i = 0; i < qty; i++) {
-            _addAssistantProduct(product);
-          }
-        },
+        onAdd: _addAssistantItem,
         onOpenRelated: _openAssistantProduct,
         onAddRelated: _addAssistantProduct,
+      ),
+    );
+  }
+}
+
+enum CatalogLaunchMode { browse, search, saved }
+
+class _WholesaleTicker extends StatelessWidget {
+  const _WholesaleTicker();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      height: 24,
+      color: milanaInk,
+      alignment: Alignment.center,
+      child: const Text(
+        'ULGURJI BUYURTMA · 1 QADOQ YOKI 1 QOPDAN',
+        maxLines: 1,
+        overflow: TextOverflow.fade,
+        softWrap: false,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: 9,
+          letterSpacing: 1.4,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -478,23 +672,120 @@ class _BrandLockup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          'MILANA',
-          style: TextStyle(
-            fontSize: 24,
-            letterSpacing: 2,
-            fontWeight: FontWeight.w600,
+    final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.4;
+    return Semantics(
+      header: true,
+      label: 'Milana Premium',
+      child: ExcludeSemantics(
+        child: largeText
+            ? const Text(
+                'MILANA PREMIUM',
+                maxLines: 1,
+                overflow: TextOverflow.fade,
+                softWrap: false,
+                style: TextStyle(
+                  fontSize: 16,
+                  letterSpacing: 2.2,
+                  fontWeight: FontWeight.w600,
+                ),
+              )
+            : const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'MILANA',
+                    style: TextStyle(
+                      fontSize: 20,
+                      letterSpacing: 3,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'PREMIUM',
+                    style: TextStyle(fontSize: 8, letterSpacing: 4),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _StorefrontHomeHeader extends StatelessWidget {
+  const _StorefrontHomeHeader({
+    required this.cartCount,
+    required this.onMenu,
+    required this.onSearch,
+    required this.onSaved,
+    required this.onCart,
+  });
+
+  final int cartCount;
+  final VoidCallback onMenu;
+  final VoidCallback onSearch;
+  final VoidCallback onSaved;
+  final VoidCallback onCart;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        children: [
+          const _WholesaleTicker(),
+          SizedBox(
+            height: 62,
+            child: Row(
+              children: [
+                IconButton(
+                  onPressed: onMenu,
+                  color: Colors.white,
+                  icon: const Icon(Icons.menu),
+                  tooltip: 'Menyu',
+                ),
+                const Expanded(
+                  child: Text(
+                    'MILANA PREMIUM',
+                    maxLines: 1,
+                    overflow: TextOverflow.fade,
+                    softWrap: false,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      letterSpacing: 4,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: onSaved,
+                  color: Colors.white,
+                  icon: const Icon(Icons.favorite_border, size: 21),
+                  tooltip: 'Saqlanganlar',
+                ),
+                IconButton(
+                  onPressed: onSearch,
+                  color: Colors.white,
+                  icon: const Icon(Icons.search, size: 22),
+                  tooltip: 'Qidirish',
+                ),
+                Badge(
+                  isLabelVisible: cartCount > 0,
+                  label: Text('$cartCount'),
+                  child: IconButton(
+                    onPressed: onCart,
+                    color: Colors.white,
+                    icon: const Icon(Icons.shopping_bag_outlined, size: 21),
+                    tooltip: 'Savat',
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-        Text(
-          'PREMIUM · MILANA',
-          style: TextStyle(fontSize: 10, letterSpacing: 3),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -504,13 +795,23 @@ class HomeScreen extends StatefulWidget {
     super.key,
     required this.catalog,
     required this.cart,
+    required this.isActive,
     required this.onOpenCatalog,
+    required this.onOpenGender,
+    required this.onOpenSearch,
+    required this.onOpenSaved,
+    required this.onOpenCart,
     required this.onOpenSupport,
   });
 
   final CatalogRepository catalog;
   final CartController cart;
+  final bool isActive;
   final VoidCallback onOpenCatalog;
+  final ValueChanged<String> onOpenGender;
+  final VoidCallback onOpenSearch;
+  final VoidCallback onOpenSaved;
+  final VoidCallback onOpenCart;
   final VoidCallback onOpenSupport;
 
   @override
@@ -519,6 +820,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late Future<List<Product>> productsFuture;
+  String refreshedCartCatalog = '';
 
   @override
   void initState() {
@@ -533,11 +835,60 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context, snap) {
         final products = snap.data ?? const <Product>[];
         final loading = snap.connectionState != ConnectionState.done;
+        if (!loading && products.isNotEmpty) {
+          final catalogRevision = Object.hashAll(
+            products.map(
+              (product) => Object.hash(
+                product.id,
+                product.price,
+                product.availableQop,
+                product.active,
+                product.canOrderWholesale,
+                Object.hashAll(
+                  product.orderUnits.map(
+                    (unit) =>
+                        Object.hash(unit.unitType, unit.pieces, unit.minQty),
+                  ),
+                ),
+              ),
+            ),
+          ).toString();
+          if (catalogRevision != refreshedCartCatalog) {
+            refreshedCartCatalog = catalogRevision;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) widget.cart.refreshProducts(products);
+            });
+          }
+        }
         final women = _byGender(products, 'women');
         final men = _byGender(products, 'men');
         final kids = _byGender(products, 'kids');
-        final heroProduct = products.isNotEmpty ? products.first : null;
-        final bestProducts = products.take(8).toList();
+        final heroProducts =
+            [
+              ...products.where(
+                (product) =>
+                    product.images.isNotEmpty && product.gender == 'women',
+              ),
+              ...products.where(
+                (product) =>
+                    product.images.isNotEmpty &&
+                    (product.tag == 'new' || product.tag == 'bestseller'),
+              ),
+              ...products.where((product) => product.images.isNotEmpty),
+            ].fold<List<Product>>(<Product>[], (result, product) {
+              if (result.any((item) => item.id == product.id) ||
+                  result.length >= 3) {
+                return result;
+              }
+              return [...result, product];
+            });
+        final taggedBestsellers = products
+            .where((product) => product.tag == 'bestseller')
+            .take(8)
+            .toList();
+        final bestProducts = taggedBestsellers.isNotEmpty
+            ? taggedBestsellers
+            : products.take(8).toList();
         final lounge = products
             .where((product) => product.category == 'loungewear')
             .take(8)
@@ -549,63 +900,41 @@ class _HomeScreenState extends State<HomeScreen> {
             await next;
           },
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+            padding: const EdgeInsets.only(bottom: 32),
             children: [
-              HomeHero(
-                product: heroProduct,
-                loading: loading,
-                onCatalog: widget.onOpenCatalog,
-                onSupport: widget.onOpenSupport,
+              Stack(
+                children: [
+                  HomeHero(
+                    products: heroProducts,
+                    loading: loading,
+                    autoPlay: widget.isActive,
+                    onCatalog: widget.onOpenCatalog,
+                    onSupport: widget.onOpenSupport,
+                    onOpenProduct: (product) => _openProduct(product, products),
+                  ),
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    top: 0,
+                    child: _StorefrontHomeHeader(
+                      cartCount: widget.cart.count,
+                      onMenu: _openMenu,
+                      onSearch: widget.onOpenSearch,
+                      onSaved: widget.onOpenSaved,
+                      onCart: widget.onOpenCart,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 8),
               HomeStatStrip(totalProducts: products.length),
-              const SizedBox(height: 18),
-              SectionHeader(title: 'Shop the edit', trailing: 'Optom'),
-              const SizedBox(height: 10),
-              HomeCategoryGrid(
-                women: women.length,
-                men: men.length,
-                kids: kids.length,
-                onOpenCatalog: widget.onOpenCatalog,
-              ),
-              if (bestProducts.isNotEmpty) ...[
-                const SizedBox(height: 22),
-                SectionHeader(
-                  title: 'Fresh drops',
-                  trailing: '${bestProducts.length} model',
-                ),
-                const SizedBox(height: 10),
-                FeaturedProductsRail(
-                  products: bestProducts,
-                  badgeIcon: Icons.auto_awesome,
-                  badgeLabel: 'Drop',
-                  onOpen: (product) => _openProduct(product, products),
-                  onAdd: _add,
-                ),
-              ],
-              if (lounge.isNotEmpty) ...[
-                const SizedBox(height: 22),
-                SectionHeader(
-                  title: 'Lounge systems',
-                  trailing: '${lounge.length} model',
-                ),
-                const SizedBox(height: 10),
-                FeaturedProductsRail(
-                  products: lounge,
-                  badgeIcon: Icons.layers_outlined,
-                  badgeLabel: 'Set',
-                  onOpen: (product) => _openProduct(product, products),
-                  onAdd: _add,
-                ),
-              ],
-              const SizedBox(height: 22),
-              HomeWholesaleBand(onSupport: widget.onOpenSupport),
               if (snap.hasError && products.isEmpty) ...[
-                const SizedBox(height: 22),
+                const SizedBox(height: 18),
                 _EmptyState(
                   icon: Icons.cloud_off_outlined,
                   title: 'Katalog ochilmadi',
-                  message: '${snap.error}',
+                  message:
+                      'Internet aloqasini tekshirib, qayta urinib ko‘ring.',
                   action: FilledButton(
                     onPressed: () => setState(
                       () => productsFuture = widget.catalog.loadProducts(),
@@ -614,6 +943,64 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ],
+              if (bestProducts.isNotEmpty) ...[
+                const SizedBox(height: 42),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: SectionHeader(title: 'BAHOR—YOZ 26', trailing: '→'),
+                ),
+                const SizedBox(height: 14),
+                FeaturedProductsRail(
+                  products: bestProducts,
+                  badgeIcon: Icons.workspace_premium_outlined,
+                  badgeLabel: 'Top',
+                  onOpen: (product) => _openProduct(product, products),
+                  onAdd: _add,
+                ),
+              ],
+              if (!snap.hasError || products.isNotEmpty) ...[
+                const SizedBox(height: 48),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: SectionHeader(
+                    title: 'BUTUN OILA UCHUN KIYIM',
+                    trailing: '',
+                  ),
+                ),
+                const SizedBox(height: 18),
+                HomeCategoryGrid(
+                  women: women.length,
+                  men: men.length,
+                  kids: kids.length,
+                  womenProduct: women.isEmpty ? null : women.first,
+                  menProduct: men.isEmpty ? null : men.first,
+                  kidsProduct: kids.isEmpty ? null : kids.first,
+                  onOpenGender: widget.onOpenGender,
+                ),
+              ],
+              if (lounge.isNotEmpty) ...[
+                const SizedBox(height: 48),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: SectionHeader(
+                    title: 'UY UCHUN KOLLEKSIYA',
+                    trailing: '→',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                FeaturedProductsRail(
+                  products: lounge,
+                  badgeIcon: Icons.layers_outlined,
+                  badgeLabel: 'Set',
+                  onOpen: (product) => _openProduct(product, products),
+                  onAdd: _add,
+                ),
+              ],
+              const SizedBox(height: 42),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: HomeWholesaleBand(onSupport: widget.onOpenSupport),
+              ),
             ],
           ),
         );
@@ -621,20 +1008,84 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'MILANA PREMIUM',
+              style: TextStyle(letterSpacing: 3, fontSize: 18),
+            ),
+            const SizedBox(height: 22),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('KATALOG'),
+              trailing: const Icon(Icons.arrow_forward),
+              onTap: () {
+                Navigator.pop(context);
+                widget.onOpenCatalog();
+              },
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('SAQLANGANLAR'),
+              trailing: const Icon(Icons.favorite_border),
+              onTap: () {
+                Navigator.pop(context);
+                widget.onOpenSaved();
+              },
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('YORDAM'),
+              trailing: const Icon(Icons.support_agent_outlined),
+              onTap: () {
+                Navigator.pop(context);
+                widget.onOpenSupport();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Product> _byGender(List<Product> products, String gender) =>
       products.where((product) => product.gender == gender).toList();
 
   void _add(Product product) {
-    if (!widget.cart.canAdd(product)) {
+    _addItem(CartItem(product: product, unitType: packUnitType));
+  }
+
+  bool _addItem(CartItem item) {
+    if (!widget.cart.canAdd(
+      item.product,
+      quantity: item.quantity,
+      unitType: item.unitType,
+    )) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${product.name} hozircha mavjud emas')),
+        SnackBar(content: Text('${item.product.name} hozircha mavjud emas')),
       );
-      return;
+      return false;
     }
-    widget.cart.add(product);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${product.name} · 1 qop savatga qo‘shildi')),
-    );
+    widget.cart.addItem(item);
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            '${item.product.name} · ${item.quantity} ${orderUnitLabel(item.unitType).toLowerCase()} savatga qo‘shildi',
+          ),
+        ),
+      );
+    return true;
   }
 
   void _openProduct(Product product, List<Product> products) {
@@ -646,11 +1097,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context) => ProductSheet(
         product: product,
         relatedProducts: related,
-        onAdd: (qty) {
-          for (var i = 0; i < qty; i++) {
-            _add(product);
-          }
-        },
+        onAdd: _addItem,
         onOpenRelated: (relatedProduct) =>
             _openProduct(relatedProduct, products),
         onAddRelated: _add,
@@ -659,105 +1106,276 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class HomeHero extends StatelessWidget {
+class HomeHero extends StatefulWidget {
   const HomeHero({
     super.key,
+    required this.products,
+    required this.loading,
+    required this.autoPlay,
+    required this.onCatalog,
+    required this.onSupport,
+    required this.onOpenProduct,
+  });
+
+  final List<Product> products;
+  final bool loading;
+  final bool autoPlay;
+  final VoidCallback onCatalog;
+  final VoidCallback onSupport;
+  final ValueChanged<Product> onOpenProduct;
+
+  @override
+  State<HomeHero> createState() => _HomeHeroState();
+}
+
+class _HomeHeroState extends State<HomeHero> {
+  final PageController controller = PageController();
+  Timer? timer;
+  int index = 0;
+  bool reduceMotion = false;
+  bool userPaused = false;
+
+  int get pageCount => widget.products.isEmpty ? 1 : widget.products.length + 1;
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final media = MediaQuery.of(context);
+    final nextReduceMotion =
+        media.disableAnimations || media.accessibleNavigation;
+    if (nextReduceMotion == reduceMotion && timer != null) return;
+    reduceMotion = nextReduceMotion;
+    _startTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeHero oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.autoPlay) {
+      timer?.cancel();
+      timer = null;
+    } else if (!oldWidget.autoPlay ||
+        oldWidget.products.length != widget.products.length) {
+      index = 0;
+      _startTimer();
+    }
+  }
+
+  void _startTimer() {
+    timer?.cancel();
+    timer = null;
+    if (!widget.autoPlay || reduceMotion || userPaused || pageCount < 2) return;
+    timer = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (!mounted || !controller.hasClients) return;
+      final next = (index + 1) % pageCount;
+      controller.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
+
+  void _togglePlayback() {
+    setState(() => userPaused = !userPaused);
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    timer?.cancel();
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final products = widget.products;
+    return SizedBox(
+      height: 640,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          PageView.builder(
+            controller: controller,
+            itemCount: pageCount,
+            onPageChanged: (value) => setState(() => index = value),
+            itemBuilder: (context, pageIndex) {
+              final product = pageIndex == 0 || products.isEmpty
+                  ? null
+                  : products[pageIndex - 1];
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (product == null)
+                    Image.asset(
+                      'assets/hero-poster.jpg',
+                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                    )
+                  else
+                    ProductImage(product: product),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: .42),
+                          Colors.black.withValues(alpha: .04),
+                          Colors.black.withValues(alpha: .68),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: 18,
+                    right: 18,
+                    bottom: 38,
+                    child: _HomeHeroCopy(
+                      product: product,
+                      loading: widget.loading,
+                      onCatalog: widget.onCatalog,
+                      onSupport: widget.onSupport,
+                      onOpenProduct: product == null
+                          ? null
+                          : () => widget.onOpenProduct(product),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+          if (pageCount > 1)
+            Positioned(
+              bottom: 18,
+              left: 0,
+              right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  pageCount,
+                  (dotIndex) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    width: dotIndex == index ? 9 : 6,
+                    height: 6,
+                    margin: const EdgeInsets.only(left: 5),
+                    decoration: BoxDecoration(
+                      color: dotIndex == index
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: .48),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (pageCount > 1 && !reduceMotion)
+            Positioned(
+              top: 88,
+              right: 12,
+              child: IconButton.filledTonal(
+                onPressed: _togglePlayback,
+                icon: Icon(userPaused ? Icons.play_arrow : Icons.pause),
+                tooltip: userPaused
+                    ? 'Slaydlarni davom ettirish'
+                    : 'Slaydlarni to‘xtatish',
+                style: IconButton.styleFrom(
+                  backgroundColor: Colors.white.withValues(alpha: .9),
+                  foregroundColor: milanaInk,
+                  fixedSize: const Size(48, 48),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeHeroCopy extends StatelessWidget {
+  const _HomeHeroCopy({
     required this.product,
     required this.loading,
     required this.onCatalog,
     required this.onSupport,
+    required this.onOpenProduct,
   });
 
   final Product? product;
   final bool loading;
   final VoidCallback onCatalog;
   final VoidCallback onSupport;
+  final VoidCallback? onOpenProduct;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 520,
-      decoration: BoxDecoration(
-        color: milanaInk,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (product != null)
-            ProductImage(product: product!)
-          else
-            const ProductImagePlaceholder(),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: .1),
-                  Colors.black.withValues(alpha: .38),
-                  Colors.black.withValues(alpha: .72),
-                ],
+    final title = product == null
+        ? 'YUMSHOQLIK,\nANIQ O‘LCHAMDA.'
+        : 'KUN BO‘YI\nQULAYLIK.';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          loading
+              ? 'KOLLEKSIYA YANGILANMOQDA'
+              : 'KIYIM-KECHAK FABRIKASI · O‘ZBEKISTON',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            letterSpacing: 2.5,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          title,
+          style: Theme.of(context).textTheme.displayMedium?.copyWith(
+            color: Colors.white,
+            fontFamily: 'MilanaDisplay',
+            fontWeight: FontWeight.w300,
+            letterSpacing: 1.2,
+            height: .98,
+          ),
+        ),
+        const SizedBox(height: 22),
+        Row(
+          children: [
+            SizedBox(
+              width: 160,
+              child: OutlinedButton(
+                onPressed: onOpenProduct ?? onCatalog,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white),
+                  shape: const RoundedRectangleBorder(),
+                  minimumSize: const Size(160, 48),
+                ),
+                child: Text(
+                  onOpenProduct == null ? 'Katalog' : 'Modelni ko‘rish',
+                  style: const TextStyle(letterSpacing: 1.5, fontSize: 11),
+                ),
               ),
             ),
-          ),
-          Positioned(
-            left: 18,
-            right: 18,
-            bottom: 18,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _SoftBadge(
-                  icon: loading ? Icons.sync : Icons.verified_outlined,
-                  label: loading ? 'Yangilanmoqda' : 'Milana Premium',
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  'Factory drops for wholesale buyers',
-                  style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w900,
-                    height: .98,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'Ayollar, erkaklar va bolalar uchun uy kiyimlari. 1 qopdan buyurtma, har qopda 60 ta kiyim.',
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Colors.white.withValues(alpha: .86),
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: onCatalog,
-                        icon: const Icon(Icons.storefront_outlined),
-                        label: const Text('Katalog'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    IconButton.filledTonal(
-                      onPressed: onSupport,
-                      icon: const Icon(Icons.support_agent_outlined),
-                      tooltip: 'Yordam',
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: milanaInk,
-                        fixedSize: const Size(52, 52),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+            const SizedBox(width: 10),
+            IconButton.filledTonal(
+              onPressed: onSupport,
+              icon: const Icon(Icons.support_agent_outlined),
+              tooltip: 'Yordam',
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: milanaInk,
+                fixedSize: const Size(52, 52),
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 }
@@ -769,14 +1387,24 @@ class HomeStatStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        HomeStatTile(value: '$totalProducts', label: 'active models'),
-        const SizedBox(width: 10),
-        const HomeStatTile(value: '60', label: 'pieces per qop'),
-        const SizedBox(width: 10),
-        const HomeStatTile(value: '08-18', label: 'Mon-Sat'),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          const HomeStatTile(
+            value: '1 QADOQ YOKI 1 QOPDAN',
+            label: 'Qadoq — 6 dona, qop — 60 dona',
+          ),
+          const HomeStatTile(
+            value: 'POCHTA YOKI CARGO',
+            label: 'Yetkazib berish xarajatini mijoz to‘laydi',
+          ),
+          HomeStatTile(
+            value: 'MENEJER YORDAMI',
+            label: '$totalProducts model · narx va mavjudlik tasdiqlanadi',
+          ),
+        ],
+      ),
     );
   }
 }
@@ -789,39 +1417,35 @@ class HomeStatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: milanaInk.withValues(alpha: .08)),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: milanaInk.withValues(alpha: .12)),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w900,
-                color: milanaBurgundy,
-              ),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 2,
             ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: milanaInk.withValues(alpha: .58),
-                fontWeight: FontWeight.w700,
-                fontSize: 12,
-              ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: milanaInk.withValues(alpha: .56),
+              fontSize: 12,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -833,50 +1457,72 @@ class HomeCategoryGrid extends StatelessWidget {
     required this.women,
     required this.men,
     required this.kids,
-    required this.onOpenCatalog,
+    required this.womenProduct,
+    required this.menProduct,
+    required this.kidsProduct,
+    required this.onOpenGender,
   });
 
   final int women;
   final int men;
   final int kids;
-  final VoidCallback onOpenCatalog;
+  final Product? womenProduct;
+  final Product? menProduct;
+  final Product? kidsProduct;
+  final ValueChanged<String> onOpenGender;
 
   @override
   Widget build(BuildContext context) {
+    final categories = [
+      (
+        title: 'AYOLLARGA',
+        subtitle: 'Xalatlar va pijamalar',
+        count: women,
+        product: womenProduct,
+        gender: 'women',
+      ),
+      (
+        title: 'ERKAKLARGA',
+        subtitle: 'Erkaklar kolleksiyasi',
+        count: men,
+        product: menProduct,
+        gender: 'men',
+      ),
+      (
+        title: 'BOLALARGA',
+        subtitle: 'Bolalar kiyimlari',
+        count: kids,
+        product: kidsProduct,
+        gender: 'kids',
+      ),
+    ];
+    final tiles = categories
+        .map(
+          (category) => HomeCategoryTile(
+            title: category.title,
+            subtitle: category.subtitle,
+            count: category.count,
+            product: category.product,
+            onTap: () => onOpenGender(category.gender),
+          ),
+        )
+        .toList();
     return LayoutBuilder(
       builder: (context, constraints) {
-        final wide = constraints.maxWidth > 620;
-        final children = [
-          HomeCategoryTile(
-            title: 'Women',
-            count: women,
-            icon: Icons.checkroom_outlined,
-            color: milanaBurgundy,
-            onTap: onOpenCatalog,
+        if (constraints.maxWidth < 760) {
+          return Column(children: tiles);
+        }
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var index = 0; index < tiles.length; index++) ...[
+                if (index > 0) const SizedBox(width: 12),
+                Expanded(child: tiles[index]),
+              ],
+            ],
           ),
-          HomeCategoryTile(
-            title: 'Men',
-            count: men,
-            icon: Icons.man_2_outlined,
-            color: milanaMoss,
-            onTap: onOpenCatalog,
-          ),
-          HomeCategoryTile(
-            title: 'Kids',
-            count: kids,
-            icon: Icons.child_care_outlined,
-            color: const Color(0xff315f72),
-            onTap: onOpenCatalog,
-          ),
-        ];
-        return GridView.count(
-          crossAxisCount: wide ? 3 : 1,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: wide ? 1.35 : 3.5,
-          children: children,
         );
       },
     );
@@ -887,68 +1533,63 @@ class HomeCategoryTile extends StatelessWidget {
   const HomeCategoryTile({
     super.key,
     required this.title,
+    required this.subtitle,
     required this.count,
-    required this.icon,
-    required this.color,
+    required this.product,
     required this.onTap,
   });
 
   final String title;
+  final String subtitle;
   final int count;
-  final IconData icon;
-  final Color color;
+  final Product? product;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Ink(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: .16),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(icon, color: Colors.white),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w900,
-                    ),
+      child: Column(
+        children: [
+          AspectRatio(
+            aspectRatio: .95,
+            child: product == null
+                ? const ProductImagePlaceholder()
+                : ProductImage(product: product!),
+          ),
+          Container(
+            width: double.infinity,
+            color: Colors.white,
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+            child: Column(
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    letterSpacing: 2.4,
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    '$count model',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: .78),
-                    ),
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  subtitle,
+                  style: TextStyle(color: milanaInk.withValues(alpha: .52)),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'MODELLARNI KO‘RISH · $count',
+                  style: const TextStyle(
+                    fontSize: 10,
+                    letterSpacing: 1.6,
+                    decoration: TextDecoration.underline,
+                    decorationThickness: 1.5,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const Icon(Icons.arrow_forward, color: Colors.white),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -967,47 +1608,328 @@ class HomeWholesaleBand extends StatelessWidget {
         color: milanaSand,
         borderRadius: BorderRadius.circular(8),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Buyurtma qanday ishlaydi',
+            style: Theme.of(
+              context,
+            ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Qadoqdan boshlang yoki to‘liq qop tanlang. Narx, qoldiq va jo‘natishni menejer yakuniy tasdiqlaydi.',
+            style: TextStyle(color: milanaInk.withValues(alpha: .68)),
+          ),
+          const SizedBox(height: 16),
+          const HomeOrderStep(
+            number: '01',
+            icon: Icons.checkroom_outlined,
+            title: 'Model va format',
+            text: 'Qadoq yoki qopni tanlab savatga qo‘shing.',
+          ),
+          const HomeOrderStep(
+            number: '02',
+            icon: Icons.support_agent_outlined,
+            title: 'Menejer tasdig‘i',
+            text: 'Mavjudlik, rang va jami summa tekshiriladi.',
+          ),
+          const HomeOrderStep(
+            number: '03',
+            icon: Icons.local_shipping_outlined,
+            title: 'To‘lov va Cargo',
+            text: 'To‘lovdan so‘ng buyurtma jo‘natiladi.',
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: onSupport,
+            icon: const Icon(Icons.call_outlined, size: 18),
+            label: const Text('Menejer bilan bog‘lanish'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class HomeOrderStep extends StatelessWidget {
+  const HomeOrderStep({
+    super.key,
+    required this.number,
+    required this.icon,
+    required this.title,
+    required this.text,
+  });
+
+  final String number;
+  final IconData icon;
+  final String title;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          SizedBox(
+            width: 34,
+            child: Text(
+              number,
+              style: const TextStyle(
+                color: milanaBurgundy,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
           Container(
-            width: 46,
-            height: 46,
+            width: 38,
+            height: 38,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(
-              Icons.inventory_2_outlined,
-              color: milanaBurgundy,
-            ),
+            child: Icon(icon, size: 20, color: milanaBurgundy),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Wholesale rule',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
-                const SizedBox(height: 4),
                 Text(
-                  'Minimal buyurtma: 1 modeldan kamida 1 qop. Standart qop 60 ta kiyimdan iborat.',
+                  text,
                   style: TextStyle(color: milanaInk.withValues(alpha: .68)),
-                ),
-                const SizedBox(height: 10),
-                OutlinedButton.icon(
-                  onPressed: onSupport,
-                  icon: const Icon(Icons.call_outlined, size: 18),
-                  label: const Text('Menejer bilan bog‘lanish'),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class CatalogCategorySelection {
+  const CatalogCategorySelection({
+    required this.label,
+    this.gender = 'all',
+    this.category = 'all',
+  });
+
+  final String label;
+  final String gender;
+  final String category;
+}
+
+class CatalogCategoryRail extends StatelessWidget {
+  const CatalogCategoryRail({
+    super.key,
+    required this.products,
+    required this.activeGender,
+    required this.activeCategory,
+    required this.onSelect,
+  });
+
+  final List<Product> products;
+  final String activeGender;
+  final String activeCategory;
+  final ValueChanged<CatalogCategorySelection> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final scaledLabelSize = MediaQuery.textScalerOf(context).scale(12);
+    final railHeight = (90 + (scaledLabelSize * 1.35))
+        .clamp(112.0, 160.0)
+        .toDouble();
+    const selections = <CatalogCategorySelection>[
+      CatalogCategorySelection(label: 'Barchasi'),
+      CatalogCategorySelection(label: 'Pijamalar', category: 'pajamas'),
+      CatalogCategorySelection(label: 'Xalatlar', category: 'robes'),
+      CatalogCategorySelection(label: 'Ayollar', gender: 'women'),
+      CatalogCategorySelection(label: 'Erkaklar', gender: 'men'),
+      CatalogCategorySelection(label: 'Bolalar', gender: 'kids'),
+    ];
+
+    return SizedBox(
+      height: railHeight,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: selections.length,
+        separatorBuilder: (context, index) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          final selection = selections[index];
+          final product = _representativeProduct(selection);
+          final selected =
+              activeGender == selection.gender &&
+              activeCategory == selection.category;
+          return Semantics(
+            button: true,
+            selected: selected,
+            label: selection.label,
+            child: InkWell(
+              onTap: () => onSelect(selection),
+              borderRadius: BorderRadius.circular(42),
+              child: SizedBox(
+                width: 78,
+                child: Column(
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 74,
+                      height: 74,
+                      padding: EdgeInsets.all(selected ? 3 : 1),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: selected ? milanaBurgundy : Colors.white,
+                        border: Border.all(
+                          color: selected
+                              ? milanaBurgundy
+                              : milanaInk.withValues(alpha: .12),
+                        ),
+                      ),
+                      child: ClipOval(
+                        child: product == null
+                            ? const ColoredBox(
+                                color: milanaSand,
+                                child: Icon(Icons.grid_view_outlined),
+                              )
+                            : ProductImage(product: product),
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      selection.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: selected ? milanaBurgundy : milanaInk,
+                        fontSize: 12,
+                        fontWeight: selected
+                            ? FontWeight.w800
+                            : FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Product? _representativeProduct(CatalogCategorySelection selection) {
+    for (final product in products) {
+      if (product.images.isEmpty) continue;
+      final matchesGender =
+          selection.gender == 'all' || product.gender == selection.gender;
+      final matchesCategory =
+          selection.category == 'all' || product.category == selection.category;
+      if (matchesGender && matchesCategory) return product;
+    }
+    return null;
+  }
+}
+
+class CatalogLoadingView extends StatelessWidget {
+  const CatalogLoadingView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      liveRegion: true,
+      label: 'Katalog yuklanmoqda',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final columns = constraints.maxWidth > 1100
+              ? 4
+              : constraints.maxWidth > 720
+              ? 3
+              : 2;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
+            children: [
+              const _CatalogSkeletonBlock(width: 210, height: 32),
+              const SizedBox(height: 10),
+              const _CatalogSkeletonBlock(width: 140, height: 12),
+              const SizedBox(height: 24),
+              SizedBox(
+                height: 104,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: 6,
+                  separatorBuilder: (_, _) => const SizedBox(width: 14),
+                  itemBuilder: (_, _) => const Column(
+                    children: [
+                      _CatalogSkeletonBlock(width: 70, height: 70, radius: 35),
+                      SizedBox(height: 8),
+                      _CatalogSkeletonBlock(width: 58, height: 8),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const _CatalogSkeletonBlock(height: 48),
+              const SizedBox(height: 12),
+              const _CatalogSkeletonBlock(height: 46),
+              const SizedBox(height: 28),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: columns * 2,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  mainAxisSpacing: 22,
+                  crossAxisSpacing: 10,
+                  childAspectRatio: columns > 2 ? .68 : .60,
+                ),
+                itemBuilder: (_, _) => const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: _CatalogSkeletonBlock()),
+                    SizedBox(height: 10),
+                    _CatalogSkeletonBlock(width: 118, height: 10),
+                    SizedBox(height: 8),
+                    _CatalogSkeletonBlock(width: 82, height: 10),
+                    SizedBox(height: 7),
+                    _CatalogSkeletonBlock(width: 100, height: 8),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CatalogSkeletonBlock extends StatelessWidget {
+  const _CatalogSkeletonBlock({
+    this.width = double.infinity,
+    this.height = double.infinity,
+    this.radius = 2,
+  });
+
+  final double width;
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: milanaInk.withValues(alpha: .07),
+        borderRadius: BorderRadius.circular(radius),
       ),
     );
   }
@@ -1019,11 +1941,19 @@ class CatalogScreen extends StatefulWidget {
     required this.catalog,
     required this.cart,
     required this.auth,
+    required this.launchRequestId,
+    required this.launchMode,
+    required this.requestedGender,
+    required this.requestedCategory,
   });
 
   final CatalogRepository catalog;
   final CartController cart;
   final AuthService auth;
+  final int launchRequestId;
+  final CatalogLaunchMode launchMode;
+  final String requestedGender;
+  final String requestedCategory;
 
   @override
   State<CatalogScreen> createState() => _CatalogScreenState();
@@ -1036,32 +1966,85 @@ class _CatalogScreenState extends State<CatalogScreen> {
   String category = 'all';
   String size = 'all';
   PriceBand priceBand = PriceBand.all;
+  AvailabilityFilter availability = AvailabilityFilter.all;
+  CurationFilter curation = CurationFilter.all;
   String sort = 'featured';
   bool savedOnly = false;
+  bool filtersExpanded = false;
   int visibleProductCount = catalogInitialVisibleCount;
   final searchController = SearchController();
+  final searchFocusNode = FocusNode();
+  final scrollController = ScrollController();
   final favoritesStore = FavoritesStore();
   final recentStore = RecentProductsStore();
   final favorites = <String>{};
   final recentIds = <String>[];
+  late String localProductScope;
   String? syncedCustomerId;
   Set<String> lastRemoteFavorites = const <String>{};
+  bool favoritesDirty = false;
   String? syncedRecentCustomerId;
   List<String> lastRemoteRecent = const <String>[];
+  bool recentDirty = false;
+  String? handledDeletedCustomerId;
 
   @override
   void initState() {
     super.initState();
-    productsFuture = widget.catalog.loadProducts();
+    gender = widget.requestedGender;
+    category = widget.requestedCategory;
+    savedOnly = widget.launchMode == CatalogLaunchMode.saved;
+    localProductScope = _localScopeFor(widget.auth.customer);
+    productsFuture = _loadProductsAndRefreshCart();
     _loadFavorites();
     _loadRecentProducts();
     widget.auth.addListener(_handleAuthChange);
+  }
+
+  Future<List<Product>> _loadProductsAndRefreshCart() async {
+    final products = await widget.catalog.loadProducts();
+    widget.cart.refreshProducts(products);
+    return products;
+  }
+
+  void _reloadCatalog() {
+    setState(() => productsFuture = _loadProductsAndRefreshCart());
+  }
+
+  @override
+  void didUpdateWidget(covariant CatalogScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.launchRequestId == widget.launchRequestId) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        searchController.clear();
+        query = '';
+        gender = widget.requestedGender;
+        category = widget.requestedCategory;
+        size = 'all';
+        priceBand = PriceBand.all;
+        availability = AvailabilityFilter.all;
+        curation = CurationFilter.all;
+        savedOnly = widget.launchMode == CatalogLaunchMode.saved;
+        filtersExpanded = false;
+        _resetCatalogWindow();
+      });
+      if (scrollController.hasClients) scrollController.jumpTo(0);
+      if (widget.launchMode == CatalogLaunchMode.search) {
+        searchFocusNode.requestFocus();
+      } else {
+        searchFocusNode.unfocus();
+      }
+    });
   }
 
   @override
   void dispose() {
     widget.auth.removeListener(_handleAuthChange);
     searchController.dispose();
+    searchFocusNode.dispose();
+    scrollController.dispose();
     super.dispose();
   }
 
@@ -1071,40 +2054,54 @@ class _CatalogScreenState extends State<CatalogScreen> {
       future: productsFuture,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const Center(child: CircularProgressIndicator());
+          return const CatalogLoadingView();
         }
         if (snap.hasError) {
           return _EmptyState(
             icon: Icons.cloud_off_outlined,
             title: 'Katalog ochilmadi',
-            message: '${snap.error}',
+            message: 'Internet aloqasini tekshirib, qayta urinib ko‘ring.',
             action: FilledButton(
-              onPressed: () => setState(
-                () => productsFuture = widget.catalog.loadProducts(),
-              ),
+              onPressed: _reloadCatalog,
               child: const Text('Qayta urinish'),
             ),
           );
         }
         final allProducts = snap.data ?? const <Product>[];
         final products = _filtered(allProducts);
+        final productById = {
+          for (final product in allProducts) product.id: product,
+        };
+        final recentProducts = recentIds
+            .map((id) => productById[id])
+            .whereType<Product>()
+            .where((product) => product.active)
+            .take(8)
+            .toList(growable: false);
+        final showRecent =
+            query.isEmpty &&
+            _activeFilterCount == 0 &&
+            recentProducts.isNotEmpty;
         final visibleCount = effectiveCatalogVisibleCount(
           total: products.length,
           requested: visibleProductCount,
         );
         final visibleProducts = products.take(visibleCount).toList();
-        final featured = _featuredProducts(products, allProducts);
-        final recentProducts = _recentProducts(allProducts);
         final sizes = availableSizes(allProducts);
         final loadInfo = widget.catalog.lastLoadInfo;
+        final viewportWidth = MediaQuery.sizeOf(context).width;
+        final contentInset = viewportWidth > 1440
+            ? (viewportWidth - 1440) / 2 + 16
+            : 16.0;
         return RefreshIndicator(
           onRefresh: () async {
-            final next = widget.catalog.loadProducts();
+            final next = _loadProductsAndRefreshCart();
             setState(() => productsFuture = next);
             await next;
           },
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+            controller: scrollController,
+            padding: EdgeInsets.fromLTRB(contentInset, 8, contentInset, 28),
             children: [
               PremiumCatalogHeader(
                 total: allProducts.length,
@@ -1112,67 +2109,113 @@ class _CatalogScreenState extends State<CatalogScreen> {
               ),
               if (loadInfo.fromCache) ...[
                 const SizedBox(height: 12),
-                CatalogCacheNotice(
-                  info: loadInfo,
-                  onRefresh: () => setState(
-                    () => productsFuture = widget.catalog.loadProducts(),
-                  ),
-                ),
+                CatalogCacheNotice(info: loadInfo, onRefresh: _reloadCatalog),
               ],
               const SizedBox(height: 16),
-              SearchBar(
+              CatalogCategoryRail(
+                products: allProducts,
+                activeGender: gender,
+                activeCategory: category,
+                onSelect: (selection) => setState(() {
+                  gender = selection.gender;
+                  category = selection.category;
+                  savedOnly = false;
+                  _resetCatalogWindow();
+                }),
+              ),
+              const SizedBox(height: 16),
+              TextField(
                 controller: searchController,
-                hintText: 'Model, mato yoki kod qidirish',
-                leading: const Icon(Icons.search),
+                focusNode: searchFocusNode,
+                decoration: const InputDecoration(
+                  hintText: 'Barcha mahsulotlardan qidirish…',
+                  prefixIcon: Icon(Icons.search, size: 20),
+                  filled: false,
+                  enabledBorder: UnderlineInputBorder(),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: milanaInk, width: 1.5),
+                  ),
+                ),
                 onChanged: (value) => setState(() {
                   query = value.trim().toLowerCase();
                   _resetCatalogWindow();
                 }),
               ),
               const SizedBox(height: 12),
-              _Filters(
-                gender: gender,
-                category: category,
-                onGender: (value) => setState(() {
-                  gender = value;
-                  _resetCatalogWindow();
-                }),
-                onCategory: (value) => setState(() {
-                  category = value;
-                  _resetCatalogWindow();
-                }),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () =>
+                      setState(() => filtersExpanded = !filtersExpanded),
+                  icon: const Icon(Icons.filter_list, size: 18),
+                  label: Text(
+                    filtersExpanded
+                        ? 'FILTERLARNI YOPISH'
+                        : _activeFilterCount == 0
+                        ? 'FILTERLAR'
+                        : 'FILTERLAR · $_activeFilterCount',
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: milanaInk,
+                    side: BorderSide(color: milanaInk.withValues(alpha: .3)),
+                    shape: const RoundedRectangleBorder(),
+                    textStyle: const TextStyle(
+                      fontSize: 11,
+                      letterSpacing: 1.6,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
               ),
-              const SizedBox(height: 10),
-              DiscoveryFilterPanel(
-                size: size,
-                sizes: sizes,
-                priceBand: priceBand,
-                onSize: (value) => setState(() {
-                  size = value;
-                  _resetCatalogWindow();
-                }),
-                onPriceBand: (value) => setState(() {
-                  priceBand = value;
-                  _resetCatalogWindow();
-                }),
-                onClear: () => setState(() {
-                  searchController.clear();
-                  query = '';
-                  gender = 'all';
-                  category = 'all';
-                  size = 'all';
-                  priceBand = PriceBand.all;
-                  savedOnly = false;
-                  _resetCatalogWindow();
-                }),
-                hasActiveFilters:
-                    query.isNotEmpty ||
-                    gender != 'all' ||
-                    category != 'all' ||
-                    size != 'all' ||
-                    priceBand != PriceBand.all ||
-                    savedOnly,
-              ),
+              if (filtersExpanded) ...[
+                const SizedBox(height: 12),
+                _Filters(
+                  gender: gender,
+                  category: category,
+                  onGender: (value) => setState(() {
+                    gender = value;
+                    _resetCatalogWindow();
+                  }),
+                  onCategory: (value) => setState(() {
+                    category = value;
+                    _resetCatalogWindow();
+                  }),
+                ),
+                const SizedBox(height: 10),
+                DiscoveryFilterPanel(
+                  size: size,
+                  sizes: sizes,
+                  priceBand: priceBand,
+                  availability: availability,
+                  curation: curation,
+                  onSize: (value) => setState(() {
+                    size = value;
+                    _resetCatalogWindow();
+                  }),
+                  onPriceBand: (value) => setState(() {
+                    priceBand = value;
+                    _resetCatalogWindow();
+                  }),
+                  onAvailability: (value) => setState(() {
+                    availability = value;
+                    _resetCatalogWindow();
+                  }),
+                  onCuration: (value) => setState(() {
+                    curation = value;
+                    _resetCatalogWindow();
+                  }),
+                  onClear: _clearFilters,
+                  hasActiveFilters:
+                      query.isNotEmpty ||
+                      gender != 'all' ||
+                      category != 'all' ||
+                      size != 'all' ||
+                      priceBand != PriceBand.all ||
+                      availability != AvailabilityFilter.all ||
+                      curation != CurationFilter.all ||
+                      savedOnly,
+                ),
+              ],
               const SizedBox(height: 10),
               CatalogActionBar(
                 savedOnly: savedOnly,
@@ -1187,37 +2230,26 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   _resetCatalogWindow();
                 }),
               ),
-              if (featured.isNotEmpty) ...[
-                const SizedBox(height: 18),
+              const SizedBox(height: 18),
+              if (showRecent) ...[
                 SectionHeader(
-                  title: 'Yangi kolleksiya',
-                  trailing: '${featured.length} model',
-                ),
-                const SizedBox(height: 10),
-                FeaturedProductsRail(
-                  products: featured,
-                  onOpen: (product) => _openProduct(product, allProducts),
-                  onAdd: _add,
-                ),
-              ],
-              if (recentProducts.isNotEmpty && !savedOnly) ...[
-                const SizedBox(height: 18),
-                SectionHeader(
-                  title: 'Oxirgi ko‘rilganlar',
+                  title: 'YAQINDA KO‘RILGANLAR',
                   trailing: '${recentProducts.length} model',
                 ),
                 const SizedBox(height: 10),
-                FeaturedProductsRail(
+                RecentlyViewedRail(
                   products: recentProducts,
-                  badgeIcon: Icons.history,
-                  badgeLabel: 'Ko‘rildi',
+                  favorites: favorites,
                   onOpen: (product) => _openProduct(product, allProducts),
                   onAdd: _add,
+                  onFavorite: _toggleFavorite,
                 ),
+                const SizedBox(height: 24),
+                Divider(color: milanaInk.withValues(alpha: .12)),
+                const SizedBox(height: 18),
               ],
-              const SizedBox(height: 18),
               SectionHeader(
-                title: 'Katalog',
+                title: 'BARCHA MAHSULOTLAR',
                 trailing: products.length == visibleProducts.length
                     ? '${products.length} model'
                     : '${visibleProducts.length}/${products.length} model',
@@ -1225,16 +2257,20 @@ class _CatalogScreenState extends State<CatalogScreen> {
               const SizedBox(height: 10),
               LayoutBuilder(
                 builder: (context, constraints) {
-                  final wide = constraints.maxWidth > 720;
+                  final columns = constraints.maxWidth > 1100
+                      ? 4
+                      : constraints.maxWidth > 720
+                      ? 3
+                      : 2;
                   return GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: visibleProducts.length,
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: wide ? 3 : 2,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: wide ? .64 : .58,
+                      crossAxisCount: columns,
+                      mainAxisSpacing: 22,
+                      crossAxisSpacing: 10,
+                      childAspectRatio: columns > 2 ? .68 : .60,
                     ),
                     itemBuilder: (context, i) => ProductCard(
                       product: visibleProducts[i],
@@ -1273,6 +2309,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     message: savedOnly
                         ? 'Yoqtirgan modellaringizni yurakcha bilan saqlang.'
                         : 'Qidiruv yoki filterlarni o‘zgartirib ko‘ring.',
+                    action: query.isNotEmpty || _activeFilterCount > 0
+                        ? OutlinedButton.icon(
+                            onPressed: _clearFilters,
+                            icon: const Icon(Icons.restart_alt),
+                            label: const Text('Filterlarni tozalash'),
+                          )
+                        : null,
                   ),
                 ),
             ],
@@ -1291,6 +2334,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
         category: category,
         size: size,
         priceBand: priceBand,
+        availability: availability,
+        curation: curation,
         savedOnly: savedOnly,
         savedProductIds: favorites,
         sort: catalogSortFromString(sort),
@@ -1298,34 +2343,21 @@ class _CatalogScreenState extends State<CatalogScreen> {
     );
   }
 
-  List<Product> _featuredProducts(List<Product> filtered, List<Product> all) {
-    final source = filtered.isNotEmpty ? filtered : all;
-    return source.take(8).toList();
-  }
-
-  List<Product> _recentProducts(List<Product> all) {
-    if (recentIds.isEmpty) return const <Product>[];
-    final byId = {for (final product in all) product.id: product};
-    return recentIds
-        .map((id) => byId[id])
-        .whereType<Product>()
-        .take(8)
-        .toList();
-  }
-
   void _toggleFavorite(Product product) {
     setState(() {
       if (!favorites.add(product.id)) favorites.remove(product.id);
     });
-    unawaited(favoritesStore.save(favorites));
+    favoritesDirty = widget.auth.signedIn;
+    unawaited(favoritesStore.save(favorites, scope: localProductScope));
     if (widget.auth.signedIn) {
-      unawaited(widget.auth.updateSavedProducts(favorites));
+      unawaited(_syncFavoritesToProfile(Set<String>.of(favorites)));
     }
   }
 
   Future<void> _loadFavorites() async {
-    final saved = await favoritesStore.load();
-    if (!mounted) return;
+    final scope = localProductScope;
+    final saved = await favoritesStore.load(scope: scope);
+    if (!mounted || scope != localProductScope) return;
     setState(() {
       favorites
         ..clear()
@@ -1335,8 +2367,9 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   Future<void> _loadRecentProducts() async {
-    final saved = await recentStore.load();
-    if (!mounted) return;
+    final scope = localProductScope;
+    final saved = await recentStore.load(scope: scope);
+    if (!mounted || scope != localProductScope) return;
     setState(() {
       recentIds
         ..clear()
@@ -1346,9 +2379,35 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   void _handleAuthChange() {
+    final deletedCustomerId = widget.auth.lastDeletedCustomerId;
+    if (deletedCustomerId != null &&
+        deletedCustomerId != handledDeletedCustomerId) {
+      handledDeletedCustomerId = deletedCustomerId;
+      unawaited(favoritesStore.clear(scope: deletedCustomerId));
+      unawaited(recentStore.clear(scope: deletedCustomerId));
+    }
+    final nextScope = _localScopeFor(widget.auth.customer);
+    if (nextScope != localProductScope) {
+      setState(() {
+        localProductScope = nextScope;
+        favorites.clear();
+        recentIds.clear();
+        syncedCustomerId = null;
+        lastRemoteFavorites = const <String>{};
+        favoritesDirty = false;
+        syncedRecentCustomerId = null;
+        lastRemoteRecent = const <String>[];
+        recentDirty = false;
+      });
+      unawaited(_loadFavorites());
+      unawaited(_loadRecentProducts());
+      return;
+    }
     _mergeCustomerFavorites(widget.auth.customer);
     _mergeCustomerRecent(widget.auth.customer);
   }
+
+  String _localScopeFor(Customer? customer) => customer?.id ?? 'guest';
 
   void _mergeCustomerFavorites(Customer? customer) {
     if (customer == null) {
@@ -1356,23 +2415,29 @@ class _CatalogScreenState extends State<CatalogScreen> {
       lastRemoteFavorites = const <String>{};
       return;
     }
+    if (!widget.auth.profileReady) return;
     final remote = customer.savedProductIds;
     final firstSyncForCustomer = syncedCustomerId != customer.id;
-    final hasRemoteChanges = remote.difference(lastRemoteFavorites).isNotEmpty;
+    final hasRemoteChanges = !setEquals(remote, lastRemoteFavorites);
     if (!firstSyncForCustomer && !hasRemoteChanges) return;
-
-    final merged = {...favorites, ...remote};
+    if (favoritesDirty) {
+      syncedCustomerId = customer.id;
+      lastRemoteFavorites = Set.unmodifiable(remote);
+      if (setEquals(remote, favorites)) {
+        favoritesDirty = false;
+      } else {
+        unawaited(_syncFavoritesToProfile(Set<String>.of(favorites)));
+      }
+      return;
+    }
     setState(() {
       favorites
         ..clear()
-        ..addAll(merged);
+        ..addAll(remote);
       syncedCustomerId = customer.id;
-      lastRemoteFavorites = remote;
+      lastRemoteFavorites = Set.unmodifiable(remote);
     });
-    unawaited(favoritesStore.save(merged));
-    if (firstSyncForCustomer && merged.length != remote.length) {
-      unawaited(widget.auth.updateSavedProducts(merged));
-    }
+    unawaited(favoritesStore.save(remote, scope: localProductScope));
   }
 
   void _mergeCustomerRecent(Customer? customer) {
@@ -1381,27 +2446,30 @@ class _CatalogScreenState extends State<CatalogScreen> {
       lastRemoteRecent = const <String>[];
       return;
     }
+    if (!widget.auth.profileReady) return;
     final remote = customer.recentProductIds;
     final firstSyncForCustomer = syncedRecentCustomerId != customer.id;
     final hasRemoteChanges =
         _recentFingerprint(remote) != _recentFingerprint(lastRemoteRecent);
     if (!firstSyncForCustomer && !hasRemoteChanges) return;
-
-    final merged = _mergeRecent(
-      firstSyncForCustomer ? recentIds : remote,
-      firstSyncForCustomer ? remote : recentIds,
-    );
+    if (recentDirty) {
+      syncedRecentCustomerId = customer.id;
+      lastRemoteRecent = List.unmodifiable(remote);
+      if (_recentFingerprint(remote) == _recentFingerprint(recentIds)) {
+        recentDirty = false;
+      } else {
+        unawaited(_syncRecentToProfile(List<String>.of(recentIds)));
+      }
+      return;
+    }
     setState(() {
       recentIds
         ..clear()
-        ..addAll(merged);
+        ..addAll(remote);
       syncedRecentCustomerId = customer.id;
-      lastRemoteRecent = remote;
+      lastRemoteRecent = List.unmodifiable(remote);
     });
-    unawaited(recentStore.save(merged));
-    if (_recentFingerprint(merged) != _recentFingerprint(remote)) {
-      unawaited(widget.auth.updateRecentProducts(merged));
-    }
+    unawaited(recentStore.save(remote, scope: localProductScope));
   }
 
   void _trackRecent(Product product) {
@@ -1411,9 +2479,44 @@ class _CatalogScreenState extends State<CatalogScreen> {
         ..clear()
         ..addAll(next);
     });
-    unawaited(recentStore.save(next));
+    recentDirty = widget.auth.signedIn;
+    unawaited(recentStore.save(next, scope: localProductScope));
     if (widget.auth.signedIn) {
-      unawaited(widget.auth.updateRecentProducts(next));
+      unawaited(_syncRecentToProfile(List<String>.of(next)));
+    }
+  }
+
+  Future<void> _syncFavoritesToProfile(Set<String> snapshot) async {
+    for (var attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await widget.auth.updateSavedProducts(snapshot);
+        return;
+      } catch (_) {
+        if (attempt > 0) return;
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (!mounted ||
+            !widget.auth.signedIn ||
+            !setEquals(snapshot, favorites)) {
+          return;
+        }
+      }
+    }
+  }
+
+  Future<void> _syncRecentToProfile(List<String> snapshot) async {
+    for (var attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await widget.auth.updateRecentProducts(snapshot);
+        return;
+      } catch (_) {
+        if (attempt > 0) return;
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (!mounted ||
+            !widget.auth.signedIn ||
+            _recentFingerprint(snapshot) != _recentFingerprint(recentIds)) {
+          return;
+        }
+      }
     }
   }
 
@@ -1432,26 +2535,67 @@ class _CatalogScreenState extends State<CatalogScreen> {
     visibleProductCount = catalogInitialVisibleCount;
   }
 
-  void _add(Product product, {int quantity = 1}) {
-    if (!widget.cart.canAdd(product, quantity: quantity)) {
-      final limit = widget.cart.quantityLimit(product);
-      final current = widget.cart.quantityOf(product);
+  int get _activeFilterCount {
+    var count = 0;
+    if (gender != 'all') count += 1;
+    if (category != 'all') count += 1;
+    if (size != 'all') count += 1;
+    if (priceBand != PriceBand.all) count += 1;
+    if (availability != AvailabilityFilter.all) count += 1;
+    if (curation != CurationFilter.all) count += 1;
+    if (savedOnly) count += 1;
+    return count;
+  }
+
+  void _clearFilters() {
+    setState(() {
+      searchController.clear();
+      query = '';
+      gender = 'all';
+      category = 'all';
+      size = 'all';
+      priceBand = PriceBand.all;
+      availability = AvailabilityFilter.all;
+      curation = CurationFilter.all;
+      savedOnly = false;
+      _resetCatalogWindow();
+    });
+  }
+
+  void _add(Product product) {
+    _addItem(CartItem(product: product, unitType: packUnitType));
+  }
+
+  bool _addItem(CartItem item) {
+    final product = item.product;
+    if (!widget.cart.canAdd(
+      product,
+      quantity: item.quantity,
+      unitType: item.unitType,
+    )) {
+      final limit = widget.cart.quantityLimit(product, unitType: item.unitType);
+      final current = widget.cart.quantityOf(product, unitType: item.unitType);
+      final unitLabel = orderUnitLabel(item.unitType).toLowerCase();
       final message = limit < 1
           ? '${product.name} hozircha mavjud emas'
-          : '${product.name} uchun maksimal $limit qop. Savatda $current qop bor.';
+          : '${product.name} uchun maksimal $limit $unitLabel. Savatda $current $unitLabel bor.';
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
-      return;
+      return false;
     }
-    for (var i = 0; i < quantity; i++) {
-      widget.cart.add(product);
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${product.name} · $quantity qop savatga qo‘shildi'),
-      ),
-    );
+    widget.cart.addItem(item);
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            '${product.name} · ${item.quantity} ${orderUnitLabel(item.unitType).toLowerCase()} savatga qo‘shildi',
+          ),
+        ),
+      );
+    return true;
   }
 
   void _openProduct(Product product, [List<Product> allProducts = const []]) {
@@ -1464,7 +2608,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       builder: (context) => ProductSheet(
         product: product,
         relatedProducts: related,
-        onAdd: (qty) => _add(product, quantity: qty),
+        onAdd: _addItem,
         onOpenRelated: (relatedProduct) =>
             _openProduct(relatedProduct, allProducts),
         onAddRelated: _add,
@@ -1485,70 +2629,53 @@ class PremiumCatalogHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: milanaInk,
-        borderRadius: BorderRadius.circular(8),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 10, bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(8),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact =
+                  constraints.maxWidth < 420 ||
+                  MediaQuery.textScalerOf(context).scale(1) > 1.3;
+              final breadcrumb = Text(
+                'BOSH SAHIFA  /  BARCHA MAHSULOTLAR',
+                style: const TextStyle(
+                  color: milanaMuted,
+                  fontSize: 10,
+                  letterSpacing: 1.2,
                 ),
-                child: const Icon(Icons.auto_awesome, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Milana Premium',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
+              );
+              final count = Text(
+                '$visible / $total',
+                style: const TextStyle(color: milanaMuted, fontSize: 11),
+              );
+              if (compact) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [breadcrumb, const SizedBox(height: 6), count],
+                );
+              }
+              return Row(children: [breadcrumb, const Spacer(), count]);
+            },
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           Text(
-            'Optom uy kiyimlari katalogi. Dona narxini ko‘ring, qop bo‘yicha buyurtma qiling.',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: Colors.white.withValues(alpha: .86),
+            'KATALOG',
+            style: Theme.of(context).textTheme.displaySmall?.copyWith(
+              fontFamily: 'MilanaDisplay',
+              fontWeight: FontWeight.w300,
+              letterSpacing: 2,
             ),
           ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _HeaderPill(
-                icon: Icons.inventory_2_outlined,
-                label: '1 qop = 60 ta',
-              ),
-              _HeaderPill(icon: Icons.straighten, label: '6 o‘lcham × 10'),
-              _HeaderPill(
-                icon: Icons.local_shipping_outlined,
-                label: 'Cargo / pochta',
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _HeaderMetric(value: '$visible', label: 'ko‘rinmoqda'),
-              const SizedBox(width: 10),
-              _HeaderMetric(value: '$total', label: 'jami model'),
-              const SizedBox(width: 10),
-              const _HeaderMetric(value: r'$4+', label: 'dona narxi'),
-            ],
+          const SizedBox(height: 12),
+          Text(
+            'Ayollar, erkaklar va bolalar uchun uy hamda kundalik kiyimlar.',
+            style: TextStyle(
+              color: milanaInk.withValues(alpha: .58),
+              height: 1.45,
+            ),
           ),
         ],
       ),
@@ -1573,116 +2700,35 @@ class CatalogCacheNotice extends StatelessWidget {
         ? 'Oxirgi saqlangan katalog'
         : '${shortDateTime.format(cachedAt.toLocal())} dagi katalog';
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xfffff7e8),
-        border: Border.all(color: const Color(0xffe2cfaa)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.wifi_off_outlined, color: milanaBurgundy),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Keshdagi katalog',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  '$timestamp ko‘rsatilmoqda. Narx va mavjudlikni buyurtmadan oldin menejer tasdiqlaydi.',
-                  style: TextStyle(color: milanaInk.withValues(alpha: .72)),
-                ),
-              ],
-            ),
-          ),
-          TextButton.icon(
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh, size: 18),
-            label: const Text('Yangilash'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeaderPill extends StatelessWidget {
-  const _HeaderPill({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: .1)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: Colors.white),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeaderMetric extends StatelessWidget {
-  const _HeaderMetric({required this.value, required this.label});
-
-  final String value;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: .08),
-          borderRadius: BorderRadius.circular(8),
+        border: Border(
+          top: BorderSide(color: milanaInk.withValues(alpha: .12)),
+          bottom: BorderSide(color: milanaInk.withValues(alpha: .12)),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              value,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.wifi_off_outlined, size: 17),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'OFFLINE KATALOG · $timestamp',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: .72),
-                fontSize: 12,
+                color: milanaInk.withValues(alpha: .62),
+                fontSize: 10,
+                letterSpacing: .8,
               ),
             ),
-          ],
-        ),
+          ),
+          IconButton(
+            onPressed: onRefresh,
+            icon: const Icon(Icons.refresh, size: 18),
+            tooltip: 'Yangilash',
+          ),
+        ],
       ),
     );
   }
@@ -1698,19 +2744,27 @@ class SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Text(
-          title,
-          style: Theme.of(
-            context,
-          ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
-        ),
-        const Spacer(),
-        Text(
-          trailing,
-          style: Theme.of(context).textTheme.labelLarge?.copyWith(
-            color: milanaInk.withValues(alpha: .58),
+        Expanded(
+          child: Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.fade,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontFamily: 'MilanaDisplay',
+              fontWeight: FontWeight.w300,
+              letterSpacing: 1.4,
+            ),
           ),
         ),
+        if (trailing.isNotEmpty) ...[
+          const SizedBox(width: 10),
+          Text(
+            trailing,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+              color: milanaInk.withValues(alpha: .58),
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1735,8 +2789,9 @@ class FeaturedProductsRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 260,
+      height: 330,
       child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         scrollDirection: Axis.horizontal,
         itemCount: products.length,
         separatorBuilder: (context, index) => const SizedBox(width: 12),
@@ -1775,65 +2830,48 @@ class FeaturedProductTile extends StatelessWidget {
     return SizedBox(
       width: 190,
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
         onTap: onOpen,
         child: Ink(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-          ),
+          color: Colors.white,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Stack(
                   children: [
-                    Positioned.fill(
-                      child: ClipRRect(
-                        borderRadius: const BorderRadius.vertical(
-                          top: Radius.circular(8),
+                    Positioned.fill(child: ProductImage(product: product)),
+                    if (onAdd != null)
+                      Positioned(
+                        right: 10,
+                        bottom: 10,
+                        child: IconButton.filled(
+                          onPressed: onAdd,
+                          icon: const Icon(Icons.add_shopping_cart, size: 18),
+                          tooltip: 'Savatga qo‘shish',
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: milanaInk,
+                          ),
                         ),
-                        child: ProductImage(product: product),
                       ),
-                    ),
-                    Positioned(
-                      left: 10,
-                      top: 10,
-                      child: _SoftBadge(icon: badgeIcon, label: badgeLabel),
-                    ),
                   ],
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(12, 10, 12, 2),
+                padding: const EdgeInsets.only(top: 10, bottom: 3),
                 child: Text(
-                  product.name,
+                  product.name.toUpperCase(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  '${money.format(product.price)} / dona',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.labelLarge?.copyWith(color: milanaBurgundy),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: onAdd,
-                    icon: const Icon(Icons.shopping_bag_outlined, size: 18),
-                    label: Text(onAdd == null ? 'Mavjud emas' : '1 qop'),
-                  ),
-                ),
+              Text(
+                '${money.format(product.price)} / dona',
+                style: Theme.of(context).textTheme.labelLarge,
               ),
             ],
           ),
@@ -1849,8 +2887,12 @@ class DiscoveryFilterPanel extends StatelessWidget {
     required this.size,
     required this.sizes,
     required this.priceBand,
+    required this.availability,
+    required this.curation,
     required this.onSize,
     required this.onPriceBand,
+    required this.onAvailability,
+    required this.onCuration,
     required this.onClear,
     required this.hasActiveFilters,
   });
@@ -1858,8 +2900,12 @@ class DiscoveryFilterPanel extends StatelessWidget {
   final String size;
   final List<String> sizes;
   final PriceBand priceBand;
+  final AvailabilityFilter availability;
+  final CurationFilter curation;
   final ValueChanged<String> onSize;
   final ValueChanged<PriceBand> onPriceBand;
+  final ValueChanged<AvailabilityFilter> onAvailability;
+  final ValueChanged<CurationFilter> onCuration;
   final VoidCallback onClear;
   final bool hasActiveFilters;
 
@@ -1868,7 +2914,11 @@ class DiscoveryFilterPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 4,
           children: [
             Text(
               'Tez filterlar',
@@ -1876,7 +2926,6 @@ class DiscoveryFilterPanel extends StatelessWidget {
                 context,
               ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
             ),
-            const Spacer(),
             if (hasActiveFilters)
               TextButton.icon(
                 onPressed: onClear,
@@ -1886,6 +2935,27 @@ class DiscoveryFilterPanel extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
+        _EnumChips<AvailabilityFilter>(
+          value: availability,
+          values: const {
+            AvailabilityFilter.all: 'Barcha holat',
+            AvailabilityFilter.inStock: 'Omborda',
+            AvailabilityFilter.preorder: 'Preorder',
+          },
+          onChanged: onAvailability,
+        ),
+        const SizedBox(height: 8),
+        _EnumChips<CurationFilter>(
+          value: curation,
+          values: const {
+            CurationFilter.all: 'Barcha kolleksiya',
+            CurationFilter.newArrival: 'Yangi',
+            CurationFilter.bestseller: 'Bestseller',
+            CurationFilter.sale: 'Chegirma',
+          },
+          onChanged: onCuration,
+        ),
+        const SizedBox(height: 8),
         _EnumChips<PriceBand>(
           value: priceBand,
           values: const {
@@ -1930,7 +3000,11 @@ class CatalogActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         FilterChip(
           selected: savedOnly,
@@ -1941,7 +3015,6 @@ class CatalogActionBar extends StatelessWidget {
           label: Text('Saqlanganlar $savedCount'),
           onSelected: onSavedOnly,
         ),
-        const Spacer(),
         PopupMenuButton<String>(
           initialValue: sort,
           tooltip: 'Saralash',
@@ -1956,7 +3029,6 @@ class CatalogActionBar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
               border: Border.all(color: milanaInk.withValues(alpha: .12)),
             ),
             child: Row(
@@ -1999,10 +3071,9 @@ class _EnumChips<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 40,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
         children: values.entries
             .map(
               (entry) => Padding(
@@ -2077,10 +3148,9 @@ class _Chips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 40,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
         children: values.entries
             .map(
               (entry) => Padding(
@@ -2183,8 +3253,10 @@ class ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      clipBehavior: Clip.antiAlias,
+    return Semantics(
+      button: true,
+      label:
+          '${product.name}. ${money.format(product.price)}. Tafsilotlarni ochish',
       child: InkWell(
         onTap: onOpen,
         child: Column(
@@ -2194,76 +3266,98 @@ class ProductCard extends StatelessWidget {
               child: Stack(
                 children: [
                   Positioned.fill(child: ProductImage(product: product)),
-                  Positioned(
-                    left: 8,
-                    top: 8,
-                    child: _SoftBadge(
-                      icon: Icons.inventory_2_outlined,
-                      label: qopAvailabilityLabel(product),
-                    ),
-                  ),
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: IconButton.filledTonal(
-                      onPressed: onFavorite,
-                      icon: Icon(
-                        isFavorite ? Icons.favorite : Icons.favorite_border,
-                        size: 18,
-                      ),
-                      tooltip: 'Saqlash',
-                      style: IconButton.styleFrom(
-                        backgroundColor: Colors.white.withValues(alpha: .92),
-                        foregroundColor: milanaBurgundy,
-                        fixedSize: const Size(36, 36),
+                  if (productTagLabel(product).isNotEmpty)
+                    Positioned(
+                      left: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 5,
+                        ),
+                        color: Colors.white,
+                        child: Text(
+                          productTagLabel(product).toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 9,
+                            letterSpacing: 1,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ),
                     ),
+                  Positioned(
+                    right: 7,
+                    top: 7,
+                    child: Semantics(
+                      button: true,
+                      toggled: isFavorite,
+                      label: isFavorite
+                          ? 'Saqlanganlardan olib tashlash'
+                          : 'Saqlash',
+                      child: IconButton(
+                        onPressed: onFavorite,
+                        icon: Icon(
+                          isFavorite ? Icons.favorite : Icons.favorite_border,
+                          size: 20,
+                        ),
+                        tooltip: isFavorite
+                            ? 'Saqlanganlardan olib tashlash'
+                            : 'Saqlash',
+                        style: IconButton.styleFrom(
+                          backgroundColor: Colors.white.withValues(alpha: .88),
+                          foregroundColor: milanaInk,
+                          fixedSize: const Size(48, 48),
+                        ),
+                      ),
+                    ),
                   ),
+                  if (onAdd != null)
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: Semantics(
+                        button: true,
+                        label: '${product.name}, 1 qadoq savatga qo‘shish',
+                        child: IconButton.filled(
+                          onPressed: onAdd,
+                          icon: const Icon(Icons.add_shopping_cart, size: 19),
+                          tooltip: '1 qadoq savatga',
+                          style: IconButton.styleFrom(
+                            backgroundColor: milanaInk,
+                            foregroundColor: Colors.white,
+                            fixedSize: const Size(48, 48),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      product.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                  ),
-                  Text(
-                    money.format(product.price),
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: milanaBurgundy,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
+            const SizedBox(height: 9),
+            Text(
+              product.name.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                letterSpacing: .8,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Text(
-                product.fabric.isEmpty
-                    ? '${product.gender} · ${product.category}'
-                    : product.fabric,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+            const SizedBox(height: 4),
+            Text(
+              money.format(product.price),
+              style: const TextStyle(fontSize: 13),
             ),
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: onAdd,
-                  icon: const Icon(Icons.shopping_bag_outlined, size: 18),
-                  label: Text(onAdd == null ? 'Mavjud emas' : '1 qop savatga'),
-                ),
-              ),
+            const SizedBox(height: 3),
+            Text(
+              product.fabric.isEmpty
+                  ? qopAvailabilityLabel(product)
+                  : product.fabric,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: milanaMuted, fontSize: 10),
             ),
           ],
         ),
@@ -2272,11 +3366,65 @@ class ProductCard extends StatelessWidget {
   }
 }
 
+class RecentlyViewedRail extends StatelessWidget {
+  const RecentlyViewedRail({
+    super.key,
+    required this.products,
+    required this.favorites,
+    required this.onOpen,
+    required this.onAdd,
+    required this.onFavorite,
+  });
+
+  final List<Product> products;
+  final Set<String> favorites;
+  final ValueChanged<Product> onOpen;
+  final ValueChanged<Product> onAdd;
+  final ValueChanged<Product> onFavorite;
+
+  @override
+  Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 600;
+    final cardWidth = compact ? 196.0 : 224.0;
+    return Semantics(
+      container: true,
+      label: 'Yaqinda ko‘rilgan mahsulotlar',
+      child: SizedBox(
+        height: compact ? 330 : 375,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: products.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            final product = products[index];
+            return SizedBox(
+              width: cardWidth,
+              child: ProductCard(
+                product: product,
+                isFavorite: favorites.contains(product.id),
+                onOpen: () => onOpen(product),
+                onAdd: isOutOfQop(product) ? null : () => onAdd(product),
+                onFavorite: () => onFavorite(product),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
 class ProductImage extends StatelessWidget {
-  const ProductImage({super.key, required this.product, this.image});
+  const ProductImage({
+    super.key,
+    required this.product,
+    this.image,
+    this.fit = BoxFit.cover,
+  });
 
   final Product product;
   final String? image;
+  final BoxFit fit;
 
   @override
   Widget build(BuildContext context) {
@@ -2291,19 +3439,23 @@ class ProductImage extends StatelessWidget {
         child: Center(child: Icon(Icons.image_not_supported_outlined)),
       );
     }
-    return CachedNetworkImage(
-      imageUrl: imageUrl,
-      width: double.infinity,
-      fit: BoxFit.cover,
-      fadeInDuration: const Duration(milliseconds: 180),
-      fadeOutDuration: const Duration(milliseconds: 90),
-      memCacheWidth: 900,
-      maxWidthDiskCache: 1200,
-      placeholder: (context, url) => const ProductImagePlaceholder(),
-      errorWidget: (context, url, error) => const ProductImageFallback(),
-      imageBuilder: (context, provider) => DecoratedBox(
-        decoration: BoxDecoration(
-          image: DecorationImage(image: provider, fit: BoxFit.cover),
+    return Semantics(
+      image: true,
+      label: '${product.name} mahsulot rasmi',
+      child: CachedNetworkImage(
+        imageUrl: imageUrl,
+        width: double.infinity,
+        fit: fit,
+        fadeInDuration: const Duration(milliseconds: 180),
+        fadeOutDuration: const Duration(milliseconds: 90),
+        memCacheWidth: 900,
+        maxWidthDiskCache: 1200,
+        placeholder: (context, url) => const ProductImagePlaceholder(),
+        errorWidget: (context, url, error) => const ProductImageFallback(),
+        imageBuilder: (context, provider) => DecoratedBox(
+          decoration: BoxDecoration(
+            image: DecorationImage(image: provider, fit: fit),
+          ),
         ),
       ),
     );
@@ -2564,11 +3716,16 @@ class _AssistantSheetState extends State<AssistantSheet> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      FilledButton(
-                        onPressed: sending
-                            ? null
-                            : () => _send(controller.text),
-                        child: const Icon(Icons.send_outlined),
+                      Semantics(
+                        button: true,
+                        label: 'Xabarni yuborish',
+                        child: IconButton.filled(
+                          onPressed: sending
+                              ? null
+                              : () => _send(controller.text),
+                          icon: const Icon(Icons.send_outlined),
+                          tooltip: 'Xabarni yuborish',
+                        ),
                       ),
                     ],
                   ),
@@ -2762,7 +3919,7 @@ class ProductSheet extends StatefulWidget {
 
   final Product product;
   final List<Product> relatedProducts;
-  final ValueChanged<int> onAdd;
+  final bool Function(CartItem) onAdd;
   final ValueChanged<Product> onOpenRelated;
   final ValueChanged<Product> onAddRelated;
 
@@ -2772,220 +3929,583 @@ class ProductSheet extends StatefulWidget {
 
 class _ProductSheetState extends State<ProductSheet> {
   int imageIndex = 0;
-  int qopCount = 1;
+  int packageCount = 1;
+  String unitType = packUnitType;
+  bool addedRecently = false;
+  late final PageController imageController;
+
+  @override
+  void initState() {
+    super.initState();
+    imageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    imageController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final product = widget.product;
-    final maxQop = qopUiLimit(product);
-    final selectedQop = qopCount.clamp(1, maxQop < 1 ? 1 : maxQop).toInt();
-    final item = CartItem(product: product, quantity: selectedQop);
+    final maxPackages = packageUiLimit(product, unitType: unitType);
+    final selectedPackages = packageCount
+        .clamp(1, maxPackages < 1 ? 1 : maxPackages)
+        .toInt();
+    final item = CartItem(
+      product: product,
+      quantity: selectedPackages,
+      unitType: unitType,
+    );
     final images = product.images.isEmpty ? const <String>[] : product.images;
-    final mix = item.mixSizes.map((size) => '$size × 10').join(', ');
+    final mix = item.sizeMix
+        .map((row) => '${row['size']} × ${row['qty']}')
+        .join(', ');
     final specs = productSpecs(product, item);
     final highlights = productHighlights(product);
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: .94,
       builder: (context, controller) {
-        return ListView(
-          controller: controller,
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+        return Column(
           children: [
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: milanaInk.withValues(alpha: .18),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            AspectRatio(
-              aspectRatio: 4 / 5,
-              child: Stack(
+            Expanded(
+              child: ListView(
+                controller: controller,
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
                 children: [
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: ProductImage(
-                        product: product,
-                        image: images.isEmpty ? null : images[imageIndex],
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: milanaInk.withValues(alpha: .18),
+                        borderRadius: BorderRadius.circular(999),
                       ),
                     ),
                   ),
-                  Positioned(
-                    left: 12,
-                    top: 12,
-                    child: _SoftBadge(
-                      icon: product.availableQop == null
-                          ? Icons.verified_outlined
-                          : Icons.inventory_2_outlined,
-                      label: product.availableQop == null
-                          ? 'Premium'
-                          : qopAvailabilityLabel(product),
-                    ),
-                  ),
-                  Positioned(
-                    right: 12,
-                    top: 12,
-                    child: _SoftBadge(
-                      icon: Icons.attach_money,
-                      label: '${money.format(product.price)} dona',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (images.length > 1) ...[
-              const SizedBox(height: 10),
-              SizedBox(
-                height: 72,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: images.length,
-                  separatorBuilder: (context, index) =>
-                      const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final selected = index == imageIndex;
-                    return GestureDetector(
-                      onTap: () => setState(() => imageIndex = index),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        width: 56,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: selected
-                                ? milanaBurgundy
-                                : Colors.transparent,
-                            width: 2,
+                  const SizedBox(height: 14),
+                  AspectRatio(
+                    aspectRatio: 4 / 5,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: PageView.builder(
+                              controller: imageController,
+                              itemCount: images.isEmpty ? 1 : images.length,
+                              onPageChanged: (index) =>
+                                  setState(() => imageIndex = index),
+                              itemBuilder: (context, index) => GestureDetector(
+                                onTap: images.isEmpty
+                                    ? null
+                                    : () => _openFullScreenGallery(images),
+                                child: ProductImage(
+                                  product: product,
+                                  image: images.isEmpty ? null : images[index],
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                        clipBehavior: Clip.antiAlias,
-                        child: ProductImage(
-                          product: product,
-                          image: images[index],
+                        if (images.length > 1) ...[
+                          Positioned(
+                            left: 10,
+                            top: 0,
+                            bottom: 0,
+                            child: Center(
+                              child: IconButton.filledTonal(
+                                onPressed: imageIndex == 0
+                                    ? null
+                                    : () => _showImage(imageIndex - 1),
+                                icon: const Icon(Icons.chevron_left),
+                                tooltip: 'Oldingi rasm',
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            right: 10,
+                            top: 0,
+                            bottom: 0,
+                            child: Center(
+                              child: IconButton.filledTonal(
+                                onPressed: imageIndex == images.length - 1
+                                    ? null
+                                    : () => _showImage(imageIndex + 1),
+                                icon: const Icon(Icons.chevron_right),
+                                tooltip: 'Keyingi rasm',
+                              ),
+                            ),
+                          ),
+                          Positioned(
+                            right: 12,
+                            bottom: 12,
+                            child: _SoftBadge(
+                              icon: Icons.photo_library_outlined,
+                              label: '${imageIndex + 1}/${images.length}',
+                            ),
+                          ),
+                        ],
+                        Positioned(
+                          left: 12,
+                          top: 12,
+                          child: _SoftBadge(
+                            icon: product.availableQop == null
+                                ? Icons.verified_outlined
+                                : Icons.inventory_2_outlined,
+                            label: product.availableQop == null
+                                ? 'Premium'
+                                : qopAvailabilityLabel(product),
+                          ),
                         ),
+                        Positioned(
+                          right: 12,
+                          top: 12,
+                          child: _SoftBadge(
+                            icon: Icons.attach_money,
+                            label: '${money.format(product.price)} dona',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (images.length > 1) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 72,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: images.length,
+                        separatorBuilder: (context, index) =>
+                            const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final selected = index == imageIndex;
+                          return GestureDetector(
+                            onTap: () => _showImage(index),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: 56,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: selected
+                                      ? milanaBurgundy
+                                      : Colors.transparent,
+                                  width: 2,
+                                ),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: ProductImage(
+                                product: product,
+                                image: images[index],
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        product.name,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.w800),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${genderLabel(product.gender)} · ${categoryLabel(product.category)}',
-                        style: TextStyle(
-                          color: milanaInk.withValues(alpha: .58),
-                          fontWeight: FontWeight.w600,
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              product.name,
+                              style: Theme.of(context).textTheme.headlineSmall
+                                  ?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${genderLabel(product.gender)} · ${categoryLabel(product.category)}',
+                              style: TextStyle(
+                                color: milanaInk.withValues(alpha: .58),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        money.format(product.price),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(
+                              color: milanaBurgundy,
+                              fontWeight: FontWeight.w900,
+                            ),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(width: 12),
-                Text(
-                  money.format(product.price),
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: milanaBurgundy,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            WholesaleDetailPanel(item: item, mix: mix),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: () {
-                Clipboard.setData(
-                  ClipboardData(
-                    text: productInquiryShareText(product, item: item),
-                  ),
-                );
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Model ma’lumoti nusxalandi')),
-                );
-              },
-              icon: const Icon(Icons.copy_all_outlined),
-              label: const Text('Model ma’lumotini nusxalash'),
-            ),
-            const SizedBox(height: 14),
-            ProductSpecGrid(specs: specs),
-            const SizedBox(height: 14),
-            if (product.fabric.isNotEmpty)
-              Text(
-                product.fabric,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            if (product.description.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(top: 8),
-                child: Text(product.description),
-              ),
-            const SizedBox(height: 14),
-            ProductHighlightList(highlights: highlights),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                QuantityStepper(
-                  value: selectedQop,
-                  max: maxQop < 1 ? 1 : maxQop,
-                  onChanged: (value) => setState(() => qopCount = value),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: maxQop < 1
-                        ? null
-                        : () => widget.onAdd(selectedQop),
-                    icon: const Icon(Icons.shopping_bag_outlined),
-                    label: Text(
-                      maxQop < 1
-                          ? 'Mavjud emas'
-                          : '${money.format(item.lineTotal)} · savatga',
+                  const SizedBox(height: 14),
+                  Text(
+                    'Buyurtma formatini tanlang',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 8),
+                  OrderUnitSelector(
+                    product: product,
+                    value: unitType,
+                    onChanged: (value) => setState(() {
+                      unitType = value;
+                      packageCount = 1;
+                    }),
+                  ),
+                  const SizedBox(height: 10),
+                  WholesaleDetailPanel(item: item, mix: mix),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Clipboard.setData(
+                        ClipboardData(
+                          text: productInquiryShareText(product, item: item),
+                        ),
+                      );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Model ma’lumoti nusxalandi'),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.copy_all_outlined),
+                    label: const Text('Model ma’lumotini nusxalash'),
+                  ),
+                  const SizedBox(height: 14),
+                  ProductSpecGrid(specs: specs),
+                  const SizedBox(height: 14),
+                  if (product.fabric.isNotEmpty)
+                    Text(
+                      product.fabric,
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  if (product.description.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(product.description),
+                    ),
+                  const SizedBox(height: 14),
+                  ProductHighlightList(highlights: highlights),
+                  if (widget.relatedProducts.isNotEmpty) ...[
+                    const SizedBox(height: 22),
+                    SectionHeader(
+                      title: 'Mos modellar',
+                      trailing: '${widget.relatedProducts.length} model',
+                    ),
+                    const SizedBox(height: 10),
+                    FeaturedProductsRail(
+                      products: widget.relatedProducts,
+                      badgeIcon: Icons.style_outlined,
+                      badgeLabel: 'Mos',
+                      onOpen: (related) {
+                        Navigator.of(context).pop();
+                        widget.onOpenRelated(related);
+                      },
+                      onAdd: widget.onAddRelated,
+                    ),
+                  ],
+                ],
+              ),
             ),
-            if (widget.relatedProducts.isNotEmpty) ...[
-              const SizedBox(height: 22),
-              SectionHeader(
-                title: 'Mos modellar',
-                trailing: '${widget.relatedProducts.length} model',
-              ),
-              const SizedBox(height: 10),
-              FeaturedProductsRail(
-                products: widget.relatedProducts,
-                badgeIcon: Icons.style_outlined,
-                badgeLabel: 'Mos',
-                onOpen: (related) {
-                  Navigator.of(context).pop();
-                  widget.onOpenRelated(related);
-                },
-                onAdd: widget.onAddRelated,
-              ),
-            ],
+            _ProductPurchaseBar(
+              item: item,
+              value: selectedPackages,
+              max: maxPackages,
+              added: addedRecently,
+              onChanged: (value) => setState(() => packageCount = value),
+              onAdd: () => _addToCart(item),
+            ),
           ],
         );
       },
+    );
+  }
+
+  void _addToCart(CartItem item) {
+    if (!widget.onAdd(item)) return;
+    setState(() => addedRecently = true);
+    unawaited(
+      Future<void>.delayed(const Duration(seconds: 2)).then((_) {
+        if (mounted) setState(() => addedRecently = false);
+      }),
+    );
+  }
+
+  void _showImage(int index) {
+    if (!imageController.hasClients) return;
+    imageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Future<void> _openFullScreenGallery(List<String> images) async {
+    final selected = await showDialog<int>(
+      context: context,
+      barrierColor: Colors.black,
+      builder: (context) => ProductGalleryDialog(
+        product: widget.product,
+        images: images,
+        initialIndex: imageIndex,
+      ),
+    );
+    if (selected != null && mounted) _showImage(selected);
+  }
+}
+
+class _ProductPurchaseBar extends StatelessWidget {
+  const _ProductPurchaseBar({
+    required this.item,
+    required this.value,
+    required this.max,
+    required this.added,
+    required this.onChanged,
+    required this.onAdd,
+  });
+
+  final CartItem item;
+  final int value;
+  final int max;
+  final bool added;
+  final ValueChanged<int> onChanged;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 12,
+      shadowColor: Colors.black26,
+      child: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        child: Row(
+          children: [
+            QuantityStepper(
+              value: value,
+              max: max < 1 ? 1 : max,
+              onChanged: onChanged,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: max < 1 ? null : onAdd,
+                icon: Icon(
+                  added
+                      ? Icons.check_circle_outline
+                      : Icons.shopping_bag_outlined,
+                ),
+                label: Text(
+                  max < 1
+                      ? 'Mavjud emas'
+                      : added
+                      ? 'Savatga qo‘shildi'
+                      : '${money.format(item.lineTotal)} · savatga',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class OrderUnitSelector extends StatelessWidget {
+  const OrderUnitSelector({
+    super.key,
+    required this.product,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final Product product;
+  final String value;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final units = product.effectiveOrderUnits;
+    return Row(
+      children: [
+        for (var index = 0; index < units.length; index++) ...[
+          if (index > 0) const SizedBox(width: 8),
+          Expanded(
+            child: _OrderUnitOption(
+              unit: units[index],
+              selected: units[index].unitType == value,
+              onTap: () => onChanged(units[index].unitType),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _OrderUnitOption extends StatelessWidget {
+  const _OrderUnitOption({
+    required this.unit,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ProductOrderUnit unit;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      label:
+          '${orderUnitLabel(unit.unitType)}, ${unit.pieces} dona, har o‘lchamdan ${unit.perSize} tadan',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          constraints: const BoxConstraints(minHeight: 86),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: selected ? milanaInk : Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected ? milanaInk : milanaInk.withValues(alpha: .14),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                orderUnitLabel(unit.unitType),
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: selected ? Colors.white : milanaInk,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '${unit.pieces} dona',
+                style: TextStyle(
+                  color: selected
+                      ? Colors.white.withValues(alpha: .76)
+                      : milanaInk.withValues(alpha: .64),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                'Har o‘lchamdan ${unit.perSize} tadan',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected
+                      ? Colors.white.withValues(alpha: .84)
+                      : milanaMuted,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class ProductGalleryDialog extends StatefulWidget {
+  const ProductGalleryDialog({
+    super.key,
+    required this.product,
+    required this.images,
+    required this.initialIndex,
+  });
+
+  final Product product;
+  final List<String> images;
+  final int initialIndex;
+
+  @override
+  State<ProductGalleryDialog> createState() => _ProductGalleryDialogState();
+}
+
+class _ProductGalleryDialogState extends State<ProductGalleryDialog> {
+  late final PageController controller;
+  late int index;
+
+  @override
+  void initState() {
+    super.initState();
+    index = widget.initialIndex;
+    controller = PageController(initialPage: index);
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(context).pop(index),
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: PageView.builder(
+                controller: controller,
+                itemCount: widget.images.length,
+                onPageChanged: (value) => setState(() => index = value),
+                itemBuilder: (context, imageIndex) => SafeArea(
+                  child: InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 4,
+                    child: SizedBox.expand(
+                      child: ProductImage(
+                        product: widget.product,
+                        image: widget.images[imageIndex],
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    IconButton.filledTonal(
+                      onPressed: () => Navigator.of(context).pop(index),
+                      icon: const Icon(Icons.close),
+                      tooltip: 'Yopish',
+                    ),
+                    const Spacer(),
+                    _SoftBadge(
+                      icon: Icons.photo_library_outlined,
+                      label: '${index + 1}/${widget.images.length}',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -3016,7 +4536,7 @@ class WholesaleDetailPanel extends StatelessWidget {
               const Icon(Icons.inventory_2_outlined, color: milanaBurgundy),
               const SizedBox(width: 8),
               Text(
-                'Optom qop hisobi',
+                '${orderUnitLabel(item.unitType)} hisobi',
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
@@ -3024,14 +4544,16 @@ class WholesaleDetailPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Text('1 qop: $bagSize ta kiyim · 6 o‘lchamdan 10 tadan'),
+          Text(
+            '1 ${orderUnitLabel(item.unitType).toLowerCase()}: ${item.piecesPerUnit} ta kiyim · har o‘lchamdan ${item.orderUnit.perSize} tadan',
+          ),
           Text('Tarkib: $mix'),
           const Divider(height: 22),
           Row(
             children: [
-              const Expanded(child: Text('1 qop narxi')),
+              Expanded(child: Text('1 ${orderUnitLabel(item.unitType)} narxi')),
               Text(
-                money.format(item.bagPrice),
+                money.format(item.packagePrice),
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
             ],
@@ -3228,11 +4750,13 @@ class CartScreen extends StatefulWidget {
     required this.cart,
     required this.orders,
     required this.auth,
+    required this.onOpenCatalog,
   });
 
   final CartController cart;
   final OrderRepository orders;
   final AuthService auth;
+  final VoidCallback onOpenCatalog;
 
   @override
   State<CartScreen> createState() => _CartScreenState();
@@ -3246,40 +4770,116 @@ class _CartScreenState extends State<CartScreen> {
   final address = TextEditingController();
   final comment = TextEditingController();
   String payment = 'manager';
+  List<CheckoutManager> managers = const [];
+  int? managerId;
+  bool managersLoading = true;
+  String? managersError;
   bool sending = false;
+  bool commerceSyncing = false;
   OrderReceipt? receipt;
   String? pendingClientOrderId;
+  String _boundCustomerId = '__unbound__';
+  final checkoutRecovery = CheckoutRecoveryStore();
+  int checkoutRecoveryGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadManagers();
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    phone.dispose();
+    city.dispose();
+    address.dispose();
+    comment.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadManagers() async {
+    setState(() {
+      managersLoading = true;
+      managersError = null;
+    });
+    try {
+      final rows = await widget.orders.loadManagers();
+      if (!mounted) return;
+      setState(() {
+        managers = rows;
+        if (!isCheckoutManagerSelected(managerId, rows)) {
+          managerId = null;
+        }
+        managersError = rows.isEmpty ? 'Hozircha faol menejer yo‘q.' : null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        managers = const [];
+        managerId = null;
+        managersError = 'Menejerlar ro‘yxati ochilmadi.';
+      });
+    } finally {
+      if (mounted) setState(() => managersLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: Listenable.merge([widget.cart, widget.auth]),
       builder: (context, _) {
+        final viewportWidth = MediaQuery.sizeOf(context).width;
+        final contentInset = viewportWidth > 792
+            ? (viewportWidth - 760) / 2
+            : 16.0;
         final customer = widget.auth.customer;
-        if (customer != null) {
-          if (name.text.isEmpty) name.text = customer.name;
-          if (phone.text.isEmpty) phone.text = customer.phone;
-          if (city.text.isEmpty) city.text = customer.city;
-          if (address.text.isEmpty) address.text = customer.address;
-        }
+        _bindCheckoutIdentity(customer);
+        final commerceBlocked =
+            customer != null &&
+            widget.auth.firebaseEnabled &&
+            !widget.auth.commerceAccountReady;
         if (receipt != null) {
-          return _ReceiptView(
-            receipt: receipt!,
-            onContinue: () => setState(() => receipt = null),
+          return _ReceiptView(receipt: receipt!, onContinue: _dismissReceipt);
+        }
+        if (!widget.cart.ready) {
+          return Center(
+            child: Semantics(
+              liveRegion: true,
+              label: 'Savat yuklanmoqda',
+              child: const CircularProgressIndicator(),
+            ),
           );
         }
         if (widget.cart.items.isEmpty) {
-          return const _EmptyState(
+          return _EmptyState(
             icon: Icons.shopping_bag_outlined,
             title: 'Savat bo‘sh',
-            message: 'Katalogdan kamida 1 qop model qo‘shing.',
+            message: 'Katalogdan qadoq yoki qop tanlab qo‘shing.',
+            action: FilledButton.icon(
+              onPressed: widget.onOpenCatalog,
+              icon: const Icon(Icons.storefront_outlined),
+              label: const Text('Katalogga o‘tish'),
+            ),
+          );
+        }
+        if (!widget.auth.firebaseEnabled && !widget.auth.localDemoEnabled) {
+          return const _EmptyState(
+            icon: Icons.person_off_outlined,
+            title: 'Akkaunt xizmati sozlanmoqda',
+            message:
+                'Katalog va savatdan akkauntsiz foydalanishingiz mumkin. Akkaunt xizmati tez orada ishga tushadi.',
           );
         }
         return ListView(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.fromLTRB(contentInset, 16, contentInset, 24),
           children: [
             CartSummaryPanel(
-              qopCount: widget.cart.count,
+              packageCount: widget.cart.count,
+              pieceCount: widget.cart.pieceCount,
+              packCount: widget.cart.packCount,
+              bagCount: widget.cart.bagCount,
               modelCount: widget.cart.items.length,
               total: widget.cart.total,
             ),
@@ -3288,7 +4888,19 @@ class _CartScreenState extends State<CartScreen> {
               (item) => CartLine(item: item, cart: widget.cart),
             ),
             const SizedBox(height: 12),
-            _TotalPanel(total: widget.cart.total, qopCount: widget.cart.count),
+            _TotalPanel(
+              total: widget.cart.total,
+              packageCount: widget.cart.count,
+              pieceCount: widget.cart.pieceCount,
+            ),
+            if (commerceBlocked) ...[
+              const SizedBox(height: 14),
+              CommerceCheckoutNotice(
+                state: widget.auth.commerceAccountState,
+                busy: commerceSyncing,
+                onRetry: _refreshCommerceAccount,
+              ),
+            ],
             const SizedBox(height: 16),
             Form(
               key: formKey,
@@ -3322,6 +4934,51 @@ class _CartScreenState extends State<CartScreen> {
                     controller: address,
                     decoration: const InputDecoration(labelText: 'Manzil'),
                   ),
+                  const SizedBox(height: 10),
+                  if (managersLoading)
+                    const InputDecorator(
+                      decoration: InputDecoration(labelText: 'Menejer'),
+                      child: LinearProgressIndicator(),
+                    )
+                  else
+                    DropdownButtonFormField<int>(
+                      initialValue: managerId,
+                      decoration: const InputDecoration(
+                        labelText: 'Menejerni tanlang',
+                      ),
+                      items: managers
+                          .map(
+                            (manager) => DropdownMenuItem(
+                              value: manager.id,
+                              child: Text(manager.name),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: managers.isEmpty
+                          ? null
+                          : (value) => setState(() => managerId = value),
+                      validator: (value) =>
+                          value == null ? 'Menejerni tanlang' : null,
+                    ),
+                  if (managersError != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            managersError!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: managersLoading ? null : _loadManagers,
+                          child: const Text('Qayta urinish'),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     initialValue: payment,
@@ -3369,9 +5026,31 @@ class _CartScreenState extends State<CartScreen> {
                     title: paymentMethodLabel(payment),
                     message: paymentInstructions(payment),
                   ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        'Buyurtmani yuborishda aloqa va yetkazib berish ma’lumotlari Milana Premium’ga uzatiladi.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: milanaInk.withValues(alpha: .64),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _openCheckoutPrivacy,
+                        child: const Text('Maxfiylik'),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 16),
                   FilledButton.icon(
-                    onPressed: sending ? null : _submit,
+                    onPressed:
+                        sending ||
+                            managersLoading ||
+                            managers.isEmpty ||
+                            commerceBlocked
+                        ? null
+                        : _submit,
                     icon: sending
                         ? const SizedBox(
                             width: 18,
@@ -3393,13 +5072,75 @@ class _CartScreenState extends State<CartScreen> {
   String? _required(String? value) =>
       (value ?? '').trim().length < 2 ? 'Majburiy' : null;
 
+  void _bindCheckoutIdentity(Customer? customer) {
+    final nextId = customer?.id ?? '';
+    if (_boundCustomerId == nextId) return;
+    _boundCustomerId = nextId;
+    name.text = customer?.name ?? '';
+    phone.text = customer?.phone ?? '';
+    city.text = customer?.city ?? '';
+    address.text = customer?.address ?? '';
+    comment.clear();
+    payment = 'manager';
+    pendingClientOrderId = null;
+    receipt = null;
+    final generation = ++checkoutRecoveryGeneration;
+    unawaited(_restoreCheckoutRecovery(nextId, generation));
+  }
+
+  Future<void> _restoreCheckoutRecovery(String scope, int generation) async {
+    final recovered = await checkoutRecovery.load(scope: scope);
+    if (!mounted ||
+        generation != checkoutRecoveryGeneration ||
+        _boundCustomerId != scope) {
+      return;
+    }
+    setState(() {
+      pendingClientOrderId = recovered.pendingClientOrderId;
+      receipt = recovered.receipt;
+    });
+  }
+
+  Future<void> _dismissReceipt() async {
+    final scope = _boundCustomerId;
+    setState(() => receipt = null);
+    try {
+      await checkoutRecovery.clear(scope: scope);
+    } catch (_) {
+      if (!mounted || _boundCustomerId != scope) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Chek qurilmadan o‘chirilmadi. Keyinroq qayta urinib ko‘ring.',
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _submit() async {
+    if (widget.auth.signedIn &&
+        widget.auth.firebaseEnabled &&
+        !widget.auth.commerceAccountReady) {
+      await _refreshCommerceAccount();
+      return;
+    }
     if (!formKey.currentState!.validate()) return;
+    final selectedManagerId = managerId;
+    if (selectedManagerId == null ||
+        !isCheckoutManagerSelected(selectedManagerId, managers)) {
+      return;
+    }
     setState(() => sending = true);
+    final initiatingCustomerId = widget.auth.customer?.id;
     try {
       final customer = widget.auth.customer;
       final clientOrderId = pendingClientOrderId ?? createClientOrderId();
       pendingClientOrderId = clientOrderId;
+      await checkoutRecovery.savePending(
+        clientOrderId,
+        scope: _boundCustomerId,
+      );
       final result = await widget.orders.placeOrder(
         CheckoutRequest(
           name: name.text.trim(),
@@ -3408,15 +5149,30 @@ class _CartScreenState extends State<CartScreen> {
           address: address.text.trim(),
           comment: comment.text.trim(),
           paymentMethod: payment,
+          managerId: selectedManagerId,
           customerEmail: customer?.email ?? '',
           customerId: customer?.id,
           clientOrderId: clientOrderId,
           items: widget.cart.items,
         ),
       );
+      if (!mounted || widget.auth.customer?.id != initiatingCustomerId) return;
       widget.cart.clear();
       pendingClientOrderId = null;
       setState(() => receipt = result);
+      try {
+        await checkoutRecovery.saveReceipt(result, scope: _boundCustomerId);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Buyurtma yaratildi, lekin chek qurilmada saqlanmadi.',
+              ),
+            ),
+          );
+        }
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -3426,6 +5182,117 @@ class _CartScreenState extends State<CartScreen> {
     } finally {
       if (mounted) setState(() => sending = false);
     }
+  }
+
+  Future<void> _refreshCommerceAccount() async {
+    if (commerceSyncing) return;
+    setState(() => commerceSyncing = true);
+    try {
+      if (widget.auth.commerceAccountState ==
+          CommerceAccountState.emailVerificationRequired) {
+        await widget.auth.refreshEmailVerification();
+      } else {
+        await widget.auth.retryCommerceAccount();
+      }
+      if (mounted && !widget.auth.commerceAccountReady) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Emailni tasdiqlang, so‘ng “Tekshirish” tugmasini bosing.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(authErrorMessage(error))));
+      }
+    } finally {
+      if (mounted) setState(() => commerceSyncing = false);
+    }
+  }
+
+  Future<void> _openCheckoutPrivacy() async {
+    try {
+      await openPublicUrl(privacyPolicyUrl);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Maxfiylik hujjati hozircha ochilmadi.')),
+      );
+    }
+  }
+}
+
+class CommerceCheckoutNotice extends StatelessWidget {
+  const CommerceCheckoutNotice({
+    super.key,
+    required this.state,
+    required this.busy,
+    required this.onRetry,
+  });
+
+  final CommerceAccountState state;
+  final bool busy;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final verifying = state == CommerceAccountState.emailVerificationRequired;
+    final syncing = state == CommerceAccountState.syncing;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: milanaBlush,
+        border: Border.all(color: milanaBurgundy.withValues(alpha: .18)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            verifying ? Icons.mark_email_unread_outlined : Icons.sync_outlined,
+            color: milanaBurgundy,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  verifying
+                      ? 'Email tasdiqlanishi kerak'
+                      : 'Akkaunt buyurtmalar bilan bog‘lanmoqda',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  verifying
+                      ? 'Tasdiqlangan email buyurtmani profilingizda ko‘rsatadi va uni xavfsiz boshqarish imkonini beradi.'
+                      : 'Buyurtma anonim bo‘lib qolmasligi uchun bog‘lanish yakunlanishini kuting.',
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: busy || syncing ? null : onRetry,
+                  icon: busy || syncing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh, size: 18),
+                  label: Text(
+                    verifying ? 'Tasdiqlashni tekshirish' : 'Qayta ulash',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -3461,10 +5328,12 @@ class CartLine extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   Text(
-                    'Dona: ${money.format(item.product.price)} · 1 qop: ${money.format(item.bagPrice)}',
+                    'Dona: ${money.format(item.product.price)} · 1 ${orderUnitLabel(item.unitType).toLowerCase()}: ${money.format(item.packagePrice)}',
                   ),
                   Text(
-                    item.mixSizes.map((size) => '$size×10').join(', '),
+                    item.sizeMix
+                        .map((row) => '${row['size']}×${row['qty']}')
+                        .join(', '),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -3472,13 +5341,40 @@ class CartLine extends StatelessWidget {
                     children: [
                       QuantityStepper(
                         value: item.quantity,
-                        max: cart.quantityLimit(item.product),
-                        onChanged: (value) =>
-                            cart.setQuantity(item.product, value),
+                        max: cart.quantityLimit(
+                          item.product,
+                          unitType: item.unitType,
+                        ),
+                        onChanged: (value) => cart.setItemQuantity(item, value),
                       ),
                       const Spacer(),
                       IconButton(
-                        onPressed: () => cart.remove(item.product),
+                        onPressed: () {
+                          cart.removeItem(item);
+                          HapticFeedback.mediumImpact();
+                          ScaffoldMessenger.of(context)
+                            ..hideCurrentSnackBar()
+                            ..showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  '${item.product.name} o‘chirildi',
+                                ),
+                                action: SnackBarAction(
+                                  label: 'QAYTARISH',
+                                  textColor: Colors.white,
+                                  onPressed: () {
+                                    if (cart.canAdd(
+                                      item.product,
+                                      quantity: item.quantity,
+                                      unitType: item.unitType,
+                                    )) {
+                                      cart.addItem(item);
+                                    }
+                                  },
+                                ),
+                              ),
+                            );
+                        },
                         icon: const Icon(Icons.delete_outline),
                         color: milanaInk.withValues(alpha: .62),
                         tooltip: 'O‘chirish',
@@ -3488,7 +5384,7 @@ class CartLine extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        '${item.quantity} qop · ${item.quantity * bagSize} ta kiyim',
+                        '${item.quantity} ${orderUnitLabel(item.unitType).toLowerCase()} · ${item.pieceCount} ta kiyim',
                         style: TextStyle(
                           color: milanaInk.withValues(alpha: .6),
                           fontWeight: FontWeight.w600,
@@ -3518,12 +5414,18 @@ class CartLine extends StatelessWidget {
 class CartSummaryPanel extends StatelessWidget {
   const CartSummaryPanel({
     super.key,
-    required this.qopCount,
+    required this.packageCount,
+    required this.pieceCount,
+    required this.packCount,
+    required this.bagCount,
     required this.modelCount,
     required this.total,
   });
 
-  final int qopCount;
+  final int packageCount;
+  final int pieceCount;
+  final int packCount;
+  final int bagCount;
   final int modelCount;
   final double total;
 
@@ -3552,7 +5454,7 @@ class CartSummaryPanel extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$modelCount model · $qopCount qop · ${qopCount * bagSize} ta kiyim',
+                  '$modelCount model · $packageCount birlik · $pieceCount dona\n$packCount qadoq · $bagCount qop',
                   style: TextStyle(color: Colors.white.withValues(alpha: .72)),
                 ),
               ],
@@ -3572,10 +5474,15 @@ class CartSummaryPanel extends StatelessWidget {
 }
 
 class _TotalPanel extends StatelessWidget {
-  const _TotalPanel({required this.total, required this.qopCount});
+  const _TotalPanel({
+    required this.total,
+    required this.packageCount,
+    required this.pieceCount,
+  });
 
   final double total;
-  final int qopCount;
+  final int packageCount;
+  final int pieceCount;
 
   @override
   Widget build(BuildContext context) {
@@ -3590,7 +5497,7 @@ class _TotalPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Expanded(child: Text('Jami qop narxi')),
+              const Expanded(child: Text('Jami mahsulot narxi')),
               Text(
                 money.format(total),
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -3601,7 +5508,7 @@ class _TotalPanel extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '$qopCount qop · har qopda $bagSize ta kiyim. Yetkazib berish Cargo bilan kelishiladi.',
+            '$packageCount buyurtma birligi · $pieceCount dona kiyim. Yetkazib berish Cargo bilan kelishiladi.',
             style: TextStyle(color: milanaInk.withValues(alpha: .68)),
           ),
         ],
@@ -3884,9 +5791,36 @@ class _SupportScreenState extends State<SupportScreen> {
   String topic = 'general';
   String faqQuery = '';
   bool sending = false;
+  bool commerceSyncing = false;
+  String _boundCustomerId = '__unbound__';
+
+  @override
+  void initState() {
+    super.initState();
+    _bindSupportIdentity(widget.auth.customer);
+    widget.auth.addListener(_handleAuthChanged);
+  }
+
+  void _handleAuthChanged() {
+    if (!_bindSupportIdentity(widget.auth.customer) || !mounted) return;
+    setState(() {});
+  }
+
+  bool _bindSupportIdentity(Customer? customer) {
+    final nextId = customer?.id ?? '';
+    if (_boundCustomerId == nextId) return false;
+    _boundCustomerId = nextId;
+    name.text = customer?.name ?? '';
+    phone.text = customer?.phone ?? '';
+    email.text = customer?.email ?? '';
+    message.clear();
+    topic = 'general';
+    return true;
+  }
 
   @override
   void dispose() {
+    widget.auth.removeListener(_handleAuthChanged);
     name.dispose();
     phone.dispose();
     email.dispose();
@@ -3898,11 +5832,11 @@ class _SupportScreenState extends State<SupportScreen> {
   @override
   Widget build(BuildContext context) {
     final customer = widget.auth.customer;
-    if (customer != null && name.text.isEmpty) {
-      name.text = customer.name;
-      phone.text = customer.phone;
-      email.text = customer.email;
-    }
+    _bindSupportIdentity(customer);
+    final commerceBlocked =
+        customer != null &&
+        widget.auth.firebaseEnabled &&
+        !widget.auth.commerceAccountReady;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -3921,6 +5855,14 @@ class _SupportScreenState extends State<SupportScreen> {
           controller: faqSearch,
         ),
         const SizedBox(height: 18),
+        if (commerceBlocked) ...[
+          CommerceCheckoutNotice(
+            state: widget.auth.commerceAccountState,
+            busy: commerceSyncing,
+            onRetry: _refreshCommerceAccount,
+          ),
+          const SizedBox(height: 16),
+        ],
         Form(
           key: formKey,
           child: Column(
@@ -3974,7 +5916,7 @@ class _SupportScreenState extends State<SupportScreen> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: sending ? null : _send,
+                  onPressed: sending || commerceBlocked ? null : _send,
                   child: const Text('Yuborish'),
                 ),
               ),
@@ -3986,8 +5928,15 @@ class _SupportScreenState extends State<SupportScreen> {
   }
 
   Future<void> _send() async {
+    if (widget.auth.signedIn &&
+        widget.auth.firebaseEnabled &&
+        !widget.auth.commerceAccountReady) {
+      await _refreshCommerceAccount();
+      return;
+    }
     if (!formKey.currentState!.validate()) return;
     setState(() => sending = true);
+    final initiatingCustomerId = widget.auth.customer?.id;
     try {
       final number = await widget.orders.createSupportTicket(
         SupportTicket(
@@ -3999,6 +5948,7 @@ class _SupportScreenState extends State<SupportScreen> {
           customerId: widget.auth.customer?.id,
         ),
       );
+      if (!mounted || widget.auth.customer?.id != initiatingCustomerId) return;
       message.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -4013,6 +5963,27 @@ class _SupportScreenState extends State<SupportScreen> {
       }
     } finally {
       if (mounted) setState(() => sending = false);
+    }
+  }
+
+  Future<void> _refreshCommerceAccount() async {
+    if (commerceSyncing) return;
+    setState(() => commerceSyncing = true);
+    try {
+      if (widget.auth.commerceAccountState ==
+          CommerceAccountState.emailVerificationRequired) {
+        await widget.auth.refreshEmailVerification();
+      } else {
+        await widget.auth.retryCommerceAccount();
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(authErrorMessage(error))));
+      }
+    } finally {
+      if (mounted) setState(() => commerceSyncing = false);
     }
   }
 }
@@ -4186,6 +6157,13 @@ class _AccountScreenState extends State<AccountScreen> {
   final password = TextEditingController();
   bool signUp = false;
   bool busy = false;
+  bool legalAccepted = false;
+  int accountRevision = 0;
+  String _boundAuthCustomerId = '__unbound__';
+  String? _activityCustomerId;
+  int _activityRevision = -1;
+  Stream<List<OrderSummary>>? _activityOrders;
+  Stream<List<SupportTicketSummary>>? _activitySupport;
 
   @override
   void dispose() {
@@ -4204,7 +6182,9 @@ class _AccountScreenState extends State<AccountScreen> {
       animation: widget.auth,
       builder: (context, _) {
         final customer = widget.auth.customer;
+        _bindAuthIdentity(customer);
         if (customer != null) {
+          _bindActivityStreams(customer.id);
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -4212,32 +6192,32 @@ class _AccountScreenState extends State<AccountScreen> {
                 customer: customer,
                 onEdit: () => _editProfile(customer),
                 onSignOut: widget.auth.signOut,
+                onDelete: _confirmAccountDeletion,
               ),
+              if (widget.auth.firebaseEnabled) ...[
+                const SizedBox(height: 12),
+                CommerceAccountPanel(
+                  state: widget.auth.commerceAccountState,
+                  busy: busy,
+                  onRefresh: () =>
+                      _runCommerceAction(widget.auth.refreshEmailVerification),
+                  onResend: () => _runCommerceAction(
+                    widget.auth.resendEmailVerification,
+                    successMessage: 'Tasdiqlash xati qayta yuborildi.',
+                  ),
+                  onRetry: () =>
+                      _runCommerceAction(widget.auth.retryCommerceAccount),
+                ),
+              ],
+              const SizedBox(height: 12),
+              LegalLinksPanel(onOpen: _openLegalUrl),
               const SizedBox(height: 16),
-              AccountOverviewSection(
+              AccountActivitySection(
+                orderStream: _activityOrders!,
+                supportStream: _activitySupport!,
                 orders: widget.orders,
-                customerId: customer.id,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Buyurtmalarim',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              CustomerOrdersList(
-                orders: widget.orders,
-                customerId: customer.id,
                 cart: widget.cart,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Murojaatlarim',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              CustomerSupportTicketsList(
-                orders: widget.orders,
-                customerId: customer.id,
+                onRefresh: _refreshAccountActivity,
               ),
             ],
           );
@@ -4255,14 +6235,22 @@ class _AccountScreenState extends State<AccountScreen> {
               address: address,
               email: email,
               password: password,
+              legalAccepted: legalAccepted,
               onSubmit: _submit,
-              onToggleMode: () => setState(() => signUp = !signUp),
+              onToggleMode: () => setState(() {
+                signUp = !signUp;
+                legalAccepted = false;
+              }),
+              onLegalAccepted: (value) => setState(() => legalAccepted = value),
+              onOpenLegal: _openLegalUrl,
               onResetPassword: signUp ? null : _resetPassword,
             ),
             const SizedBox(height: 12),
-            const Text(
-              'Firebase ulanganida akkaunt Firebase Auth orqali ishlaydi. Hozir lokal demo rejimda ham appni ko‘rish mumkin.',
-            ),
+            LegalLinksPanel(onOpen: _openLegalUrl),
+            if (widget.auth.localDemoEnabled) ...[
+              const SizedBox(height: 12),
+              const Text('Dasturchi ko‘rigi uchun lokal demo rejimi yoqilgan.'),
+            ],
           ],
         );
       },
@@ -4281,6 +6269,7 @@ class _AccountScreenState extends State<AccountScreen> {
           address: address.text,
           email: normalizeEmail(email.text),
           password: password.text,
+          legalAccepted: legalAccepted,
         );
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -4294,6 +6283,7 @@ class _AccountScreenState extends State<AccountScreen> {
       } else {
         await widget.auth.signIn(normalizeEmail(email.text), password.text);
       }
+      password.clear();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
@@ -4305,6 +6295,182 @@ class _AccountScreenState extends State<AccountScreen> {
     }
   }
 
+  void _bindAuthIdentity(Customer? customer) {
+    final nextId = customer?.id ?? '';
+    if (_boundAuthCustomerId == nextId) return;
+    _boundAuthCustomerId = nextId;
+    name.clear();
+    phone.clear();
+    city.clear();
+    address.clear();
+    email.clear();
+    password.clear();
+    legalAccepted = false;
+    signUp = false;
+    _activityCustomerId = null;
+    _activityRevision = -1;
+    _activityOrders = null;
+    _activitySupport = null;
+  }
+
+  void _bindActivityStreams(String customerId) {
+    if (_activityCustomerId == customerId &&
+        _activityRevision == accountRevision) {
+      return;
+    }
+    _activityCustomerId = customerId;
+    _activityRevision = accountRevision;
+    _activityOrders = widget.orders.customerOrders(customerId);
+    _activitySupport = widget.orders.customerSupportTickets(customerId);
+  }
+
+  void _refreshAccountActivity() {
+    setState(() {
+      accountRevision += 1;
+      _activityCustomerId = null;
+    });
+  }
+
+  Future<void> _openLegalUrl(String url) async {
+    try {
+      await openPublicUrl(url);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Hujjat havolasi hozircha ochilmadi.')),
+      );
+    }
+  }
+
+  Future<void> _runCommerceAction(
+    Future<void> Function() action, {
+    String? successMessage,
+  }) async {
+    if (busy) return;
+    setState(() => busy = true);
+    try {
+      await action();
+      if (mounted && successMessage != null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(successMessage)));
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(authErrorMessage(error))));
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _confirmAccountDeletion() async {
+    final confirmation = TextEditingController();
+    var deleting = false;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          scrollable: true,
+          icon: Icon(
+            Icons.warning_amber_rounded,
+            color: Theme.of(context).colorScheme.error,
+          ),
+          title: const Text('Akkauntni o‘chirish'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Profil, saqlangan modellar va sinxronlangan savat o‘chiriladi. Buyurtma va to‘lov yozuvlarini o‘chirish yoki shaxssizlantirish talabi ommaviy o‘chirish sahifasida ko‘rsatilgan tartibda ko‘rib chiqiladi. Qonun talab qilgan tranzaksiya yozuvlari belgilangan muddat saqlanishi mumkin.',
+                ),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: deleting
+                      ? null
+                      : () => _openLegalUrl(accountDeletionUrl),
+                  icon: const Icon(Icons.open_in_new, size: 18),
+                  label: const Text('O‘chirish qoidalarini ko‘rish'),
+                ),
+                TextButton.icon(
+                  onPressed: deleting ? null : () => _openLegalUrl(supportUrl),
+                  icon: const Icon(Icons.support_agent_outlined, size: 18),
+                  label: const Text('Yordam bilan bog‘lanish'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: confirmation,
+                  enabled: !deleting,
+                  autocorrect: false,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    labelText: 'Tasdiqlash uchun DELETE deb yozing',
+                  ),
+                  onChanged: (_) => setDialogState(() {}),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: deleting ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Bekor qilish'),
+            ),
+            FilledButton.icon(
+              onPressed:
+                  deleting || confirmation.text.trim().toUpperCase() != 'DELETE'
+                  ? null
+                  : () async {
+                      setDialogState(() => deleting = true);
+                      try {
+                        await widget.auth.deleteAccount(
+                          confirmation: confirmation.text,
+                        );
+                        widget.cart.clear();
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext);
+                        }
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Akkaunt o‘chirildi.'),
+                            ),
+                          );
+                        }
+                      } catch (error) {
+                        if (dialogContext.mounted) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(content: Text(authErrorMessage(error))),
+                          );
+                        }
+                      } finally {
+                        if (dialogContext.mounted) {
+                          setDialogState(() => deleting = false);
+                        }
+                      }
+                    },
+              icon: deleting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_forever_outlined),
+              label: const Text('Butunlay o‘chirish'),
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    confirmation.dispose();
+  }
+
   Future<void> _resetPassword() async {
     final resetEmail = TextEditingController(text: normalizeEmail(email.text));
     var sending = false;
@@ -4312,6 +6478,7 @@ class _AccountScreenState extends State<AccountScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
+          scrollable: true,
           title: const Text('Parolni tiklash'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -4396,6 +6563,7 @@ class _AccountScreenState extends State<AccountScreen> {
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
+          scrollable: true,
           title: const Text('Profil'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -4482,6 +6650,120 @@ class _AccountScreenState extends State<AccountScreen> {
   }
 }
 
+class CommerceAccountPanel extends StatelessWidget {
+  const CommerceAccountPanel({
+    super.key,
+    required this.state,
+    required this.busy,
+    required this.onRefresh,
+    required this.onResend,
+    required this.onRetry,
+  });
+
+  final CommerceAccountState state;
+  final bool busy;
+  final VoidCallback onRefresh;
+  final VoidCallback onResend;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final ready = state == CommerceAccountState.ready;
+    final verification =
+        state == CommerceAccountState.emailVerificationRequired;
+    final syncing = state == CommerceAccountState.syncing;
+    final title = ready
+        ? 'Akkaunt va buyurtmalar bog‘langan'
+        : verification
+        ? 'Emailni tasdiqlang'
+        : syncing
+        ? 'Buyurtmalar ulanmoqda'
+        : 'Buyurtmalarni qayta ulang';
+    final message = ready
+        ? 'Yangi buyurtmalar, to‘lov va yetkazib berish holati shu profilda ko‘rinadi.'
+        : verification
+        ? 'Emaildagi havolani oching. Keyin tasdiqlash holatini tekshiring.'
+        : syncing
+        ? 'Xavfsiz savdo profilingiz tayyorlanmoqda.'
+        : 'Internet aloqasini tekshirib, savdo profiliga qayta ulaning.';
+    final color = ready ? const Color(0xff2f7d55) : milanaBurgundy;
+    return Semantics(
+      liveRegion: syncing,
+      label: '$title. $message',
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: ready
+              ? const Color(0xffeaf5ef)
+              : milanaBlush.withValues(alpha: .72),
+          border: Border.all(color: color.withValues(alpha: .18)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              ready
+                  ? Icons.verified_user_outlined
+                  : verification
+                  ? Icons.mark_email_unread_outlined
+                  : Icons.sync_outlined,
+              color: color,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(message),
+                  if (!ready) ...[
+                    const SizedBox(height: 8),
+                    if (verification)
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          TextButton(
+                            onPressed: busy ? null : onRefresh,
+                            child: const Text('Tekshirish'),
+                          ),
+                          TextButton(
+                            onPressed: busy ? null : onResend,
+                            child: const Text('Xatni qayta yuborish'),
+                          ),
+                        ],
+                      )
+                    else
+                      TextButton.icon(
+                        onPressed: busy || syncing ? null : onRetry,
+                        icon: busy || syncing
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.refresh, size: 18),
+                        label: const Text('Qayta ulash'),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class AccountAuthForm extends StatelessWidget {
   const AccountAuthForm({
     super.key,
@@ -4494,8 +6776,11 @@ class AccountAuthForm extends StatelessWidget {
     required this.address,
     required this.email,
     required this.password,
+    required this.legalAccepted,
     required this.onSubmit,
     required this.onToggleMode,
+    required this.onLegalAccepted,
+    required this.onOpenLegal,
     required this.onResetPassword,
   });
 
@@ -4508,8 +6793,11 @@ class AccountAuthForm extends StatelessWidget {
   final TextEditingController address;
   final TextEditingController email;
   final TextEditingController password;
+  final bool legalAccepted;
   final VoidCallback onSubmit;
   final VoidCallback onToggleMode;
+  final ValueChanged<bool> onLegalAccepted;
+  final ValueChanged<String> onOpenLegal;
   final VoidCallback? onResetPassword;
 
   @override
@@ -4630,13 +6918,42 @@ class AccountAuthForm extends StatelessWidget {
                   : const [AutofillHints.password],
               textInputAction: TextInputAction.done,
               onFieldSubmitted: (_) {
-                if (!busy) onSubmit();
+                if (!busy && (!signUp || legalAccepted)) onSubmit();
               },
               validator: (value) => validatePassword(value, signUp: signUp),
             ),
+            if (signUp) ...[
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                value: legalAccepted,
+                onChanged: busy
+                    ? null
+                    : (value) => onLegalAccepted(value ?? false),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                title: const Text(
+                  'Maxfiylik siyosati va foydalanish shartlariga roziman',
+                ),
+              ),
+              Wrap(
+                spacing: 4,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => onOpenLegal(privacyPolicyUrl),
+                    icon: const Icon(Icons.privacy_tip_outlined, size: 17),
+                    label: const Text('Maxfiylik siyosati'),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => onOpenLegal(termsOfServiceUrl),
+                    icon: const Icon(Icons.description_outlined, size: 17),
+                    label: const Text('Foydalanish shartlari'),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: busy ? null : onSubmit,
+              onPressed: busy || (signUp && !legalAccepted) ? null : onSubmit,
               icon: busy
                   ? const SizedBox(
                       width: 18,
@@ -4679,11 +6996,13 @@ class AccountDashboardCard extends StatelessWidget {
     required this.customer,
     required this.onEdit,
     required this.onSignOut,
+    required this.onDelete,
   });
 
   final Customer customer;
   final VoidCallback onEdit;
   final VoidCallback onSignOut;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -4782,6 +7101,98 @@ class AccountDashboardCard extends StatelessWidget {
                   foregroundColor: milanaInk,
                 ),
               ),
+              TextButton.icon(
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline, size: 19),
+                label: const Text('Akkauntni o‘chirish'),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFFFFC6C6),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class LegalLinksPanel extends StatelessWidget {
+  const LegalLinksPanel({super.key, required this.onOpen});
+
+  final ValueChanged<String> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: milanaBlush,
+        border: Border.all(color: milanaInk.withValues(alpha: .08)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.shield_outlined,
+                  color: milanaBurgundy,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Huquqiy ma’lumotlar',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Ma’lumotlaringiz qanday ishlatilishi, xizmat shartlari va akkauntni o‘chirish tartibi.',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: milanaInk.withValues(alpha: .66),
+              height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 4,
+            runSpacing: 2,
+            children: [
+              TextButton.icon(
+                onPressed: () => onOpen(privacyPolicyUrl),
+                icon: const Icon(Icons.privacy_tip_outlined, size: 18),
+                label: const Text('Maxfiylik'),
+              ),
+              TextButton.icon(
+                onPressed: () => onOpen(termsOfServiceUrl),
+                icon: const Icon(Icons.description_outlined, size: 18),
+                label: const Text('Shartlar'),
+              ),
+              TextButton.icon(
+                onPressed: () => onOpen(accountDeletionUrl),
+                icon: const Icon(Icons.person_remove_outlined, size: 18),
+                label: const Text('Akkauntni o‘chirish'),
+              ),
+              TextButton.icon(
+                onPressed: () => onOpen(supportUrl),
+                icon: const Icon(Icons.support_agent_outlined, size: 18),
+                label: const Text('Yordam'),
+              ),
             ],
           ),
         ],
@@ -4847,38 +7258,88 @@ class AccountMetric extends StatelessWidget {
   }
 }
 
-class AccountOverviewSection extends StatelessWidget {
-  const AccountOverviewSection({
+class AccountActivitySection extends StatelessWidget {
+  const AccountActivitySection({
     super.key,
+    required this.orderStream,
+    required this.supportStream,
     required this.orders,
-    required this.customerId,
+    required this.cart,
+    required this.onRefresh,
   });
 
+  final Stream<List<OrderSummary>> orderStream;
+  final Stream<List<SupportTicketSummary>> supportStream;
   final OrderRepository orders;
-  final String customerId;
+  final CartController cart;
+  final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<OrderSummary>>(
-      stream: orders.customerOrders(customerId),
+      stream: orderStream,
       builder: (context, orderSnap) {
         return StreamBuilder<List<SupportTicketSummary>>(
-          stream: orders.customerSupportTickets(customerId),
+          stream: supportStream,
           builder: (context, supportSnap) {
-            if (orderSnap.connectionState == ConnectionState.waiting ||
-                supportSnap.connectionState == ConnectionState.waiting) {
-              return const AccountOverviewLoading();
-            }
-            if (orderSnap.hasError || supportSnap.hasError) {
-              return AccountOverviewError(
-                message: '${orderSnap.error ?? supportSnap.error}',
-              );
-            }
-            final overview = buildAccountOverview(
-              orders: orderSnap.data ?? const [],
-              supportTickets: supportSnap.data ?? const [],
+            final orderRows = orderSnap.data ?? const <OrderSummary>[];
+            final supportRows =
+                supportSnap.data ?? const <SupportTicketSummary>[];
+            final ordersLoading =
+                orderSnap.connectionState == ConnectionState.waiting &&
+                !orderSnap.hasData;
+            final supportLoading =
+                supportSnap.connectionState == ConnectionState.waiting &&
+                !supportSnap.hasData;
+            final hasActivityData = orderSnap.hasData || supportSnap.hasData;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (!hasActivityData && (ordersLoading || supportLoading))
+                  const AccountOverviewLoading()
+                else
+                  AccountOverviewCard(
+                    overview: buildAccountOverview(
+                      orders: orderRows,
+                      supportTickets: supportRows,
+                    ),
+                  ),
+                if (orderSnap.hasError || supportSnap.hasError) ...[
+                  const SizedBox(height: 10),
+                  AccountOverviewError(
+                    message:
+                        'Ayrim akkaunt ma’lumotlari yangilanmadi. Qayta urinib ko‘ring.',
+                    onRetry: onRefresh,
+                  ),
+                ],
+                const SizedBox(height: 24),
+                Text(
+                  'Buyurtmalarim',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                CustomerOrdersList(
+                  rows: orderRows,
+                  loading: ordersLoading,
+                  hasError: orderSnap.hasError,
+                  orders: orders,
+                  cart: cart,
+                  onChanged: onRefresh,
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Murojaatlarim',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 8),
+                CustomerSupportTicketsList(
+                  rows: supportRows,
+                  loading: supportLoading,
+                  hasError: supportSnap.hasError,
+                  onRetry: onRefresh,
+                ),
+              ],
             );
-            return AccountOverviewCard(overview: overview);
           },
         );
       },
@@ -4904,9 +7365,14 @@ class AccountOverviewLoading extends StatelessWidget {
 }
 
 class AccountOverviewError extends StatelessWidget {
-  const AccountOverviewError({super.key, required this.message});
+  const AccountOverviewError({
+    super.key,
+    required this.message,
+    required this.onRetry,
+  });
 
   final String message;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -4922,7 +7388,8 @@ class AccountOverviewError extends StatelessWidget {
         children: [
           const Icon(Icons.error_outline, color: milanaBurgundy),
           const SizedBox(width: 10),
-          Expanded(child: Text('Akkaunt ko‘rsatkichlari ochilmadi: $message')),
+          Expanded(child: Text(message)),
+          TextButton(onPressed: onRetry, child: const Text('Qayta urinish')),
         ],
       ),
     );
@@ -5008,9 +7475,9 @@ class AccountOverviewCard extends StatelessWidget {
                     width: itemWidth,
                     child: AccountOverviewTile(
                       icon: Icons.inventory_2_outlined,
-                      value: '${overview.activeQop} qop',
+                      value: '${overview.activePackages} paket',
                       label: 'aktiv buyurtma',
-                      detail: '${overview.activeClothes} ta kiyim',
+                      detail: '${overview.activePieces} ta kiyim',
                     ),
                   ),
                   SizedBox(
@@ -5028,7 +7495,7 @@ class AccountOverviewCard extends StatelessWidget {
                       icon: Icons.receipt_long_outlined,
                       value: '${overview.totalOrders}',
                       label: 'jami buyurtma',
-                      detail: '${overview.totalQop} qop tarixda',
+                      detail: '${overview.totalPackages} paket tarixda',
                     ),
                   ),
                   SizedBox(
@@ -5120,42 +7587,44 @@ class AccountOverviewTile extends StatelessWidget {
 class CustomerOrdersList extends StatelessWidget {
   const CustomerOrdersList({
     super.key,
+    required this.rows,
+    required this.loading,
+    required this.hasError,
     required this.orders,
-    required this.customerId,
     required this.cart,
+    required this.onChanged,
   });
 
+  final List<OrderSummary> rows;
+  final bool loading;
+  final bool hasError;
   final OrderRepository orders;
-  final String customerId;
   final CartController cart;
+  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<OrderSummary>>(
-      stream: orders.customerOrders(customerId),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (snap.hasError) {
-          return Text('Buyurtmalar ochilmadi: ${snap.error}');
-        }
-        final rows = snap.data ?? const [];
-        if (rows.isEmpty) {
-          return const Text('Hozircha buyurtmalar yo‘q.');
-        }
-        return Column(
-          children: rows
-              .map(
-                (order) =>
-                    OrderStatusCard(order: order, orders: orders, cart: cart),
-              )
-              .toList(),
-        );
-      },
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (rows.isEmpty && hasError) {
+      return const Text('Buyurtmalar hozircha yangilanmadi.');
+    }
+    if (rows.isEmpty) return const Text('Hozircha buyurtmalar yo‘q.');
+    return Column(
+      children: rows
+          .map(
+            (order) => OrderStatusCard(
+              order: order,
+              orders: orders,
+              cart: cart,
+              onChanged: onChanged,
+            ),
+          )
+          .toList(),
     );
   }
 }
@@ -5166,11 +7635,13 @@ class OrderStatusCard extends StatefulWidget {
     required this.order,
     required this.orders,
     required this.cart,
+    required this.onChanged,
   });
 
   final OrderSummary order;
   final OrderRepository orders;
   final CartController cart;
+  final VoidCallback onChanged;
 
   @override
   State<OrderStatusCard> createState() => _OrderStatusCardState();
@@ -5405,6 +7876,7 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
             PaymentSubmissionSheet(order: order, orders: widget.orders),
       );
       if (mounted && receipt != null) {
+        widget.onChanged();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('To‘lov ma’lumoti yuborildi')),
         );
@@ -5420,6 +7892,7 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
       context: context,
       builder: (context) {
         return AlertDialog(
+          scrollable: true,
           title: const Text('Buyurtmani bekor qilish'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -5460,9 +7933,14 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
     setState(() => busy = true);
     try {
       await widget.orders.cancelOrder(
-        CancelOrderRequest(orderId: order.id, reason: reason),
+        CancelOrderRequest(
+          orderId: order.id,
+          provenance: order.provenance,
+          reason: reason,
+        ),
       );
       if (!mounted) return;
+      widget.onChanged();
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Buyurtma bekor qilindi')));
@@ -5590,7 +8068,7 @@ class OrderDetailsSheet extends StatelessWidget {
                       content: Text(
                         added > 0
                             ? 'Buyurtma savatga qo‘shildi'
-                            : 'Savatdagi qop miqdori allaqachon limitda',
+                            : 'Savatdagi buyurtma miqdori allaqachon limitda',
                       ),
                     ),
                   );
@@ -5668,7 +8146,9 @@ class OrderLineItemTile extends StatelessWidget {
                   runSpacing: 4,
                   children: [
                     Text('Dona: ${money.format(item.unitPrice)}'),
-                    Text('Qop: ${money.format(item.bagPrice)}'),
+                    Text(
+                      '${orderUnitLabel(item.unitType)}: ${money.format(item.bagPrice)}',
+                    ),
                     Text(
                       'Jami: ${money.format(item.lineTotal)}',
                       style: const TextStyle(fontWeight: FontWeight.w900),
@@ -5725,103 +8205,114 @@ class _PaymentSubmissionSheetState extends State<PaymentSubmissionSheet> {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
-    return Padding(
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
       padding: EdgeInsets.fromLTRB(16, 12, 16, 16 + bottom),
-      child: Form(
-        key: formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 42,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: milanaInk.withValues(alpha: .18),
-                  borderRadius: BorderRadius.circular(999),
+      child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        child: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: milanaInk.withValues(alpha: .18),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'To‘lov ma’lumoti',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '${widget.order.number} · ${money.format(widget.order.total)}',
-              style: TextStyle(color: milanaInk.withValues(alpha: .62)),
-            ),
-            const SizedBox(height: 14),
-            DropdownButtonFormField<String>(
-              initialValue: method,
-              decoration: const InputDecoration(labelText: 'To‘lov usuli'),
-              items: [
-                for (final value in const [
-                  'manager',
-                  'bank',
-                  'click',
-                  'payme',
-                  'card',
-                  'cash',
-                ])
-                  DropdownMenuItem(
-                    value: value,
-                    child: Text(paymentMethodLabel(value)),
-                  ),
-              ],
-              onChanged: (value) => setState(() => method = value ?? 'manager'),
-            ),
-            const SizedBox(height: 10),
-            TextFormField(
-              controller: amount,
-              decoration: const InputDecoration(labelText: 'To‘langan summa'),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
+              const SizedBox(height: 16),
+              Text(
+                'To‘lov ma’lumoti',
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-              validator: (value) => paymentAmountValidationMessage(
-                value ?? '',
-                widget.order.total,
+              const SizedBox(height: 4),
+              Text(
+                '${widget.order.number} · ${money.format(widget.order.total)}',
+                style: TextStyle(color: milanaInk.withValues(alpha: .62)),
               ),
-            ),
-            const SizedBox(height: 10),
-            TextFormField(
-              controller: reference,
-              decoration: const InputDecoration(
-                labelText: 'Reference / tranzaksiya raqami',
+              const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                initialValue: method,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'To‘lov usuli'),
+                items: [
+                  for (final value in const [
+                    'manager',
+                    'bank',
+                    'click',
+                    'payme',
+                    'card',
+                    'cash',
+                  ])
+                    DropdownMenuItem(
+                      value: value,
+                      child: Text(
+                        paymentMethodLabel(value),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (value) =>
+                    setState(() => method = value ?? 'manager'),
               ),
-              validator: (value) => paymentProofDetailValidationMessage(
-                method: method,
-                reference: value ?? '',
-                note: note.text,
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: amount,
+                decoration: const InputDecoration(labelText: 'To‘langan summa'),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                validator: (value) => paymentAmountValidationMessage(
+                  value ?? '',
+                  widget.order.total,
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            TextFormField(
-              controller: note,
-              minLines: 2,
-              maxLines: 4,
-              decoration: const InputDecoration(labelText: 'Izoh'),
-              validator: (value) => paymentProofDetailValidationMessage(
-                method: method,
-                reference: reference.text,
-                note: value ?? '',
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: reference,
+                decoration: const InputDecoration(
+                  labelText: 'Reference / tranzaksiya raqami',
+                ),
+                validator: (value) => paymentProofDetailValidationMessage(
+                  method: method,
+                  reference: value ?? '',
+                  note: note.text,
+                ),
               ),
-            ),
-            const SizedBox(height: 14),
-            FilledButton.icon(
-              onPressed: sending ? null : _submit,
-              icon: sending
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.check),
-              label: const Text('Yuborish'),
-            ),
-          ],
+              const SizedBox(height: 10),
+              TextFormField(
+                controller: note,
+                minLines: 2,
+                maxLines: 4,
+                decoration: const InputDecoration(labelText: 'Izoh'),
+                validator: (value) => paymentProofDetailValidationMessage(
+                  method: method,
+                  reference: reference.text,
+                  note: value ?? '',
+                ),
+              ),
+              const SizedBox(height: 14),
+              FilledButton.icon(
+                onPressed: sending ? null : _submit,
+                icon: sending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.check),
+                label: const Text('Yuborish'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -5834,6 +8325,7 @@ class _PaymentSubmissionSheetState extends State<PaymentSubmissionSheet> {
       final receipt = await widget.orders.submitPaymentProof(
         PaymentSubmission(
           orderId: widget.order.id,
+          provenance: widget.order.provenance,
           method: method,
           amount: parsePaymentAmount(amount.text),
           reference: reference.text.trim(),
@@ -5930,7 +8422,7 @@ class _OrderActivityRow extends StatelessWidget {
                     Text(
                       created,
                       style: TextStyle(
-                        color: milanaInk.withValues(alpha: .48),
+                        color: milanaMuted,
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
                       ),
@@ -6100,9 +8592,7 @@ class OrderProgressLine extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 11,
-                    color: i <= current
-                        ? milanaBurgundy
-                        : milanaInk.withValues(alpha: .48),
+                    color: i <= current ? milanaBurgundy : milanaMuted,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -6123,37 +8613,40 @@ class OrderProgressLine extends StatelessWidget {
 class CustomerSupportTicketsList extends StatelessWidget {
   const CustomerSupportTicketsList({
     super.key,
-    required this.orders,
-    required this.customerId,
+    required this.rows,
+    required this.loading,
+    required this.hasError,
+    required this.onRetry,
   });
 
-  final OrderRepository orders;
-  final String customerId;
+  final List<SupportTicketSummary> rows;
+  final bool loading;
+  final bool hasError;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<SupportTicketSummary>>(
-      stream: orders.customerSupportTickets(customerId),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 24),
-            child: Center(child: CircularProgressIndicator()),
-          );
-        }
-        if (snap.hasError) {
-          return Text('Murojaatlar ochilmadi: ${snap.error}');
-        }
-        final rows = snap.data ?? const [];
-        if (rows.isEmpty) {
-          return const Text('Hozircha murojaatlar yo‘q.');
-        }
-        return Column(
-          children: rows
-              .map((ticket) => SupportTicketCard(ticket: ticket))
-              .toList(),
-        );
-      },
+    if (loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (rows.isEmpty && hasError) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh),
+          label: const Text('Murojaatlarni qayta yuklash'),
+        ),
+      );
+    }
+    if (rows.isEmpty) return const Text('Hozircha murojaatlar yo‘q.');
+    return Column(
+      children: rows
+          .map((ticket) => SupportTicketCard(ticket: ticket))
+          .toList(),
     );
   }
 }
@@ -6277,7 +8770,7 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    final content = Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -6296,6 +8789,17 @@ class _EmptyState extends StatelessWidget {
           ],
         ),
       ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedHeight) return content;
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: content,
+          ),
+        );
+      },
     );
   }
 }

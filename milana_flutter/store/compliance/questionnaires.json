@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "allowedStatuses": ["unknown", "not-applicable", "owner-approved"],
+  "global": [
+    {
+      "id": "legal-pages",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "Privacy, Terms, Support, and account-deletion resources require owner and legal review.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "public-account-deletion",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "Deletion must cover Firebase and associated Milanapremium commerce records.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ],
+  "appStore": [
+    {
+      "id": "app-privacy",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "Console answers must be reconciled with the production data inventory and every enabled SDK.",
+      "evidence": [{"kind": "source-code", "ref": "ios/Runner/PrivacyInfo.xcprivacy"}],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "age-rating",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "The App Store age-rating questionnaire has not been completed by the owner.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "content-rights",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "Catalog imagery, brand artwork, fonts, and model photography require a rights attestation.",
+      "evidence": [{"kind": "source-code", "ref": "store/assets/rights.json"}],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "export-compliance",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "The binary declares no non-exempt encryption, but the owner must approve the App Store answer.",
+      "evidence": [{"kind": "source-code", "ref": "ios/Runner/Info.plist"}],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "eu-dsa-trader-status",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "Trader status depends on the owner and selected storefront territories.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "accessibility-labels",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "Accessibility nutrition labels are voluntary and must not be claimed before physical-device common-task testing.",
+      "evidence": [{"kind": "test-report", "ref": "test/app_widget_accessibility_test.dart"}],
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ],
+  "googlePlay": [
+    {
+      "id": "data-safety",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "Data Safety must match production processors, retention, deletion, and SDK behavior.",
+      "evidence": [{"kind": "source-code", "ref": "store/compliance/privacy-data.json"}],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "account-deletion",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "The in-app and public web deletion paths require end-to-end owner approval.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "app-access",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "Reusable review-account access and synthetic-order cleanup instructions are owner-controlled.",
+      "evidence": [{"kind": "source-code", "ref": "store/review/review-info.json"}],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "ads",
+      "status": "unknown",
+      "answer": null,
+      "proposedAnswer": {"containsAds": false},
+      "rationale": "The repository has no advertising SDK, but the Play declaration still requires owner approval.",
+      "evidence": [{"kind": "source-code", "ref": "pubspec.lock"}],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "content-rating",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "The IARC content-rating questionnaire has not been completed.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "target-audience",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "Wholesale positioning does not replace the required audience-age decision.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "financial-features",
+      "status": "unknown",
+      "answer": null,
+      "proposedAnswer": {"financialFeatures": []},
+      "rationale": "All published apps must submit this declaration, including an explicit no-features answer.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "health-apps",
+      "status": "unknown",
+      "answer": null,
+      "proposedAnswer": {"healthFeatures": []},
+      "rationale": "All published apps must submit this declaration, including an explicit no-features answer.",
+      "evidence": [],
+      "approvedBy": null,
+      "approvedAt": null
+    },
+    {
+      "id": "ai-generated-content-policy",
+      "status": "unknown",
+      "answer": null,
+      "rationale": "The catalog assistant must be reviewed for the current AI-generated-content reporting policy.",
+      "evidence": [{"kind": "source-code", "ref": "lib/src/services/assistant_service.dart"}],
+      "approvedBy": null,
+      "approvedAt": null
+    }
+  ]
+}

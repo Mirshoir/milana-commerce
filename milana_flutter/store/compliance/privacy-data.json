@@ -1,0 +1,167 @@
+{
+  "schemaVersion": 1,
+  "inventoryStatus": {
+    "status": "unknown",
+    "answer": null,
+    "rationale": "Production processors, retention, deletion, linkage, sharing, and purposes require owner and legal approval.",
+    "evidence": [{"kind": "source-code", "ref": "store/PRIVACY_DATA_INVENTORY.md"}],
+    "approvedBy": null,
+    "approvedAt": null
+  },
+  "processors": [
+    {
+      "id": "firebase",
+      "role": null,
+      "services": ["Authentication", "Cloud Firestore", "Cloud Functions"],
+      "retentionReference": null,
+      "deletionReference": null,
+      "status": "unknown"
+    }
+  ],
+  "sdkRows": [
+    {
+      "id": "firebase-auth.android.automatic",
+      "dependency": "firebase_auth",
+      "platform": "android",
+      "dataTypes": ["ip-address", "user-agent", "firebase-android-app-id", "signed-in-user-id"],
+      "automatic": true,
+      "collected": null,
+      "shared": null,
+      "linkedToUser": null,
+      "usedForTracking": null,
+      "required": null,
+      "purposes": [],
+      "processorIds": ["firebase"],
+      "retention": null,
+      "deletion": null,
+      "classification": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Reconcile Firebase Auth automatic collection with the production configuration and Play definitions.",
+        "evidence": [{"kind": "policy", "ref": "https://firebase.google.com/docs/android/play-data-disclosure"}],
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "firebase-auth.ios.automatic",
+      "dependency": "firebase_auth",
+      "platform": "ios",
+      "dataTypes": ["identifiers", "user-agent", "ip-address", "signed-in-user-id"],
+      "automatic": true,
+      "collected": null,
+      "shared": null,
+      "linkedToUser": null,
+      "usedForTracking": null,
+      "required": null,
+      "purposes": [],
+      "processorIds": ["firebase"],
+      "retention": null,
+      "deletion": null,
+      "classification": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Reconcile Firebase Auth automatic collection with App Store privacy definitions.",
+        "evidence": [{"kind": "policy", "ref": "https://firebase.google.com/docs/ios/app-store-data-collection"}],
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "cloud-firestore.android.automatic",
+      "dependency": "cloud_firestore",
+      "platform": "android",
+      "dataTypes": ["firebase-user-agent", "signed-in-user-id"],
+      "automatic": true,
+      "collected": null,
+      "shared": null,
+      "linkedToUser": null,
+      "usedForTracking": null,
+      "required": null,
+      "purposes": [],
+      "processorIds": ["firebase"],
+      "retention": null,
+      "deletion": null,
+      "classification": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Reconcile Firestore request metadata with Play Data Safety.",
+        "evidence": [{"kind": "policy", "ref": "https://firebase.google.com/docs/android/play-data-disclosure"}],
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "cloud-firestore.ios.automatic",
+      "dependency": "cloud_firestore",
+      "platform": "ios",
+      "dataTypes": ["firebase-user-agent", "signed-in-user-id"],
+      "automatic": true,
+      "collected": null,
+      "shared": null,
+      "linkedToUser": null,
+      "usedForTracking": null,
+      "required": null,
+      "purposes": [],
+      "processorIds": ["firebase"],
+      "retention": null,
+      "deletion": null,
+      "classification": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Reconcile Firestore request metadata with App Store privacy definitions.",
+        "evidence": [{"kind": "policy", "ref": "https://firebase.google.com/docs/ios/app-store-data-collection"}],
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "cloud-functions.android.automatic",
+      "dependency": "cloud_functions",
+      "platform": "android",
+      "dataTypes": ["function-name", "ip-address", "fcm-registration-token", "signed-in-user-id"],
+      "automatic": true,
+      "collected": null,
+      "shared": null,
+      "linkedToUser": null,
+      "usedForTracking": null,
+      "required": null,
+      "purposes": [],
+      "processorIds": ["firebase"],
+      "retention": null,
+      "deletion": null,
+      "classification": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Reconcile callable-function metadata with Play Data Safety.",
+        "evidence": [{"kind": "policy", "ref": "https://firebase.google.com/docs/android/play-data-disclosure"}],
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "cloud-functions.ios.automatic",
+      "dependency": "cloud_functions",
+      "platform": "ios",
+      "dataTypes": ["function-name", "ip-address", "signed-in-user-id"],
+      "automatic": true,
+      "collected": null,
+      "shared": null,
+      "linkedToUser": null,
+      "usedForTracking": null,
+      "required": null,
+      "purposes": [],
+      "processorIds": ["firebase"],
+      "retention": null,
+      "deletion": null,
+      "classification": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Reconcile callable-function metadata with App Store privacy definitions.",
+        "evidence": [{"kind": "policy", "ref": "https://firebase.google.com/docs/ios/app-store-data-collection"}],
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    }
+  ]
+}

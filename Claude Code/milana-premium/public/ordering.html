@@ -1,17 +1,384 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Milana Premium - Fashion & Homewear Collection</title>
-    <!-- Google Fonts: Outfit (Modern thin sans-serif display) & Condiment (Cursive script) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@100;200;300;400;500;600;700&family=Condiment&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="/assets/index-DsiAlQbp.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-Bcpxp7nl.css">
-  </head>
-  <body class="bg-[#010828] text-[#EFF4FF] selection:bg-[#6FFF00] selection:text-[#010828] overflow-x-hidden min-h-screen">
-    <div id="root"></div>
-  </body>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Как работает заказ — MILANA PREMIUM</title>
+  <meta name="description" content="Как оформить оптовый заказ Milana Premium: выбор моделей, упаковки или мешка, подтверждение менеджером, оплата и доставка почтой или Cargo.">
+  <meta property="og:title" content="Как работает заказ — MILANA PREMIUM">
+  <meta property="og:description" content="Выбор модели, упаковки или мешка, менеджер, оплата и доставка.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://milanapremium.uz/ordering">
+  <meta property="og:image" content="https://milanapremium.uz/assets/hero-poster.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Как работает заказ — MILANA PREMIUM">
+  <meta name="twitter:description" content="Порядок оптового заказа на фабрике Milana Premium.">
+  <meta name="twitter:image" content="https://milanapremium.uz/assets/hero-poster.jpg">
+  <link rel="canonical" href="https://milanapremium.uz/ordering">
+  <meta name="theme-color" content="#FFFFFF">
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/css/luxe.css?v=20260729-hardqa2">
+  <link rel="stylesheet" href="/css/luxe-pages.css?v=20260729-hardqa2">
+</head>
+<body data-keep-title="1">
+
+  <!-- svg sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16M13 5l7 7-7 7"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M6 7h12l1.5 13.5H4.5L6 7ZM8.5 9.5V6a3.5 3.5 0 0 1 7 0v3.5"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.5S3.5 15.2 3.5 9.3C3.5 6.4 5.7 4.5 8 4.5c1.7 0 3.2.9 4 2.3.8-1.4 2.3-2.3 4-2.3 2.3 0 4.5 1.9 4.5 4.8 0 5.9-8.5 11.2-8.5 11.2Z"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.8 6.3.8-4.6 4.3 1.2 6.2L12 17l-5.6 3.1 1.2-6.2L3 9.6l6.3-.8L12 3Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.2-3.6 4.1-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><path d="M6 3.5h4l1.5 5-2.5 1.5a12 12 0 0 0 5 5L15.5 12.5l5 1.5v4a2 2 0 0 1-2 2C9.6 20 4 14.4 4 5.5a2 2 0 0 1 2-2Z"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3 3 10.5l7 3 3 7L21 3Z"/><path d="m10 14 4.5-4.5"/></symbol>
+  </svg>
+
+  <!-- header -->
+  <header class="header">
+    <div class="promo"><span data-i18n="best.ship">Оптовый заказ начинается с одной упаковки или одного мешка на модель · наличие подтверждает менеджер</span></div>
+    <div class="header__main">
+      <div class="header__side">
+        <button class="burger" aria-label="Открыть меню" aria-expanded="false"><i></i><i></i><i></i></button>
+        <button type="button" class="header__search" data-search-open><svg class="ic"><use href="#i-search"/></svg><span data-i18n="search.site">Поиск по сайту…</span></button>
+      </div>
+      <a class="logo" href="/" aria-label="Milana Premium">MILANA <span>Premium</span></a>
+      <div class="header__side header__side--r">
+        <div class="langsel">
+          <button type="button" class="langsel__btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Til / Язык / Language">
+            <span data-lang-current>RU</span>
+          </button>
+          <div class="lang langsel__menu" role="listbox">
+            <button type="button" data-lang="uz" role="option">O‘zbekcha</button>
+            <button type="button" data-lang="ru" role="option">Русский</button>
+            <button type="button" data-lang="en" role="option">English</button>
+          </div>
+        </div>
+        <a class="iconbtn" href="/signin" aria-label="Аккаунт"><svg class="ic"><use href="#i-user"/></svg></a>
+        <a class="iconbtn" href="/shop?wish=1" aria-label="Избранное" data-wish-link>
+          <svg class="ic"><use href="#i-heart"/></svg>
+          <span data-wish-count class="is-zero">0</span>
+        </a>
+        <button class="iconbtn" data-cart-open aria-label="Корзина">
+          <svg class="ic"><use href="#i-cart"/></svg>
+          <span data-cart-count class="is-zero">0</span>
+        </button>
+      </div>
+    </div>
+    <nav class="header__nav" aria-label="Основное меню">
+      <div class="navitem">
+        <a href="/shop" data-i18n="nav.shop">Каталог</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="shop.gender">Пол</h4>
+                <a href="/shop?gender=women" data-i18n="cats.women">Женщинам</a>
+                <a href="/shop?gender=men" data-i18n="cats.men">Мужчинам</a>
+                <a href="/shop?gender=kids" data-i18n="cats.kids">Детям</a>
+                <a href="/shop" data-i18n="shop.all">Все</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.clothing">Тип одежды</h4>
+                <a href="/shop?category=pajamas" data-i18n="cats.pajamas">Пижамы</a>
+                <a href="/shop?category=robes" data-i18n="cats.robes">Халаты</a>
+                <a href="/shop?category=homewear" data-i18n="cats.homewear">Homewear</a>
+                <a href="/shop?category=loungewear" data-i18n="cats.loungewear">Loungewear</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.tag">Подборка</h4>
+                <a href="/shop?tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+                <a href="/shop?tag=sale" data-i18n="shop.tagSale">Скидка</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=women">
+                <img src="/uploads/pmrlo8czo-400f22ac.webp" alt="Женщинам" loading="lazy">
+                <b data-i18n="cats.women">Женщинам</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=men">
+                <img src="/uploads/pmrlk7am3-dd1aa8f4.webp" alt="Мужчинам" loading="lazy">
+                <b data-i18n="cats.men">Мужчинам</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=kids">
+                <img src="/uploads/pmrloe62a-800dfd84.webp" alt="Детям" loading="lazy">
+                <b data-i18n="cats.kids">Детям</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem">
+        <a href="/shop?gender=women" data-i18n="cats.women">Женщинам</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="shop.clothing">Тип одежды</h4>
+                <a href="/shop?gender=women&amp;category=pajamas" data-i18n="cats.pajamas">Пижамы</a>
+                <a href="/shop?gender=women&amp;category=robes" data-i18n="cats.robes">Халаты</a>
+                <a href="/shop?gender=women&amp;category=homewear" data-i18n="cats.homewear">Homewear</a>
+                <a href="/shop?gender=women&amp;category=loungewear" data-i18n="cats.loungewear">Loungewear</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.tag">Подборка</h4>
+                <a href="/shop?gender=women&amp;tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?gender=women&amp;sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+                <a href="/shop?gender=women" data-i18n="shop.all">Все</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=women&amp;category=loungewear">
+                <img src="/uploads/pmrlkcxu5-2c3ab779.webp" alt="Loungewear" loading="lazy">
+                <b data-i18n="cats.loungewear">Loungewear</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=women&amp;category=pajamas">
+                <img src="/uploads/pmrlkw1kq-94a08913.webp" alt="Пижамы" loading="lazy">
+                <b data-i18n="cats.pajamas">Пижамы</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem">
+        <a href="/shop?gender=men" data-i18n="cats.men">Мужчинам</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="shop.clothing">Тип одежды</h4>
+                <a href="/shop?gender=men&amp;category=pajamas" data-i18n="cats.pajamas">Пижамы</a>
+                <a href="/shop?gender=men&amp;category=homewear" data-i18n="cats.homewear">Homewear</a>
+                <a href="/shop?gender=men&amp;category=loungewear" data-i18n="cats.loungewear">Loungewear</a>
+                <a href="/shop?gender=men" data-i18n="shop.all">Все</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.tag">Подборка</h4>
+                <a href="/shop?gender=men&amp;tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?gender=men&amp;sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=men">
+                <img src="/uploads/pmrlk7am3-dd1aa8f4.webp" alt="Мужская коллекция" loading="lazy">
+                <b data-i18n="mq.2">Мужская коллекция</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=men&amp;tag=bestseller">
+                <img src="/uploads/pmrlkb3hu-8f34e700.webp" alt="Бестселлеры" loading="lazy">
+                <b data-i18n="nav.bestsellers">Бестселлеры</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem">
+        <a href="/shop?gender=kids" data-i18n="cats.kids">Детям</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="cats.kids">Детям</h4>
+                <a href="/shop?gender=kids" data-i18n="shop.all">Все</a>
+                <a href="/shop?gender=kids&amp;tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?gender=kids&amp;sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=kids">
+                <img src="/uploads/pmrloe62a-800dfd84.webp" alt="Детская одежда" loading="lazy">
+                <b data-i18n="mq.3">Детская одежда</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem"><a href="/shop?tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a></div>
+      <div class="navitem"><a href="/ordering" data-i18n="terms.navOrdering">Как заказать</a></div>
+      <div class="navitem"><a href="/#maison" data-i18n="nav.maison">О нас</a></div>
+    </nav>
+  </header>
+
+  <!-- mobile menu -->
+  <nav class="menu" id="menu" aria-hidden="true" aria-label="Мобильное меню">
+    <a href="/shop" data-i18n="nav.shop">Каталог</a>
+    <a href="/shop?gender=women" data-i18n="cats.women">Женщинам</a>
+    <a href="/shop?gender=men" data-i18n="cats.men">Мужчинам</a>
+    <a href="/ordering" data-i18n="terms.navOrdering">Как заказать</a>
+    <a href="/support" data-i18n="nav.support">Поддержка</a>
+    <div class="menu__meta">
+      <span>+998 50 155 10 10</span>
+      <span data-i18n="menu.showroom">Шоурум</span>
+    </div>
+  </nav>
+
+  <main>
+    <section class="order-hero">
+      <div class="container">
+        <span class="overline" data-i18n="ordering.overline">Процесс</span>
+        <h1 class="t-display t-xl fade-up" data-i18n="ordering.title">Как работает заказ</h1>
+        <p class="lead" data-i18n="flow.note">Каждый заказ проверяет менеджер, потому что модели limited edition и наличие может быстро меняться.</p>
+      </div>
+    </section>
+
+    <section class="section--tight">
+      <div class="container">
+        <div class="order-steps">
+          <div class="order-step fade-up">
+            <div><h3 data-i18n="ordering.step1Title">Выберите тип аккаунта</h3><p data-i18n="ordering.step1Text"></p></div>
+          </div>
+          <div class="order-step fade-up">
+            <div><h3 data-i18n="ordering.step2Title">Добавьте товары</h3><p data-i18n="ordering.step2Text"></p></div>
+          </div>
+          <div class="order-step fade-up">
+            <div><h3 data-i18n="ordering.step3Title">Подтверждение менеджера</h3><p data-i18n="ordering.step3Text"></p></div>
+          </div>
+          <div class="order-step fade-up">
+            <div><h3 data-i18n="ordering.step4Title">Оплата и доставка</h3><p data-i18n="ordering.step4Text"></p></div>
+          </div>
+          <div class="order-step fade-up">
+            <div><h3 data-i18n="ordering.step5Title">Следите за статусом</h3><p data-i18n="ordering.step5Text"></p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="order-cta">
+      <div class="container" style="display:grid; gap:18px; justify-items:center">
+        <a class="btn btn--primary" href="/shop"><span data-i18n="nav.viewCatalog">Смотреть каталог</span></a>
+        <div style="display:flex; gap:26px; flex-wrap:wrap; justify-content:center; font-size:12px; color:var(--ink-2)">
+          <a href="https://wa.me/998501551010" target="_blank" rel="noopener" style="display:inline-flex;gap:8px;align-items:center;border-bottom:1px solid var(--line-2);padding-bottom:3px"><svg class="ic"><use href="#i-phone"/></svg><span data-i18n="ws.wa">Написать в WhatsApp</span></a>
+          <a href="https://t.me/milanapremium2" target="_blank" rel="noopener" style="display:inline-flex;gap:8px;align-items:center;border-bottom:1px solid var(--line-2);padding-bottom:3px"><svg class="ic"><use href="#i-send"/></svg><span data-i18n="ws.tg">Написать в Telegram</span></a>
+        </div>
+      </div>
+    </section>
+
+    <!-- популярные товары: лента с боковыми стрелками -->
+    <section class="popstrip" aria-label="Популярные товары">
+      <div class="container">
+        <h2 class="popstrip__title" data-i18n="pop.title">Популярные товары</h2>
+        <div class="popstrip__wrap">
+          <button type="button" class="popstrip__arr popstrip__arr--l" id="pop-prev" aria-label="Назад"><svg class="ic" style="transform:rotate(180deg)"><use href="#i-arrow"/></svg></button>
+          <div class="scroller popstrip__row" id="pop-row"></div>
+          <button type="button" class="popstrip__arr popstrip__arr--r" id="pop-next" aria-label="Вперёд"><svg class="ic"><use href="#i-arrow"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__grid footer__grid--wide">
+        <div>
+          <a class="logo" href="/">MILANA <span>Premium</span></a>
+          <p class="footer__tag" data-i18n="foot.tag">Фабрика одежды в Узбекистане: домашняя и повседневная одежда для женщин, мужчин и детей.</p>
+          <p class="footer__addr" data-dyn="address">Узбекистан, Андижан, Коратут 605 · Пн–Сб 08:00–18:00</p>
+        </div>
+        <div>
+          <h5 data-i18n="foot.buyers">Покупателям</h5>
+          <ul>
+            <li><a href="/shop" data-i18n="shop.title">Все товары</a></li>
+            <li><a href="/shop?tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a></li>
+            <li><a href="/ordering" data-i18n="terms.navOrdering">Как работает заказ</a></li>
+            <li><a href="/#faq" data-i18n="foot.faq">Частые вопросы</a></li>
+            <li><a href="/terms" data-i18n="foot.terms">Условия</a></li>
+            <li><a href="/privacy" data-i18n="foot.privacy">Конфиденциальность</a></li>
+            <li><a href="/delete-account" data-i18n="foot.deleteAccount">Удаление аккаунта</a></li>
+          </ul>
+        </div>
+        <div>
+          <h5 data-i18n="foot.company">О компании</h5>
+          <ul>
+            <li><a href="/#maison" data-i18n="foot.about">О фабрике</a></li>
+            <li><a href="/#map" data-i18n="map.title">Как нас найти</a></li>
+            <li><a href="/support" data-i18n="nav.support">Поддержка</a></li>
+            <li><a href="/signin" data-i18n="auth.account">Аккаунт</a></li>
+          </ul>
+        </div>
+        <div>
+          <h5 data-i18n="foot.contact">Связаться с нами</h5>
+          <ul class="footer__contact">
+            <li><a data-dyn="tel" href="tel:+998501551010">+998 50 155 10 10</a></li>
+            <li><a data-dyn="mail" href="#"></a></li>
+            <li><a data-dyn="wa" href="https://wa.me/998501551010" target="_blank" rel="noopener" data-i18n="ws.wa">Написать в WhatsApp</a></li>
+            <li><a data-dyn="tg" href="https://t.me/milanapremium2" target="_blank" rel="noopener" data-i18n="ws.tg">Написать в Telegram</a></li>
+          </ul>
+          <h5 class="footer__socht" data-i18n="foot.social">Мы в соцсетях</h5>
+          <div class="footer__soc">
+            <a data-dyn="ig" href="https://www.instagram.com/milanapremium" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1" fill="currentColor" stroke="none"/></svg><span>Instagram</span></a>
+            <a data-dyn="tg" href="https://t.me/milanapremium2" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><path d="M21 4.4 3.6 11l4.9 1.7 1.8 5.6 3-3.4 4.6 3.3L21 4.4Z"/><path d="m8.5 12.7 8.5-6.2"/></svg><span>Telegram</span></a>
+            <a data-dyn="wa" href="https://wa.me/998501551010" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.3-1.1A8.5 8.5 0 1 0 12 3.5Z"/><path d="M9 8.8c.5 2.6 2.6 4.8 5.2 5.4l1-1.5-2-1-.8.6a5.4 5.4 0 0 1-1.7-1.8l.6-.8-1-2-1.3 1.1Z"/></svg><span>WhatsApp</span></a>
+          </div>
+        </div>
+        <div>
+          <h5 data-i18n="foot.nl">Каталог и новинки</h5>
+          <form class="newsletter" novalidate>
+            <input type="email" required data-i18n-ph="foot.nlPh" placeholder="ваш@email.com" autocomplete="email" aria-label="Email">
+            <button type="submit" data-i18n="reviews.submit">Отправить</button>
+          </form>
+          <p class="newsletter__note" data-i18n="foot.nlNote">Новые модели и новости сотрудничества. Без лишних сообщений.</p>
+          <div class="footer__apps">
+            <a class="appbadge" href="#" onclick="return false" data-app="ios" aria-label="App Store">
+              <svg class="appbadge__logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M16.36 12.9c-.02-2.4 1.96-3.55 2.05-3.61-1.12-1.64-2.86-1.86-3.48-1.89-1.48-.15-2.89.87-3.64.87-.75 0-1.91-.85-3.14-.83-1.61.02-3.1.94-3.93 2.38-1.68 2.91-.43 7.22 1.2 9.59.8 1.16 1.75 2.46 2.99 2.41 1.2-.05 1.65-.78 3.1-.78 1.45 0 1.85.78 3.11.75 1.29-.02 2.1-1.18 2.89-2.35.91-1.35 1.28-2.66 1.3-2.72-.03-.01-2.49-.96-2.51-3.8M14.3 5.31c.66-.8 1.11-1.91.99-3.02-.95.04-2.11.63-2.79 1.43-.61.71-1.14 1.84-1 2.93 1.06.08 2.14-.54 2.8-1.34"/></svg>
+              <span><i data-i18n="foot.appApple">Загрузите в</i><b>App Store</b></span>
+            </a>
+            <a class="appbadge" href="#" onclick="return false" data-app="android" aria-label="Google Play">
+              <svg class="appbadge__logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#00D3FF" d="M3.9 2.3c-.29.3-.46.77-.46 1.38v16.64c0 .61.17 1.08.47 1.36l.06.05 9.32-9.32v-.22L3.9 2.3z"/><path fill="#FFCE00" d="M16.9 15.35l-3.11-3.11v-.22l3.12-3.12.07.04 3.69 2.1c1.05.6 1.05 1.58 0 2.18l-3.77 2.13z"/><path fill="#FF3A44" d="M16.97 15.31 13.79 12.13l-9.9 9.9c.35.37.92.41 1.57.05l11.51-6.77z"/><path fill="#00E676" d="M16.97 8.9 5.46 2.14c-.65-.37-1.22-.32-1.57.05l9.9 9.9 3.18-3.19z"/></svg>
+              <span><i data-i18n="foot.appGoogle">Доступно в</i><b>Google Play</b></span>
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="footer__base">
+        <span>© <span id="year">2026</span> MILANA PREMIUM</span>
+        <span data-dyn="address">Узбекистан, Андижан, Коратут 605 · Пн–Сб 08:00–18:00</span>
+        <span><a href="tel:+998501551010" data-dyn="tel">+998 50 155 10 10</a> · <a href="https://www.instagram.com/milanapremium" data-dyn="ig" target="_blank" rel="noopener">Instagram</a></span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    /* шапка, год, рассылка */
+    (() => {
+      const h = document.querySelector(".header");
+      addEventListener("scroll", () => h.classList.toggle("is-solid", scrollY > 8), { passive: true });
+      const y = document.getElementById("year");
+      if (y) y.textContent = new Date().getFullYear();
+      const form = document.querySelector(".newsletter");
+      form && form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const input = form.querySelector("input");
+        const note = document.querySelector(".newsletter__note");
+        try {
+          const r = await fetch("/api/newsletter", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: input.value.trim(), lang: window.I18N ? I18N.lang : "en", source: "ordering" }) });
+          if (!r.ok) throw new Error();
+          note.textContent = (window.I18N ? I18N.t("foot.nlOk") : "OK") + " " + input.value.trim();
+          input.value = "";
+        } catch { note.textContent = window.I18N ? I18N.t("cart.invalid") : "Error"; }
+      });
+    })();
+  </script>
+
+  <!-- engine -->
+  <script src="/js/i18n.js?v=20260803-basic-dicts1" defer></script>
+  <script src="/js/site-config.js?v=3" defer></script>
+  <script src="/js/app-state.js?v=20260731-integration2" defer></script>
+  <script src="/js/auth.js?v=20260731-integration2" defer></script>
+  <script src="/js/cart.js?v=20260731-integration4" defer></script>
+  <script src="/js/cards.js?v=20260731-fabric1" defer></script>
+  <script src="/js/menu.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/header.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/search.js?v=20260729-hardqa2" defer></script>
+  <script src="/js/chat-widget.js?v=2" defer></script>
+</body>
 </html>

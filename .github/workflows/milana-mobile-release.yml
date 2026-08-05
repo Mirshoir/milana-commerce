@@ -1,0 +1,708 @@
+name: Milana Mobile Release Candidate
+
+run-name: >-
+  Mobile RC ${{ inputs.version_name }}+${{ inputs.build_number }} from ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Store version name (for example, 1.0.1)"
+        required: true
+        type: string
+      build_number:
+        description: "Monotonically increasing store build number"
+        required: true
+        type: string
+      validate_ios:
+        description: "Also compile and inspect an unsigned iOS release build"
+        required: true
+        default: true
+        type: boolean
+      confirmation:
+        description: "Type BUILD_SIGNED_MOBILE_RELEASE to authorize the build"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: milana-mobile-release
+  cancel-in-progress: false
+
+jobs:
+  android-aab:
+    name: Signed Android App Bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: mobile-release
+    defaults:
+      run:
+        shell: bash
+        working-directory: milana_flutter
+
+    steps:
+      - name: Checkout requested ref
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Guard manual release inputs
+        env:
+          RELEASE_CONFIRMATION: ${{ inputs.confirmation }}
+          RELEASE_VERSION_NAME: ${{ inputs.version_name }}
+          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
+          RELEASE_GUARD: ${{ secrets.MILANA_RELEASE_GUARD }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_CONFIRMATION" != "BUILD_SIGNED_MOBILE_RELEASE" ]]; then
+            echo "::error::Release confirmation did not match the required phrase."
+            exit 1
+          fi
+          if [[ "$RELEASE_GUARD" != "MOBILE_RELEASE_APPROVED" ]]; then
+            echo "::error::The protected mobile-release environment guard is absent or invalid."
+            exit 1
+          fi
+          if [[ ! "$RELEASE_VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version_name must be a semantic version such as 1.0.1."
+            exit 1
+          fi
+          if [[ ! "$RELEASE_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]] || (( RELEASE_BUILD_NUMBER > 2100000000 )); then
+            echo "::error::build_number must be between 1 and 2100000000."
+            exit 1
+          fi
+
+      - name: Set up Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+          cache-dependency-path: |
+            milana_flutter/android/*.gradle*
+            milana_flutter/android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: "3.44.1"
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Run release quality gates
+        run: |
+          flutter analyze lib test
+          flutter test
+          npm ci --prefix functions
+          npm --prefix functions test
+          npm --prefix functions audit --omit=dev --audit-level=high
+          npm run verify:store:prepared -- --platform=android
+
+      - name: Materialize protected release configuration
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.MILANA_ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_KEY_ALIAS: ${{ secrets.MILANA_ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.MILANA_ANDROID_KEY_PASSWORD }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.MILANA_ANDROID_STORE_PASSWORD }}
+          MOBILE_DART_DEFINES_BASE64: ${{ secrets.MILANA_MOBILE_DART_DEFINES_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          for variable in \
+            ANDROID_KEYSTORE_BASE64 \
+            ANDROID_KEY_ALIAS \
+            ANDROID_KEY_PASSWORD \
+            ANDROID_STORE_PASSWORD \
+            MOBILE_DART_DEFINES_BASE64; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "::error::Required protected secret $variable is missing."
+              exit 1
+            fi
+          done
+
+          python3 - <<'PY'
+          import base64
+          import binascii
+          import os
+          from pathlib import Path
+
+          def decode_secret(name: str, destination: str) -> None:
+              try:
+                  decoded = base64.b64decode(os.environ[name], validate=True)
+              except (binascii.Error, ValueError) as error:
+                  raise SystemExit(f"::error::{name} is not valid base64: {error}")
+              if not decoded:
+                  raise SystemExit(f"::error::{name} decoded to an empty file.")
+              Path(destination).write_bytes(decoded)
+
+          def encode_java_property(value: str) -> str:
+              replacements = {
+                  " ": "\\ ",
+                  "\\": "\\\\",
+                  "\t": "\\t",
+                  "\n": "\\n",
+                  "\r": "\\r",
+                  "\f": "\\f",
+              }
+              encoded = []
+              for char in value:
+                  if char in replacements:
+                      encoded.append(replacements[char])
+                  elif 0x20 <= ord(char) <= 0x7e:
+                      encoded.append(char)
+                  elif ord(char) <= 0xffff:
+                      encoded.append(f"\\u{ord(char):04x}")
+                  else:
+                      codepoint = ord(char) - 0x10000
+                      encoded.append(f"\\u{0xd800 + (codepoint >> 10):04x}")
+                      encoded.append(f"\\u{0xdc00 + (codepoint & 0x3ff):04x}")
+              return "".join(encoded)
+
+          Path("android/app").mkdir(parents=True, exist_ok=True)
+          Path("firebase").mkdir(parents=True, exist_ok=True)
+          decode_secret("ANDROID_KEYSTORE_BASE64", "android/app/upload-keystore.jks")
+          decode_secret("MOBILE_DART_DEFINES_BASE64", "firebase/mobile-dart-defines.env")
+
+          properties = {
+              "storePassword": os.environ["ANDROID_STORE_PASSWORD"],
+              "keyPassword": os.environ["ANDROID_KEY_PASSWORD"],
+              "keyAlias": os.environ["ANDROID_KEY_ALIAS"],
+              "storeFile": "upload-keystore.jks",
+          }
+          content = "".join(
+              f"{key}={encode_java_property(value)}\n"
+              for key, value in properties.items()
+          )
+          Path("android/key.properties").write_text(content, encoding="utf-8")
+          PY
+
+          keytool -list \
+            -keystore android/app/upload-keystore.jks \
+            -storepass "$ANDROID_STORE_PASSWORD" \
+            -alias "$ANDROID_KEY_ALIAS" > /dev/null
+
+          required_defines=(
+            FIREBASE_API_KEY
+            FIREBASE_PROJECT_ID
+            FIREBASE_MESSAGING_SENDER_ID
+            FIREBASE_STORAGE_BUCKET
+            FIREBASE_ASSET_BASE_URL
+            FIREBASE_ANDROID_APP_ID
+            FIREBASE_ANDROID_PACKAGE
+            FIREBASE_IOS_APP_ID
+            FIREBASE_IOS_BUNDLE_ID
+            API_BASE_URL
+            PRIVACY_POLICY_URL
+            TERMS_OF_SERVICE_URL
+            ACCOUNT_DELETION_URL
+            SUPPORT_URL
+          )
+          for key in "${required_defines[@]}"; do
+            if [[ "$(grep -Ec "^${key}=.+" firebase/mobile-dart-defines.env)" -ne 1 ]]; then
+              echo "::error::Mobile Dart defines must contain exactly one non-empty $key entry."
+              exit 1
+            fi
+          done
+          if ! grep -qx 'FIREBASE_ANDROID_PACKAGE=uz.milana.milana_flutter' firebase/mobile-dart-defines.env; then
+            echo "::error::FIREBASE_ANDROID_PACKAGE does not match the Android application ID."
+            exit 1
+          fi
+          if ! grep -qx 'FIREBASE_IOS_BUNDLE_ID=uz.milana.milanaFlutter' firebase/mobile-dart-defines.env; then
+            echo "::error::FIREBASE_IOS_BUNDLE_ID does not match the iOS bundle ID."
+            exit 1
+          fi
+          if ! grep -Eq '^FIREBASE_ASSET_BASE_URL=https://.+' firebase/mobile-dart-defines.env; then
+            echo "::error::Production FIREBASE_ASSET_BASE_URL must use HTTPS."
+            exit 1
+          fi
+          if ! grep -qx 'API_BASE_URL=https://milanapremium.uz' firebase/mobile-dart-defines.env; then
+            echo "::error::Production API_BASE_URL must be https://milanapremium.uz."
+            exit 1
+          fi
+
+      - name: Verify Android candidate store consistency
+        env:
+          RELEASE_VERSION_NAME: ${{ inputs.version_name }}
+          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          npm run verify:store:prepared -- \
+            --platform=android \
+            --version="$RELEASE_VERSION_NAME" \
+            --build-number="$RELEASE_BUILD_NUMBER" \
+            --defines=firebase/mobile-dart-defines.env
+
+      - name: Run Android production preflight
+        run: npm run verify:release:android
+
+      - name: Verify live production endpoints
+        run: npm run verify:release:live
+
+      - name: Build signed release AAB
+        env:
+          RELEASE_VERSION_NAME: ${{ inputs.version_name }}
+          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+          mapfile -t definitions < <(grep -Ev '^[[:space:]]*(#|$)' firebase/mobile-dart-defines.env)
+          flutter_defines=()
+          for definition in "${definitions[@]}"; do
+            flutter_defines+=("--dart-define=${definition%$'\r'}")
+          done
+          dart_symbols="build/symbols/android/${RELEASE_VERSION_NAME}+${RELEASE_BUILD_NUMBER}"
+          mkdir -p "$dart_symbols"
+          flutter build appbundle \
+            --release \
+            --obfuscate \
+            --split-debug-info="$dart_symbols" \
+            --build-name "$RELEASE_VERSION_NAME" \
+            --build-number "$RELEASE_BUILD_NUMBER" \
+            "${flutter_defines[@]}"
+
+      - name: Verify AAB structure, signature, and signer
+        env:
+          ANDROID_KEY_ALIAS: ${{ secrets.MILANA_ANDROID_KEY_ALIAS }}
+          ANDROID_STORE_PASSWORD: ${{ secrets.MILANA_ANDROID_STORE_PASSWORD }}
+          RELEASE_VERSION_NAME: ${{ inputs.version_name }}
+          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+          aab='build/app/outputs/bundle/release/app-release.aab'
+          test -s "$aab"
+          unzip -tq "$aab"
+          unzip -Z1 "$aab" > "$RUNNER_TEMP/milana-aab-entries.txt"
+          if ! grep -qx 'base/manifest/AndroidManifest.xml' "$RUNNER_TEMP/milana-aab-entries.txt"; then
+            echo "::error::The output is not a structurally valid Android App Bundle."
+            exit 1
+          fi
+
+          manifest_metadata='build/app/intermediates/merged_manifests/release/processReleaseManifest/output-metadata.json'
+          merged_manifest='build/app/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml'
+          test -s "$manifest_metadata"
+          test -s "$merged_manifest"
+          python3 - "$manifest_metadata" "$RELEASE_VERSION_NAME" "$RELEASE_BUILD_NUMBER" <<'PY'
+          import json
+          import sys
+
+          metadata_path, expected_name, expected_number = sys.argv[1:]
+          metadata = json.load(open(metadata_path, encoding="utf-8"))
+          if metadata.get("artifactType", {}).get("type") != "MERGED_MANIFESTS":
+              raise SystemExit("::error::Android release manifest metadata has an unexpected type.")
+          if metadata.get("variantName") != "release":
+              raise SystemExit("::error::Android manifest metadata is not for the release variant.")
+          if metadata.get("applicationId") != "uz.milana.milana_flutter":
+              raise SystemExit("::error::Android manifest metadata contains an unexpected application ID.")
+          elements = metadata.get("elements", [])
+          if len(elements) != 1:
+              raise SystemExit("::error::Android manifest metadata must describe exactly one release artifact.")
+          artifact = elements[0]
+          if str(artifact.get("versionCode")) != expected_number:
+              raise SystemExit("::error::Android release versionCode does not match build_number.")
+          if artifact.get("versionName") != expected_name:
+              raise SystemExit("::error::Android release versionName does not match version_name.")
+          if artifact.get("outputFile") != "AndroidManifest.xml":
+              raise SystemExit("::error::Android release metadata points at an unexpected manifest file.")
+          PY
+
+          python3 - "$merged_manifest" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          android = "{http://schemas.android.com/apk/res/android}"
+          root = ET.parse(sys.argv[1]).getroot()
+          uses_sdk = root.find("uses-sdk")
+          if uses_sdk is None or uses_sdk.get(android + "targetSdkVersion") != "36":
+              raise SystemExit("::error::Final Android manifest must target API 36.")
+          app = root.find("application")
+          expected = {
+              "allowBackup": "false",
+              "usesCleartextTraffic": "false",
+              "fullBackupContent": "@xml/backup_rules",
+              "dataExtractionRules": "@xml/data_extraction_rules",
+          }
+          for key, value in expected.items():
+              if app is None or app.get(android + key) != value:
+                  raise SystemExit(f"::error::Final Android manifest has invalid {key}.")
+          if app.get(android + "debuggable", "false") != "false":
+              raise SystemExit("::error::Final Android application is debuggable.")
+          allowed_permissions = {
+              "android.permission.INTERNET",
+              "android.permission.ACCESS_NETWORK_STATE",
+              "android.permission.WAKE_LOCK",
+              "com.google.android.c2dm.permission.RECEIVE",
+              "com.google.android.providers.gsf.permission.READ_GSERVICES",
+              "uz.milana.milana_flutter.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+          }
+          permissions = {
+              node.get(android + "name")
+              for node in root.findall("uses-permission")
+          }
+          unexpected = sorted(permissions - allowed_permissions)
+          if unexpected:
+              raise SystemExit(
+                  "::error::Unexpected Android permissions: " + ", ".join(unexpected)
+              )
+          PY
+
+          mapping='build/app/outputs/mapping/release/mapping.txt'
+          native_symbols='build/app/outputs/native-debug-symbols/release/native-debug-symbols.zip'
+          dart_symbols="build/symbols/android/${RELEASE_VERSION_NAME}+${RELEASE_BUILD_NUMBER}"
+          test -s "$mapping"
+          test -s "$native_symbols"
+          if ! find "$dart_symbols" -type f -name '*.symbols' -size +0c -print -quit | grep -q .; then
+            echo "::error::Flutter produced no Dart symbol files for the obfuscated release."
+            exit 1
+          fi
+
+          native_dir="$RUNNER_TEMP/milana-aab-native"
+          mkdir -p "$native_dir"
+          unzip -qq "$aab" 'base/lib/*/*.so' -d "$native_dir"
+          readelf_bin="$(find "$ANDROID_HOME/ndk" -path '*/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf' -type f | sort -V | tail -n 1)"
+          test -x "$readelf_bin"
+          found_arm64=false
+          while IFS= read -r library; do
+            [[ "$library" == */arm64-v8a/* ]] && found_arm64=true
+            while IFS= read -r alignment; do
+              alignment="${alignment#0x}"
+              if (( 16#$alignment < 0x4000 )); then
+                echo "::error::$library has a LOAD segment aligned below 16 KB."
+                exit 1
+              fi
+            done < <("$readelf_bin" -lW "$library" | awk '$1 == "LOAD" {print $NF}')
+          done < <(find "$native_dir/base/lib" -type f -name '*.so' | sort)
+          if [[ "$found_arm64" != true ]]; then
+            echo "::error::The AAB contains no ARM64 native libraries."
+            exit 1
+          fi
+
+          jarsigner_log="$RUNNER_TEMP/milana-jarsigner.log"
+          if ! jarsigner -verify -verbose -certs "$aab" > "$jarsigner_log" 2>&1; then
+            tail -n 100 "$jarsigner_log"
+            echo "::error::jarsigner rejected the release AAB."
+            exit 1
+          fi
+          if ! grep -q 'jar verified' "$jarsigner_log"; then
+            echo "::error::The release AAB did not report a verified JAR signature."
+            exit 1
+          fi
+
+          expected_sha256="$({
+            keytool -list -v \
+              -keystore android/app/upload-keystore.jks \
+              -storepass "$ANDROID_STORE_PASSWORD" \
+              -alias "$ANDROID_KEY_ALIAS"
+          } | awk -F'SHA256:' '/SHA256:/{gsub(/[[:space:]]/, "", $2); print toupper($2); exit}')"
+          actual_sha256="$(keytool -printcert -jarfile "$aab" | awk -F'SHA256:' '/SHA256:/{gsub(/[[:space:]]/, "", $2); print toupper($2); exit}')"
+          if [[ -z "$expected_sha256" || -z "$actual_sha256" || "$expected_sha256" != "$actual_sha256" ]]; then
+            echo "::error::The AAB signer does not match the protected upload keystore."
+            exit 1
+          fi
+
+          (
+            cd "$(dirname "$aab")"
+            sha256sum "$(basename "$aab")" > app-release.aab.sha256
+          )
+          {
+            echo '### Android release candidate'
+            echo
+            echo "- Version: \`$RELEASE_VERSION_NAME+$RELEASE_BUILD_NUMBER\`"
+            echo '- AAB structure: verified'
+            echo '- JAR signature: verified'
+            echo '- Signer: matches protected upload keystore'
+            echo '- Final manifest and permission allowlist: verified'
+            echo '- Native ELF 16 KB alignment: verified'
+            echo '- R8 mapping, native symbols, and Dart symbols: preserved'
+            echo '- External store upload: not performed'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload verified Android release candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: milana-android-${{ inputs.version_name }}-${{ inputs.build_number }}
+          path: |
+            milana_flutter/build/app/outputs/bundle/release/app-release.aab
+            milana_flutter/build/app/outputs/bundle/release/app-release.aab.sha256
+            milana_flutter/build/app/outputs/mapping/release/mapping.txt
+            milana_flutter/build/app/outputs/native-debug-symbols/release/native-debug-symbols.zip
+            milana_flutter/build/symbols/android/${{ inputs.version_name }}+${{ inputs.build_number }}/*.symbols
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Remove protected files
+        if: always()
+        run: |
+          rm -f \
+            android/key.properties \
+            android/app/upload-keystore.jks \
+            firebase/mobile-dart-defines.env
+
+  ios-no-codesign:
+    name: iOS unsigned release validation
+    if: ${{ inputs.validate_ios }}
+    runs-on: macos-26
+    timeout-minutes: 45
+    environment: mobile-release
+    defaults:
+      run:
+        shell: bash
+        working-directory: milana_flutter
+
+    steps:
+      - name: Checkout requested ref
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Guard manual validation inputs
+        env:
+          RELEASE_CONFIRMATION: ${{ inputs.confirmation }}
+          RELEASE_VERSION_NAME: ${{ inputs.version_name }}
+          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
+          RELEASE_GUARD: ${{ secrets.MILANA_RELEASE_GUARD }}
+        run: |
+          set -euo pipefail
+          if [[ "$RELEASE_CONFIRMATION" != "BUILD_SIGNED_MOBILE_RELEASE" ]]; then
+            echo "::error::Release confirmation did not match the required phrase."
+            exit 1
+          fi
+          if [[ "$RELEASE_GUARD" != "MOBILE_RELEASE_APPROVED" ]]; then
+            echo "::error::The protected mobile-release environment guard is absent or invalid."
+            exit 1
+          fi
+          if [[ ! "$RELEASE_VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version_name must be a semantic version such as 1.0.1."
+            exit 1
+          fi
+          if [[ ! "$RELEASE_BUILD_NUMBER" =~ ^[1-9][0-9]*$ ]] || (( RELEASE_BUILD_NUMBER > 2100000000 )); then
+            echo "::error::build_number must be between 1 and 2100000000."
+            exit 1
+          fi
+
+      - name: Select and verify current stable Xcode
+        run: |
+          set -euo pipefail
+          developer_dir='/Applications/Xcode.app/Contents/Developer'
+          test -x "$developer_dir/usr/bin/xcodebuild"
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+          xcode_version="$(DEVELOPER_DIR="$developer_dir" xcodebuild -version | awk 'NR == 1 {print $2}')"
+          xcode_major="${xcode_version%%.*}"
+          xcode_minor="${xcode_version#*.}"
+          xcode_minor="${xcode_minor%%.*}"
+          if [[ ! "$xcode_major" =~ ^[0-9]+$ || ! "$xcode_minor" =~ ^[0-9]+$ ]] || \
+             (( xcode_major < 26 || (xcode_major == 26 && xcode_minor < 2) )); then
+            echo "::error::Xcode 26.2 or newer is required; selected version is $xcode_version."
+            exit 1
+          fi
+          DEVELOPER_DIR="$developer_dir" xcodebuild -version
+          DEVELOPER_DIR="$developer_dir" xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: stable
+          flutter-version: "3.44.1"
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Run iOS release quality gates
+        run: |
+          flutter analyze lib test
+          flutter test
+          npm ci --prefix functions
+          npm --prefix functions test
+          npm --prefix functions audit --omit=dev --audit-level=high
+          npm run verify:store:prepared -- --platform=ios
+
+      - name: Materialize protected mobile configuration
+        env:
+          MOBILE_DART_DEFINES_BASE64: ${{ secrets.MILANA_MOBILE_DART_DEFINES_BASE64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ -z "$MOBILE_DART_DEFINES_BASE64" ]]; then
+            echo "::error::Required protected secret MOBILE_DART_DEFINES_BASE64 is missing."
+            exit 1
+          fi
+          python3 - <<'PY'
+          import base64
+          import binascii
+          import os
+          from pathlib import Path
+
+          try:
+              decoded = base64.b64decode(
+                  os.environ["MOBILE_DART_DEFINES_BASE64"],
+                  validate=True,
+              )
+          except (binascii.Error, ValueError) as error:
+              raise SystemExit(
+                  f"::error::MILANA_MOBILE_DART_DEFINES_BASE64 is not valid base64: {error}"
+              )
+          if not decoded:
+              raise SystemExit(
+                  "::error::MILANA_MOBILE_DART_DEFINES_BASE64 decoded to an empty file."
+              )
+          Path("firebase").mkdir(parents=True, exist_ok=True)
+          Path("firebase/mobile-dart-defines.env").write_bytes(decoded)
+          PY
+
+          required_defines=(
+            FIREBASE_API_KEY
+            FIREBASE_PROJECT_ID
+            FIREBASE_MESSAGING_SENDER_ID
+            FIREBASE_STORAGE_BUCKET
+            FIREBASE_ASSET_BASE_URL
+            FIREBASE_ANDROID_APP_ID
+            FIREBASE_ANDROID_PACKAGE
+            FIREBASE_IOS_APP_ID
+            FIREBASE_IOS_BUNDLE_ID
+            API_BASE_URL
+            PRIVACY_POLICY_URL
+            TERMS_OF_SERVICE_URL
+            ACCOUNT_DELETION_URL
+            SUPPORT_URL
+          )
+          for key in "${required_defines[@]}"; do
+            if [[ "$(grep -Ec "^${key}=.+" firebase/mobile-dart-defines.env)" -ne 1 ]]; then
+              echo "::error::Mobile Dart defines must contain exactly one non-empty $key entry."
+              exit 1
+            fi
+          done
+          if ! grep -qx 'FIREBASE_IOS_BUNDLE_ID=uz.milana.milanaFlutter' firebase/mobile-dart-defines.env; then
+            echo "::error::FIREBASE_IOS_BUNDLE_ID does not match the iOS bundle ID."
+            exit 1
+          fi
+          if ! grep -Eq '^FIREBASE_ASSET_BASE_URL=https://.+' firebase/mobile-dart-defines.env; then
+            echo "::error::Production FIREBASE_ASSET_BASE_URL must use HTTPS."
+            exit 1
+          fi
+          if ! grep -qx 'API_BASE_URL=https://milanapremium.uz' firebase/mobile-dart-defines.env; then
+            echo "::error::Production API_BASE_URL must be https://milanapremium.uz."
+            exit 1
+          fi
+
+      - name: Verify iOS candidate store consistency
+        env:
+          RELEASE_VERSION_NAME: ${{ inputs.version_name }}
+          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          npm run verify:store:prepared -- \
+            --platform=ios \
+            --version="$RELEASE_VERSION_NAME" \
+            --build-number="$RELEASE_BUILD_NUMBER" \
+            --defines=firebase/mobile-dart-defines.env
+
+      - name: Run iOS production preflight
+        run: npm run verify:release:ios
+
+      - name: Verify live production endpoints
+        run: npm run verify:release:live
+
+      - name: Compile unsigned iOS release
+        env:
+          RELEASE_VERSION_NAME: ${{ inputs.version_name }}
+          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+          definitions=()
+          while IFS= read -r definition; do
+            [[ -z "$definition" || "$definition" =~ ^[[:space:]]*# ]] && continue
+            definitions+=("--dart-define=${definition%$'\r'}")
+          done < firebase/mobile-dart-defines.env
+          flutter build ios \
+            --release \
+            --no-codesign \
+            --build-name "$RELEASE_VERSION_NAME" \
+            --build-number "$RELEASE_BUILD_NUMBER" \
+            "${definitions[@]}"
+
+      - name: Inspect unsigned iOS application
+        env:
+          RELEASE_VERSION_NAME: ${{ inputs.version_name }}
+          RELEASE_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          apps=(build/ios/iphoneos/*.app)
+          if [[ "${#apps[@]}" -ne 1 ]]; then
+            echo "::error::Flutter must produce exactly one iOS application bundle."
+            exit 1
+          fi
+          app_path="${apps[0]}"
+          info_plist="$app_path/Info.plist"
+          privacy_manifest="$app_path/PrivacyInfo.xcprivacy"
+          plutil -lint "$info_plist"
+          test -f "$privacy_manifest"
+          plutil -lint "$privacy_manifest"
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$info_plist")"
+          version_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$info_plist")"
+          build_number="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$info_plist")"
+          executable="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$info_plist")"
+          test -x "$app_path/$executable"
+          if [[ "$bundle_id" != 'uz.milana.milanaFlutter' ]]; then
+            echo "::error::Built iOS bundle ID is $bundle_id, not uz.milana.milanaFlutter."
+            exit 1
+          fi
+          if [[ "$version_name" != "$RELEASE_VERSION_NAME" || "$build_number" != "$RELEASE_BUILD_NUMBER" ]]; then
+            echo "::error::Built iOS version metadata does not match the requested release."
+            exit 1
+          fi
+          if [[ "$(/usr/libexec/PlistBuddy -c 'Print :ITSAppUsesNonExemptEncryption' "$info_plist")" != 'false' ]]; then
+            echo "::error::The iOS bundle must declare ITSAppUsesNonExemptEncryption=false."
+            exit 1
+          fi
+          if [[ "$(/usr/libexec/PlistBuddy -c 'Print :NSPrivacyTracking' "$privacy_manifest")" != 'false' ]]; then
+            echo "::error::The app privacy manifest must declare tracking disabled."
+            exit 1
+          fi
+          privacy_types="$(plutil -convert json -o - "$privacy_manifest")"
+          for data_type in \
+            NSPrivacyCollectedDataTypeName \
+            NSPrivacyCollectedDataTypeEmailAddress \
+            NSPrivacyCollectedDataTypePhoneNumber \
+            NSPrivacyCollectedDataTypePhysicalAddress \
+            NSPrivacyCollectedDataTypeUserID \
+            NSPrivacyCollectedDataTypePurchaseHistory \
+            NSPrivacyCollectedDataTypeCustomerSupport \
+            NSPrivacyCollectedDataTypeProductInteraction; do
+            if [[ "$privacy_types" != *"$data_type"* ]]; then
+              echo "::error::Privacy manifest is missing $data_type."
+              exit 1
+            fi
+          done
+          if codesign --display --verbose=2 "$app_path" > /dev/null 2>&1; then
+            echo "::error::The no-codesign validation output was unexpectedly signed."
+            exit 1
+          fi
+          {
+            echo '### iOS compile validation'
+            echo
+            echo "- Version: \`$RELEASE_VERSION_NAME+$RELEASE_BUILD_NUMBER\`"
+            echo '- Xcode: current stable Xcode from the macOS 26 runner'
+            echo '- Release compilation: passed'
+            echo '- Bundle metadata: verified'
+            echo '- Code signing: intentionally absent'
+            echo '- Archive, notarization, and App Store upload: not performed'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove protected files
+        if: always()
+        run: rm -f firebase/mobile-dart-defines.env

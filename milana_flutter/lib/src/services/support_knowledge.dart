@@ -31,8 +31,8 @@ const milanaSupportFaqs = [
     topic: 'Optom',
     question: 'Minimal buyurtma qancha?',
     answer:
-        'Minimal buyurtma: 1 modeldan kamida 1 qop / meshok. Standart hisobda 1 qopda 60 ta kiyim bo‘ladi.',
-    keywords: ['minimal', 'qop', 'meshok', 'optom', '60'],
+        'Har bir model uchun katalogda ko‘rsatilgan minimal qadoq yoki qop miqdori amal qiladi. Qadoq odatda 6 ta, standart qop esa 60 ta kiyimdan iborat.',
+    keywords: ['minimal', 'qadoq', 'qop', 'meshok', 'optom', '6', '60'],
   ),
   SupportFaq(
     id: 'bag-size',
@@ -47,8 +47,8 @@ const milanaSupportFaqs = [
     topic: 'Narx',
     question: 'Narx qanday hisoblanadi?',
     answer:
-        'Kartochkada dona narxi ko‘rsatiladi. Buyurtmada 1 qop narxi = 60 × dona narxi. Aniq narx va mavjudlikni menejer tasdiqlaydi.',
-    keywords: ['narx', 'price', 'dona', 'qop', 'total'],
+        'Kartochkada dona narxi ko‘rsatiladi. Tanlangan qadoq yoki qop narxi uning ichidagi dona soniga ko‘paytirib hisoblanadi. Aniq narx va mavjudlikni menejer tasdiqlaydi.',
+    keywords: ['narx', 'price', 'dona', 'qadoq', 'qop', 'total'],
   ),
   SupportFaq(
     id: 'delivery',

@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 2,
+  "release": {
+    "versionName": "1.0.0",
+    "buildNumber": 1,
+    "interfaceLanguages": ["uz"]
+  },
+  "identity": {
+    "name": "Milana Premium",
+    "androidApplicationId": "uz.milana.milana_flutter",
+    "iosBundleId": "uz.milana.milanaFlutter"
+  },
+  "urls": {
+    "marketing": "https://milanapremium.uz",
+    "support": "https://milanapremium.uz/support",
+    "privacy": "https://milanapremium.uz/privacy",
+    "accountDeletion": "https://milanapremium.uz/delete-account",
+    "terms": "https://milanapremium.uz/terms"
+  },
+  "records": {
+    "questionnaires": "store/compliance/questionnaires.json",
+    "privacyData": "store/compliance/privacy-data.json",
+    "releaseDecisions": "store/release/decisions.json",
+    "assetRights": "store/assets/rights.json",
+    "reviewInformation": "store/review/review-info.json",
+    "screenshotManifest": "store/screenshots/manifest.json"
+  },
+  "googlePlay": {
+    "defaultLocale": "en-US",
+    "category": "SHOPPING",
+    "containsAds": false,
+    "contactEmail": null,
+    "contactPhone": "+998 50 155 10 10",
+    "localizations": {
+      "en-US": {
+        "name": "Milana Premium",
+        "shortDescription": "Wholesale fashion catalog with packs, bags and manager-assisted ordering.",
+        "fullDescriptionFile": "store/listing/en-US/full-description.txt",
+        "releaseNotesFile": "store/listing/en-US/release-notes.txt",
+        "copyApproved": false
+      },
+      "ru-RU": {
+        "name": "Milana Premium",
+        "shortDescription": "Оптовый каталог одежды: упаковки, мешки и заказ через менеджера.",
+        "fullDescriptionFile": "store/listing/ru-RU/full-description.txt",
+        "releaseNotesFile": "store/listing/ru-RU/release-notes.txt",
+        "copyApproved": false
+      }
+    },
+    "graphics": {
+      "icon": "store/google-play/graphics/app-icon-512.png",
+      "featureGraphic": "store/google-play/graphics/feature-graphic-1024x500.jpg",
+      "featureGraphicLocale": "universal-text-free",
+      "altTextFile": "store/google-play/graphics/ALT_TEXT.md"
+    }
+  },
+  "appStore": {
+    "primaryLocale": "en-US",
+    "primaryCategory": "SHOPPING",
+    "secondaryCategory": "BUSINESS",
+    "sku": null,
+    "copyright": null,
+    "requiresSignInForReview": true,
+    "localizations": {
+      "en-US": {
+        "name": "Milana Premium",
+        "subtitle": "Wholesale clothing, simplified",
+        "promotionalText": "Browse the live wholesale catalog, compare pack and bag quantities, and order with Milana manager support.",
+        "descriptionFile": "store/listing/en-US/full-description.txt",
+        "keywords": "wholesale,clothing,fashion,catalog,pack,bag,Uzbekistan,B2B",
+        "supportUrl": "https://milanapremium.uz/support",
+        "marketingUrl": "https://milanapremium.uz",
+        "copyApproved": false
+      },
+      "ru-RU": {
+        "name": "Milana Premium",
+        "subtitle": "Оптовая одежда без лишнего",
+        "promotionalText": "Просматривайте оптовый каталог, сравнивайте упаковки и мешки и оформляйте заказ с менеджером Milana.",
+        "descriptionFile": "store/listing/ru-RU/full-description.txt",
+        "keywords": "оптом,одежда,каталог,пижамы,халаты,мода",
+        "supportUrl": "https://milanapremium.uz/support",
+        "marketingUrl": "https://milanapremium.uz",
+        "copyApproved": false
+      }
+    }
+  }
+}

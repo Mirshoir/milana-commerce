@@ -14,6 +14,7 @@ void main() {
     List<OrderLineItem> items = const [],
   }) {
     return OrderSummary(
+      provenance: BackendProvenance.website,
       id: 'order-1',
       number: 'MP-2026-ABCD',
       total: 540,
@@ -128,7 +129,7 @@ void main() {
     expect(text, contains('Milana Premium buyurtma'));
     expect(text, contains('Raqam: MP-2026-ABCD'));
     expect(text, contains(r'Jami: $540.00'));
-    expect(text, contains('Tarkib: 3 qop · 180 ta kiyim'));
+    expect(text, contains('Tarkib: 2 qop · 120 ta kiyim'));
     expect(text, contains(r'- F-2219: 2 qop, $540.00'));
     expect(text, contains('To‘lov reference: MP2026ABCD'));
     expect(text, contains('Yuborilgan to‘lov: TRX-123'));

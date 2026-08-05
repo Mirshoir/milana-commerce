@@ -21,6 +21,10 @@ const mirroredCatalogFile = args.get('--mirrored-catalog') || 'firebase/catalog.
 const uploadsDir = args.get('--uploads-dir') || '../Claude Code/milana-premium/data/uploads';
 const imageCacheDir = args.get('--image-cache-dir') || 'firebase/image-cache';
 const webDir = args.get('--web-dir') || 'build/web';
+const uploadsSourceUrl =
+  args.get('--uploads-source-url') ||
+  process.env.FIREBASE_UPLOADS_SOURCE_URL ||
+  'https://milanapremium.uz';
 const deploy = args.has('--deploy');
 
 function run(command, commandArgs, options = {}) {
@@ -60,6 +64,8 @@ run('node', [
   imageCacheDir,
   '--web-dir',
   webDir,
+  '--uploads-source-url',
+  uploadsSourceUrl,
 ]);
 
 if (deploy) {

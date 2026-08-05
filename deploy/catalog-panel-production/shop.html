@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Каталог — MILANA PREMIUM</title>
+  <meta name="description" content="Оптовый каталог Milana Premium: халаты, пижамы, туники, домашняя одежда для женщин, мужчин и детей.">
+  <meta name="theme-color" content="#FFFFFF">
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/css/luxe.css?v=9">
+  <link rel="stylesheet" href="/css/luxe-pages.css?v=20260725-catalog-circles">
+</head>
+<body data-keep-title="1">
+
+  <!-- svg sprite -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16M13 5l7 7-7 7"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M6 7h12l1.5 13.5H4.5L6 7ZM8.5 9.5V6a3.5 3.5 0 0 1 7 0v3.5"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20.5S3.5 15.2 3.5 9.3C3.5 6.4 5.7 4.5 8 4.5c1.7 0 3.2.9 4 2.3.8-1.4 2.3-2.3 4-2.3 2.3 0 4.5 1.9 4.5 4.8 0 5.9-8.5 11.2-8.5 11.2Z"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.7 5.8 6.3.8-4.6 4.3 1.2 6.2L12 17l-5.6 3.1 1.2-6.2L3 9.6l6.3-.8L12 3Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4.5 20.5c1.2-3.6 4.1-5.5 7.5-5.5s6.3 1.9 7.5 5.5"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+  </svg>
+
+  <!-- header -->
+  <header class="header">
+    <div class="promo"><span data-i18n="best.ship">Оптовый заказ начинается с одного Qadoq или одного Qop на модель · наличие подтверждает менеджер</span></div>
+    <div class="header__main">
+      <div class="header__side">
+        <button class="burger" aria-label="Открыть меню" aria-expanded="false"><i></i><i></i><i></i></button>
+        <button type="button" class="header__search" data-search-open><svg class="ic"><use href="#i-search"/></svg><span data-i18n="search.site">Поиск по сайту…</span></button>
+      </div>
+      <a class="logo" href="/" aria-label="Milana Premium">MILANA <span>Premium</span></a>
+      <div class="header__side header__side--r">
+        <div class="langsel">
+          <button type="button" class="langsel__btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Til / Язык / Language">
+            <span data-lang-current>RU</span>
+          </button>
+          <div class="lang langsel__menu" role="listbox">
+            <button type="button" data-lang="uz" role="option">O‘zbekcha</button>
+            <button type="button" data-lang="ru" role="option">Русский</button>
+            <button type="button" data-lang="en" role="option">English</button>
+          </div>
+        </div>
+        <a class="iconbtn" href="/signin" aria-label="Аккаунт"><svg class="ic"><use href="#i-user"/></svg></a>
+        <button class="iconbtn" data-cart-open aria-label="Корзина">
+          <svg class="ic"><use href="#i-cart"/></svg>
+          <span data-cart-count class="is-zero">0</span>
+        </button>
+      </div>
+    </div>
+    <nav class="header__nav" aria-label="Основное меню">
+      <div class="navitem">
+        <a href="/shop" data-i18n="nav.shop">Каталог</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="shop.gender">Пол</h4>
+                <a href="/shop?gender=women" data-i18n="cats.women">Женщинам</a>
+                <a href="/shop?gender=men" data-i18n="cats.men">Мужчинам</a>
+                <a href="/shop?gender=kids" data-i18n="cats.kids">Детям</a>
+                <a href="/shop" data-i18n="shop.all">Все</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.clothing">Тип одежды</h4>
+                <a href="/shop?category=pajamas" data-i18n="cats.pajamas">Пижамы</a>
+                <a href="/shop?category=robes" data-i18n="cats.robes">Халаты</a>
+                <a href="/shop?category=homewear" data-i18n="cats.homewear">Homewear</a>
+                <a href="/shop?category=loungewear" data-i18n="cats.loungewear">Loungewear</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.tag">Подборка</h4>
+                <a href="/shop?tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+                <a href="/shop?tag=sale" data-i18n="shop.tagSale">Скидка</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=women">
+                <img src="/uploads/thumbs/pmrlo8czo-400f22ac.webp" alt="Женщинам" loading="lazy">
+                <b data-i18n="cats.women">Женщинам</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=men">
+                <img src="/uploads/thumbs/pmrlk7am3-dd1aa8f4.webp" alt="Мужчинам" loading="lazy">
+                <b data-i18n="cats.men">Мужчинам</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=kids">
+                <img src="/uploads/thumbs/pmrloe62a-800dfd84.webp" alt="Детям" loading="lazy">
+                <b data-i18n="cats.kids">Детям</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem">
+        <a href="/shop?gender=women" data-i18n="cats.women">Женщинам</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="shop.clothing">Тип одежды</h4>
+                <a href="/shop?gender=women&amp;category=pajamas" data-i18n="cats.pajamas">Пижамы</a>
+                <a href="/shop?gender=women&amp;category=robes" data-i18n="cats.robes">Халаты</a>
+                <a href="/shop?gender=women&amp;category=homewear" data-i18n="cats.homewear">Homewear</a>
+                <a href="/shop?gender=women&amp;category=loungewear" data-i18n="cats.loungewear">Loungewear</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.tag">Подборка</h4>
+                <a href="/shop?gender=women&amp;tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?gender=women&amp;sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+                <a href="/shop?gender=women" data-i18n="shop.all">Все</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=women&amp;category=loungewear">
+                <img src="/uploads/thumbs/pmrlkcxu5-2c3ab779.webp" alt="Loungewear" loading="lazy">
+                <b data-i18n="cats.loungewear">Loungewear</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=women&amp;category=pajamas">
+                <img src="/uploads/thumbs/pmrlkw1kq-94a08913.webp" alt="Пижамы" loading="lazy">
+                <b data-i18n="cats.pajamas">Пижамы</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem">
+        <a href="/shop?gender=men" data-i18n="cats.men">Мужчинам</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="shop.clothing">Тип одежды</h4>
+                <a href="/shop?gender=men&amp;category=pajamas" data-i18n="cats.pajamas">Пижамы</a>
+                <a href="/shop?gender=men&amp;category=homewear" data-i18n="cats.homewear">Homewear</a>
+                <a href="/shop?gender=men&amp;category=loungewear" data-i18n="cats.loungewear">Loungewear</a>
+                <a href="/shop?gender=men" data-i18n="shop.all">Все</a>
+              </div>
+              <div class="mega__col">
+                <h4 data-i18n="shop.tag">Подборка</h4>
+                <a href="/shop?gender=men&amp;tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?gender=men&amp;sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=men">
+                <img src="/uploads/thumbs/pmrlk7am3-dd1aa8f4.webp" alt="Мужская коллекция" loading="lazy">
+                <b data-i18n="mq.2">Мужская коллекция</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+              <a class="mega__tile" href="/shop?gender=men&amp;tag=bestseller">
+                <img src="/uploads/thumbs/pmrlkb3hu-8f34e700.webp" alt="Бестселлеры" loading="lazy">
+                <b data-i18n="nav.bestsellers">Бестселлеры</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem">
+        <a href="/shop?gender=kids" data-i18n="cats.kids">Детям</a>
+        <div class="mega">
+          <div class="mega__in">
+            <div class="mega__cols">
+              <div class="mega__col">
+                <h4 data-i18n="cats.kids">Детям</h4>
+                <a href="/shop?gender=kids" data-i18n="shop.all">Все</a>
+                <a href="/shop?gender=kids&amp;tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a>
+                <a href="/shop?gender=kids&amp;sort=new" data-i18n="shop.sortNew">Сначала новые</a>
+              </div>
+            </div>
+            <div class="mega__tiles">
+              <a class="mega__tile" href="/shop?gender=kids">
+                <img src="/uploads/thumbs/pmrloe62a-800dfd84.webp" alt="Детская одежда" loading="lazy">
+                <b data-i18n="mq.3">Детская одежда</b>
+                <span data-i18n="preview.explore">Смотреть</span>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="navitem"><a href="/shop?tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a></div>
+      <div class="navitem"><a href="/ordering" data-i18n="terms.navOrdering">Как заказать</a></div>
+      <div class="navitem"><a href="/#maison" data-i18n="nav.maison">Бренд</a></div>
+    </nav>
+  </header>
+
+  <!-- mobile menu -->
+  <nav class="menu" id="menu" aria-hidden="true" aria-label="Мобильное меню">
+    <a href="/shop" data-i18n="nav.shop">Каталог</a>
+    <a href="/shop?gender=women" data-i18n="cats.women">Женщинам</a>
+    <a href="/shop?gender=men" data-i18n="cats.men">Мужчинам</a>
+    <a href="/shop?gender=kids" data-i18n="cats.kids">Детям</a>
+    <a href="/ordering" data-i18n="terms.navOrdering">Как заказать</a>
+    <a href="/support" data-i18n="nav.support">Поддержка</a>
+    <div class="menu__meta">
+      <span>+998 50 155 10 10</span>
+      <span data-i18n="menu.showroom">Шоурум</span>
+    </div>
+  </nav>
+
+  <main>
+    <!-- заголовок каталога -->
+    <section class="shop-hero">
+      <div class="container">
+        <nav class="crumbs" aria-label="Хлебные крошки">
+          <a href="/" data-i18n="shop.crumb">Главная</a>
+          <span aria-hidden="true">/</span>
+          <b data-i18n="shop.title">Каталог</b>
+        </nav>
+        <div class="shop-hero__row">
+          <h1 class="catalog-title" data-i18n="shop.title">Каталог</h1>
+          <p class="shop-count"><strong id="found-n">…</strong> <span data-i18n="shop.found">вещей</span></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="catalog-panel-section" aria-labelledby="catalog-panel-title">
+      <div class="container">
+        <div class="catalog-panel-heading">
+          <div>
+            <p data-i18n="shop.categories">Категории</p>
+            <h2 id="catalog-panel-title" data-i18n="shop.catalogs">Выберите каталог</h2>
+          </div>
+          <button type="button" id="catalog-panel-clear" data-i18n="shop.showAll" hidden>Показать все</button>
+        </div>
+        <div class="catalog-panel-grid" id="catalog-panel-grid"></div>
+      </div>
+    </section>
+
+    <!-- панель поиска и сортировки -->
+    <div class="shop-bar">
+      <div class="container shop-bar__in">
+        <div class="shop-search">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <input id="shop-q" type="text" data-i18n-ph="search.allProducts" placeholder="Поиск по всем товарам…" autocomplete="off">
+        </div>
+        <button id="filters-toggle"><svg class="ic"><use href="#i-filter"/></svg><span data-i18n="shop.filters">Фильтры</span></button>
+        <span class="shop-bar__spacer"></span>
+        <select id="shop-sort" aria-label="Сортировка">
+          <option value="default" data-i18n="shop.sortDefault">Рекомендуемые</option>
+          <option value="new" data-i18n="shop.sortNew">Сначала новые</option>
+          <option value="popular" data-i18n="shop.sortPopular">Популярные</option>
+          <option value="price-asc" data-i18n="shop.sortPriceAsc">Дешевле</option>
+          <option value="price-desc" data-i18n="shop.sortPriceDesc">Дороже</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- каталог -->
+    <div class="container shop-layout">
+      <aside class="filters" id="filters" aria-label="Фильтры">
+        <button id="filters-close" aria-label="Закрыть фильтры">&#10005;</button>
+        <div class="filters__group">
+          <h4 data-i18n="shop.gender">Пол</h4>
+          <div class="filters__list" id="f-gender"></div>
+        </div>
+        <div class="filters__group">
+          <h4 data-i18n="shop.clothing">Тип одежды</h4>
+          <div class="filters__list" id="f-cats"></div>
+        </div>
+        <div class="filters__group">
+          <h4 data-i18n="shop.size">Размер</h4>
+          <div class="filters__chips" id="f-sizes"></div>
+        </div>
+        <div class="filters__group" id="f-heights-group" hidden>
+          <h4 data-i18n="shop.heights">Рост, см (детям)</h4>
+          <div class="filters__chips" id="f-heights"></div>
+        </div>
+        <div class="filters__group">
+          <h4 data-i18n="shop.tag">Подборка</h4>
+          <div class="filters__chips" id="f-tags"></div>
+        </div>
+        <div class="filters__group">
+          <h4 data-i18n="shop.sort">Цена, $</h4>
+          <div class="filters__price">
+            <input id="f-min" type="number" min="0" placeholder="от" aria-label="Цена от">
+            <span>—</span>
+            <input id="f-max" type="number" min="0" placeholder="до" aria-label="Цена до">
+          </div>
+        </div>
+        <button id="f-reset" data-i18n="shop.reset">Сбросить фильтры</button>
+      </aside>
+
+      <section aria-label="Товары">
+        <div class="product-grid" id="shop-grid"></div>
+        <div class="shop-empty" id="shop-empty">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <h3 data-i18n="shop.title">Каталог</h3>
+          <p data-i18n="shop.empty">По этим фильтрам пока ничего нет.</p>
+          <button class="btn btn--ghost" id="f-reset2"><span data-i18n="shop.reset">Сбросить фильтры</span></button>
+        </div>
+        <div class="shop-pager" id="shop-pager" hidden>
+          <button type="button" class="shop-pager__more" id="shop-more"><span data-i18n="shop.more">Показать ещё</span></button>
+          <div class="shop-pager__pages" id="shop-pages"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- популярные товары: лента с боковыми стрелками -->
+    <section class="popstrip" aria-label="Популярные товары">
+      <div class="container">
+        <h2 class="popstrip__title" data-i18n="pop.title">Популярные товары</h2>
+        <div class="popstrip__wrap">
+          <button type="button" class="popstrip__arr popstrip__arr--l" id="pop-prev" aria-label="Назад"><svg class="ic" style="transform:rotate(180deg)"><use href="#i-arrow"/></svg></button>
+          <div class="scroller popstrip__row" id="pop-row"></div>
+          <button type="button" class="popstrip__arr popstrip__arr--r" id="pop-next" aria-label="Вперёд"><svg class="ic"><use href="#i-arrow"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- footer -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer__grid footer__grid--wide">
+        <div>
+          <a class="logo" href="/">MILANA <span>Premium</span></a>
+          <p class="footer__tag" data-i18n="foot.tag">Фабрика одежды в Узбекистане: домашняя и повседневная одежда для женщин, мужчин и детей.</p>
+          <p class="footer__addr" data-dyn="address">Узбекистан, Андижан, Коратут 605 · Пн–Сб 08:00–18:00</p>
+        </div>
+        <div>
+          <h5 data-i18n="foot.buyers">Покупателям</h5>
+          <ul>
+            <li><a href="/shop" data-i18n="shop.title">Все товары</a></li>
+            <li><a href="/shop?tag=bestseller" data-i18n="nav.bestsellers">Бестселлеры</a></li>
+            <li><a href="/ordering" data-i18n="terms.navOrdering">Как работает заказ</a></li>
+            <li><a href="/#faq" data-i18n="foot.faq">Частые вопросы</a></li>
+            <li><a href="/terms" data-i18n="foot.terms">Условия</a></li>
+          </ul>
+        </div>
+        <div>
+          <h5 data-i18n="foot.company">О компании</h5>
+          <ul>
+            <li><a href="/#maison" data-i18n="foot.about">О фабрике</a></li>
+            <li><a href="/#map" data-i18n="map.title">Как нас найти</a></li>
+            <li><a href="/support" data-i18n="nav.support">Поддержка</a></li>
+            <li><a href="/signin" data-i18n="auth.account">Аккаунт</a></li>
+          </ul>
+        </div>
+        <div>
+          <h5 data-i18n="foot.contact">Связаться с нами</h5>
+          <ul class="footer__contact">
+            <li><a data-dyn="tel" href="tel:+998501551010">+998 50 155 10 10</a></li>
+            <li><a data-dyn="mail" href="#"></a></li>
+            <li><a data-dyn="wa" href="https://wa.me/998501551010" target="_blank" rel="noopener" data-i18n="ws.wa">Написать в WhatsApp</a></li>
+            <li><a data-dyn="tg" href="https://t.me/milanapremium2" target="_blank" rel="noopener" data-i18n="ws.tg">Написать в Telegram</a></li>
+          </ul>
+          <h5 class="footer__socht" data-i18n="foot.social">Мы в соцсетях</h5>
+          <div class="footer__soc">
+            <a data-dyn="ig" href="https://instagram.com/milana.premium" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4.5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1" fill="currentColor" stroke="none"/></svg><span>Instagram</span></a>
+            <a data-dyn="tg" href="https://t.me/milanapremium2" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><path d="M21 4.4 3.6 11l4.9 1.7 1.8 5.6 3-3.4 4.6 3.3L21 4.4Z"/><path d="m8.5 12.7 8.5-6.2"/></svg><span>Telegram</span></a>
+            <a data-dyn="wa" href="https://wa.me/998501551010" target="_blank" rel="noopener"><svg class="ic" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.3-1.1A8.5 8.5 0 1 0 12 3.5Z"/><path d="M9 8.8c.5 2.6 2.6 4.8 5.2 5.4l1-1.5-2-1-.8.6a5.4 5.4 0 0 1-1.7-1.8l.6-.8-1-2-1.3 1.1Z"/></svg><span>WhatsApp</span></a>
+          </div>
+        </div>
+        <div>
+          <h5 data-i18n="foot.nl">Каталог и новинки</h5>
+          <form class="newsletter" novalidate>
+            <input type="email" required data-i18n-ph="foot.nlPh" placeholder="ваш@email.com" autocomplete="email" aria-label="Email">
+            <button type="submit" data-i18n="reviews.submit">Отправить</button>
+          </form>
+          <p class="newsletter__note" data-i18n="foot.nlNote">Новые модели и новости сотрудничества. Без лишних сообщений.</p>
+          <div class="footer__apps">
+            <a class="appbadge" href="#" onclick="return false" data-app="ios" aria-label="App Store">
+              <svg class="appbadge__logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M16.36 12.9c-.02-2.4 1.96-3.55 2.05-3.61-1.12-1.64-2.86-1.86-3.48-1.89-1.48-.15-2.89.87-3.64.87-.75 0-1.91-.85-3.14-.83-1.61.02-3.1.94-3.93 2.38-1.68 2.91-.43 7.22 1.2 9.59.8 1.16 1.75 2.46 2.99 2.41 1.2-.05 1.65-.78 3.1-.78 1.45 0 1.85.78 3.11.75 1.29-.02 2.1-1.18 2.89-2.35.91-1.35 1.28-2.66 1.3-2.72-.03-.01-2.49-.96-2.51-3.8M14.3 5.31c.66-.8 1.11-1.91.99-3.02-.95.04-2.11.63-2.79 1.43-.61.71-1.14 1.84-1 2.93 1.06.08 2.14-.54 2.8-1.34"/></svg>
+              <span><i data-i18n="foot.appApple">Загрузите в</i><b>App Store</b></span>
+            </a>
+            <a class="appbadge" href="#" onclick="return false" data-app="android" aria-label="Google Play">
+              <svg class="appbadge__logo" viewBox="0 0 24 24" aria-hidden="true"><path fill="#00D3FF" d="M3.9 2.3c-.29.3-.46.77-.46 1.38v16.64c0 .61.17 1.08.47 1.36l.06.05 9.32-9.32v-.22L3.9 2.3z"/><path fill="#FFCE00" d="M16.9 15.35l-3.11-3.11v-.22l3.12-3.12.07.04 3.69 2.1c1.05.6 1.05 1.58 0 2.18l-3.77 2.13z"/><path fill="#FF3A44" d="M16.97 15.31 13.79 12.13l-9.9 9.9c.35.37.92.41 1.57.05l11.51-6.77z"/><path fill="#00E676" d="M16.97 8.9 5.46 2.14c-.65-.37-1.22-.32-1.57.05l9.9 9.9 3.18-3.19z"/></svg>
+              <span><i data-i18n="foot.appGoogle">Доступно в</i><b>Google Play</b></span>
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="footer__base">
+        <span>© <span id="year">2026</span> MILANA PREMIUM</span>
+        <span data-dyn="address">Узбекистан, Андижан, Коратут 605 · Пн–Сб 08:00–18:00</span>
+        <span><a href="tel:+998501551010" data-dyn="tel">+998 50 155 10 10</a> · <a href="https://instagram.com/milana.premium" data-dyn="ig" target="_blank" rel="noopener">Instagram</a></span>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    /* тень шапки при скролле + рассылка (main.js на этой странице не грузится) */
+    (() => {
+      const h = document.querySelector(".header");
+      addEventListener("scroll", () => h.classList.toggle("is-solid", scrollY > 8), { passive: true });
+      const form = document.querySelector(".newsletter");
+      form && form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const input = form.querySelector("input");
+        const note = document.querySelector(".newsletter__note");
+        try {
+          const r = await fetch("/api/newsletter", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: input.value.trim(), lang: window.I18N ? I18N.lang : "en", source: "footer" }) });
+          if (!r.ok) throw new Error();
+          note.textContent = (window.I18N ? I18N.t("foot.nlOk") : "OK") + " " + input.value.trim();
+          input.value = "";
+        } catch { note.textContent = window.I18N ? I18N.t("cart.invalid") : "Error"; }
+      });
+    })();
+  </script>
+
+  <!-- engine (shop.js сам управляет бургером и фильтрами) -->
+  <script src="/js/i18n.js?v=20260725-production-safe" defer></script>
+  <script src="/js/site-config.js?v=3" defer></script>
+  <script src="/js/app-state.js" defer></script>
+  <script src="/js/auth.js?v=20260725-apple-3" defer></script>
+  <script src="/js/cart.js?v=20260725-managers" defer></script>
+  <script src="/js/cards.js?v=20260725-names" defer></script>
+  <script src="/js/shop.js?v=20260725-catalog-circles" defer></script>
+  <script src="/js/header.js?v=3" defer></script>
+  <script src="/js/search.js?v=6" defer></script>
+  <script src="/js/chat-widget.js?v=2" defer></script>
+</body>
+</html>

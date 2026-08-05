@@ -265,39 +265,52 @@ const orderId = `order-${runId}`;
 const supportId = `support-${runId}`;
 const paymentId = `payment-${runId}`;
 const paymentWebhookEventId = `payment-webhook-${runId}`;
+const ownerProfile = customerDoc(owner);
 
-await createDoc('customers', owner.uid, customerDoc(owner), owner.token);
+await createDoc('customers', owner.uid, ownerProfile, owner.token);
 await readDoc('customers', owner.uid, owner.token);
 await patchDoc('customers', owner.uid, {
-  ...customerDoc(owner),
+  ...ownerProfile,
   saved_product_ids: [`product-a-${runId}`, `product-b-${runId}`],
 }, owner.token);
 await patchDoc('customers', owner.uid, {
-  ...customerDoc(owner),
+  ...ownerProfile,
   recent_product_ids: [`recent-a-${runId}`, `recent-b-${runId}`],
 }, owner.token);
 await patchDoc('customers', owner.uid, {
-  ...customerDoc(owner),
+  ...ownerProfile,
   cart_items: [cartItem(1), cartItem(2)],
 }, owner.token);
 await patchDoc('customers', owner.uid, {
-  ...customerDoc(owner),
+  ...ownerProfile,
+  email: stranger.email,
+}, owner.token, 403);
+await patchDoc('customers', owner.uid, {
+  ...ownerProfile,
+  status: 'admin',
+}, owner.token, 403);
+await patchDoc('customers', owner.uid, {
+  ...ownerProfile,
+  unexpected_admin_field: true,
+}, owner.token, 403);
+await patchDoc('customers', owner.uid, {
+  ...ownerProfile,
   city: 'A'.repeat(81),
 }, owner.token, 403);
 await patchDoc('customers', owner.uid, {
-  ...customerDoc(owner),
+  ...ownerProfile,
   address: 'A'.repeat(201),
 }, owner.token, 403);
 await patchDoc('customers', owner.uid, {
-  ...customerDoc(owner),
+  ...ownerProfile,
   saved_product_ids: Array.from({ length: 501 }, (_, index) => `product-${index}`),
 }, owner.token, 403);
 await patchDoc('customers', owner.uid, {
-  ...customerDoc(owner),
+  ...ownerProfile,
   recent_product_ids: Array.from({ length: 101 }, (_, index) => `recent-${index}`),
 }, owner.token, 403);
 await patchDoc('customers', owner.uid, {
-  ...customerDoc(owner),
+  ...ownerProfile,
   cart_items: Array.from({ length: 101 }, (_, index) => cartItem(index)),
 }, owner.token, 403);
 await readDoc('customers', owner.uid, stranger.token, 403);

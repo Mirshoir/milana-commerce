@@ -14,10 +14,44 @@
   const save = () => {
     localStorage.setItem(KEY, JSON.stringify(wishlist.slice(0, 80)));
     syncWishlistButtons();
+    syncWishCount();
     window.dispatchEvent(new CustomEvent("milana:wishlist", { detail: { items: all() } }));
   };
   const idOf = (item) => String(item?.id || item?.slug || "");
+  /* счётчик избранного в шапке */
+  function syncWishCount() {
+    const n = wishlist.length;
+    document.querySelectorAll("[data-wish-count]").forEach((el) => {
+      el.textContent = n > 99 ? "99+" : String(n);
+      el.classList.toggle("is-zero", n < 1);
+    });
+  }
+  document.addEventListener("DOMContentLoaded", syncWishCount);
+
   const all = () => wishlist.slice();
+  const refresh = (products) => {
+    const currentById = new Map((Array.isArray(products) ? products : [])
+      .filter((product) => product && product.id != null)
+      .map((product) => [String(product.id), product]));
+    let changed = false;
+    wishlist = wishlist.map((item) => {
+      const current = currentById.get(idOf(item));
+      if (!current) return item;
+      const next = {
+        ...item,
+        slug: current.slug || item.slug || "",
+        name: current.name || item.name || "",
+        image: current.images?.[0] || current.image || item.image || "",
+        price: Number(current.price ?? item.price) || 0,
+        price_visible: current.price_visible !== false,
+      };
+      if (next.slug !== item.slug || next.name !== item.name || next.image !== item.image
+        || next.price !== item.price || next.price_visible !== item.price_visible) changed = true;
+      return next;
+    });
+    if (changed) save();
+    return changed;
+  };
   const setAll = (items) => {
     wishlist = (Array.isArray(items) ? items : []).slice(0, 80).map((item) => ({
       id: idOf(item),
@@ -112,5 +146,5 @@
     wireOffline();
   });
 
-  window.MilanaState = { wishlist: { all, setAll, has, add, remove, toggle, sync: syncWishlistButtons }, wireImages };
+  window.MilanaState = { wishlist: { all, setAll, refresh, has, add, remove, toggle, sync: syncWishlistButtons }, wireImages };
 })();

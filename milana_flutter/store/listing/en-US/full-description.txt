@@ -1,0 +1,9 @@
+Discover the current Milana Premium wholesale clothing catalog in one comfortable mobile app. Browse women’s, men’s, and children’s collections, search by model, filter by category, size, availability, and price, and save products for later.
+
+Each product shows the available wholesale units—pack or bag—together with piece counts, size mix, current catalog price, and stock guidance. Build an order, select a Milana manager, choose a payment method, and send delivery details over a protected service connection.
+
+A verified account keeps your cart and saved models synchronized and connects new orders to My Orders. From the account area, follow order and payment status, submit a payment reference, request an eligible cancellation, review support requests, update your profile, and open privacy and account-deletion options.
+
+Final price, availability, payment instructions, and delivery are confirmed by a Milana Premium manager. The app sells physical clothing and does not sell digital goods.
+
+Version 1.0 uses an Uzbek-language interface.

@@ -16,6 +16,7 @@ String categoryLabel(String category) {
     'robes' => 'Xalat',
     'homewear' => 'Uy kiyimi',
     'loungewear' => 'Lounge to‘plam',
+    'family' => 'Oilaviy to‘plam',
     _ => 'Kiyim',
   };
 }
@@ -29,33 +30,45 @@ List<ProductSpec> productSpecs(Product product, CartItem item) {
     ProductSpec(label: 'Bo‘lim', value: genderLabel(product.gender)),
     ProductSpec(label: 'Kategoriya', value: categoryLabel(product.category)),
     ProductSpec(
-      label: 'Qop tarkibi',
-      value: '${item.mixSizes.length} o‘lcham × $qtyPerSize',
+      label: 'Buyurtma turi',
+      value: '${orderUnitLabel(item.unitType)} · ${item.piecesPerUnit} dona',
     ),
+    if (product.material.isNotEmpty)
+      ProductSpec(label: 'Material', value: product.material),
+    if (product.composition.isNotEmpty)
+      ProductSpec(label: 'Tarkib', value: product.composition),
+    if (product.season.isNotEmpty)
+      ProductSpec(label: 'Mavsum', value: product.season),
     if (product.availableQop != null)
-      ProductSpec(label: 'Mavjud qop', value: '${product.availableQop} qop'),
+      ProductSpec(
+        label: 'Omborda',
+        value: '${_stockLabel(product.availableQop!)} qop ekvivalenti',
+      ),
   ];
 }
 
 List<ProductHighlight> productHighlights(Product product) {
   return [
-    const ProductHighlight(
-      title: 'Optom savdo',
-      text: 'Minimal buyurtma: 1 modeldan 1 qop.',
+    ProductHighlight(
+      title: 'Qadoq yoki qop',
+      text:
+          'Minimal buyurtma ${product.orderUnitFor(packUnitType).pieces} donalik qadoqdan boshlanadi. Qopda 60 dona.',
     ),
     const ProductHighlight(
       title: 'Cargo / pochta',
       text: 'Yetkazib berish xarajati mijoz tomonidan to‘lanadi.',
     ),
     ProductHighlight(
-      title: product.availableQop == 0
-          ? 'Mavjudlik tugagan'
+      title: product.preorder
+          ? 'Oldindan buyurtma'
+          : !product.canOrderWholesale
+          ? 'Hozircha mavjud emas'
           : product.price > 0
           ? 'Narx tasdiqlanadi'
           : 'Menejer bilan',
       text: product.availableQop == null
           ? 'Mavjudlik va to‘lov menejer orqali yakuniy tasdiqlanadi.'
-          : 'ERP bo‘yicha qop soni: ${product.availableQop}. Yakuniy tasdiq menejer orqali.',
+          : 'Ombor qoldig‘i: ${_stockLabel(product.availableQop!)} qop ekvivalenti. Yakuniy tasdiq menejer orqali.',
     ),
   ];
 }
@@ -66,12 +79,14 @@ String productInquiryShareText(
   String managerPhone = '+998501551010',
 }) {
   final qopItem = item ?? CartItem(product: product);
-  final mix = qopItem.mixSizes.map((size) => '$size×$qtyPerSize').join(', ');
+  final mix = qopItem.sizeMix
+      .map((row) => '${row['size']}×${row['qty']}')
+      .join(', ');
   final available = product.availableQop == null
       ? 'Menejer tasdiqlaydi'
       : product.availableQop! <= 0
       ? 'Mavjud emas'
-      : '${product.availableQop} qop';
+      : '${_stockLabel(product.availableQop!)} qop';
   final lines = [
     'Milana Premium model',
     'Model: ${product.name}',
@@ -79,12 +94,18 @@ String productInquiryShareText(
     'Kategoriya: ${categoryLabel(product.category)}',
     if (product.fabric.isNotEmpty) 'Mato: ${product.fabric}',
     'Dona narxi: \$${product.price.toStringAsFixed(2)}',
-    '1 qop: $bagSize ta kiyim · \$${qopItem.bagPrice.toStringAsFixed(2)}',
-    'Qop tarkibi: $mix',
+    '${orderUnitLabel(qopItem.unitType)}: ${qopItem.piecesPerUnit} ta kiyim · \$${qopItem.packagePrice.toStringAsFixed(2)}',
+    'O‘lcham tarkibi: $mix',
     'Mavjudlik: $available',
     'Menejer: $managerPhone',
   ];
   return lines.join('\n');
+}
+
+String _stockLabel(double value) {
+  return value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toStringAsFixed(1);
 }
 
 class ProductSpec {

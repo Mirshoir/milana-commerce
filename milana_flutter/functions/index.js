@@ -1,6 +1,8 @@
 'use strict';
 
-const admin = require('firebase-admin');
+const { initializeApp } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
+const { FieldValue, getFirestore } = require('firebase-admin/firestore');
 const { HttpsError, onCall, onRequest } = require('firebase-functions/v2/https');
 const {
   activityEntry,
@@ -27,11 +29,211 @@ const {
   verifyPaymentWebhookSignature,
 } = require('./payment');
 const { normalizeAckRequest, normalizeClaimRequest } = require('./erp');
+const { requestPublicApi } = require('./public_api');
+const {
+  forwardWebsiteRequest,
+  websitePublicApiError,
+} = require('./website_account');
+const {
+  erpEventAnonymizationPatch,
+  normalizeAccountDeletionRequest,
+  orderAnonymizationPatch,
+  paymentAnonymizationPatch,
+  supportAnonymizationPatch,
+} = require('./account');
 
-admin.initializeApp();
-
-const db = admin.firestore();
+const app = initializeApp();
+const auth = getAuth(app);
+const db = getFirestore(app);
 const region = 'asia-southeast1';
+const accountDeletionBatchSize = 400;
+
+async function anonymizeOwnedDocuments({
+  collection,
+  ownerField,
+  ownerId,
+  nowIso,
+  patchFor,
+}) {
+  let updated = 0;
+  while (true) {
+    const snapshot = await db
+      .collection(collection)
+      .where(ownerField, '==', ownerId)
+      .limit(accountDeletionBatchSize)
+      .get();
+    if (snapshot.empty) return updated;
+
+    const batch = db.batch();
+    const deleteField = FieldValue.delete();
+    for (const document of snapshot.docs) {
+      batch.update(
+        document.ref,
+        patchFor(document.data(), { deleteField, nowIso }),
+      );
+    }
+    await batch.commit();
+    updated += snapshot.size;
+  }
+}
+
+exports.listCheckoutManagers = onCall({ region }, async () => {
+  let result;
+  try {
+    result = await requestPublicApi({ path: '/api/managers' });
+  } catch (error) {
+    throw new HttpsError('unavailable', 'Managers are temporarily unavailable.');
+  }
+  if (!result.ok || !Array.isArray(result.body)) {
+    throw websitePublicApiError(result, 'Managers are temporarily unavailable.');
+  }
+  return result.body;
+});
+
+exports.placeWebsiteOrder = onCall({ region }, async (request) => {
+  const data =
+    request.data && typeof request.data === 'object' && !Array.isArray(request.data)
+      ? request.data
+      : {};
+  return forwardWebsiteRequest({
+    request,
+    path: '/api/orders',
+    method: 'POST',
+    data: { ...data, source: 'flutter' },
+    fallback: 'Order could not be submitted.',
+    optionalSession: true,
+  });
+});
+
+exports.listWebsiteCustomerOrders = onCall({ region }, async (request) =>
+  forwardWebsiteRequest({
+    request,
+    path: '/api/auth/orders',
+    fallback: 'Orders are temporarily unavailable.',
+  }));
+
+exports.listWebsiteCustomerSupport = onCall({ region }, async (request) =>
+  forwardWebsiteRequest({
+    request,
+    path: '/api/auth/support',
+    fallback: 'Support history is temporarily unavailable.',
+  }));
+
+exports.createWebsiteSupport = onCall({ region }, async (request) => {
+  return forwardWebsiteRequest({
+    request,
+    path: '/api/support',
+    method: 'POST',
+    data: { ...(request.data || {}), source: 'flutter' },
+    fallback: 'Support request could not be submitted.',
+  });
+});
+
+function websiteOrderId(request) {
+  const orderId = String(request?.data?.order_id || '').trim();
+  if (!/^\d+$/.test(orderId)) {
+    throw new HttpsError('invalid-argument', 'Order id is invalid.');
+  }
+  return orderId;
+}
+
+exports.submitWebsitePaymentProof = onCall({ region }, async (request) => {
+  const orderId = websiteOrderId(request);
+  const { order_id: ignoredOrderId, ...data } = request.data || {};
+  return forwardWebsiteRequest({
+    request,
+    path: `/api/auth/orders/${orderId}/payment-proof`,
+    method: 'POST',
+    data,
+    fallback: 'Payment proof could not be submitted.',
+  });
+});
+
+exports.cancelWebsiteOrder = onCall({ region }, async (request) => {
+  const orderId = websiteOrderId(request);
+  const { order_id: ignoredOrderId, ...data } = request.data || {};
+  return forwardWebsiteRequest({
+    request,
+    path: `/api/auth/orders/${orderId}/cancel`,
+    method: 'POST',
+    data,
+    fallback: 'Order could not be cancelled.',
+  });
+});
+
+exports.deleteCustomerAccount = onCall({ region }, async (request) => {
+  const customerId = request.auth?.uid;
+  if (!customerId) {
+    throw new HttpsError('unauthenticated', 'Sign in to delete your account.');
+  }
+  try {
+    normalizeAccountDeletionRequest(request.data);
+  } catch (error) {
+    throw new HttpsError(
+      'invalid-argument',
+      'Type DELETE exactly to confirm account deletion.',
+    );
+  }
+
+  const nowIso = new Date().toISOString();
+  let anonymized;
+  try {
+    const orders = await anonymizeOwnedDocuments({
+      collection: 'orders',
+      ownerField: 'customer_id',
+      ownerId: customerId,
+      nowIso,
+      patchFor: orderAnonymizationPatch,
+    });
+    const supportRequests = await anonymizeOwnedDocuments({
+      collection: 'support_requests',
+      ownerField: 'customer_id',
+      ownerId: customerId,
+      nowIso,
+      patchFor: supportAnonymizationPatch,
+    });
+    const payments = await anonymizeOwnedDocuments({
+      collection: 'payments',
+      ownerField: 'customer_id',
+      ownerId: customerId,
+      nowIso,
+      patchFor: paymentAnonymizationPatch,
+    });
+    const erpEvents = await anonymizeOwnedDocuments({
+      collection: 'erp_events',
+      ownerField: 'payload.customer_id',
+      ownerId: customerId,
+      nowIso,
+      patchFor: erpEventAnonymizationPatch,
+    });
+
+    await db.collection('customers').doc(customerId).delete();
+    anonymized = {
+      orders,
+      support_requests: supportRequests,
+      payments,
+      erp_events: erpEvents,
+    };
+  } catch (error) {
+    throw new HttpsError(
+      'internal',
+      'Account data could not be deleted. Please try again.',
+    );
+  }
+
+  try {
+    await auth.deleteUser(customerId);
+  } catch (error) {
+    if (error?.code !== 'auth/user-not-found') {
+      throw new HttpsError(
+        'internal',
+        'Account authentication could not be deleted. Please try again.',
+      );
+    }
+  }
+
+  return { deleted: true, anonymized };
+});
 
 async function productRefFor({ slug, productId }) {
   if (slug) {

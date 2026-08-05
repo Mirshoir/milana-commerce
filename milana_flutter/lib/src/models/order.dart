@@ -1,7 +1,10 @@
 import 'dart:math';
 
+import 'backend_provenance.dart';
 import 'cart_item.dart';
 import 'product.dart';
+
+export 'backend_provenance.dart';
 
 String paymentReferenceFromOrderNumber(String number) =>
     number.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
@@ -38,6 +41,7 @@ class CheckoutRequest {
     required this.address,
     required this.comment,
     required this.paymentMethod,
+    required this.managerId,
     required this.items,
     this.customerEmail = '',
     this.customerId,
@@ -50,6 +54,7 @@ class CheckoutRequest {
   final String address;
   final String comment;
   final String paymentMethod;
+  final int managerId;
   final String customerEmail;
   final String? customerId;
   final String clientOrderId;
@@ -58,6 +63,9 @@ class CheckoutRequest {
   double get total => items.fold(0, (sum, item) => sum + item.lineTotal);
 
   Map<String, dynamic> toBackendJson() => {
+    'source': 'flutter',
+    'order_type': 'wholesale',
+    'manager_id': managerId,
     'customer': {
       'name': name,
       'phone': phone,
@@ -74,6 +82,7 @@ class CheckoutRequest {
           (item) => {
             'id': int.tryParse(item.product.id) ?? item.product.id,
             'qty': item.quantity,
+            'unit_type': item.orderUnit.unitType,
           },
         )
         .toList(),
@@ -81,6 +90,9 @@ class CheckoutRequest {
   };
 
   Map<String, dynamic> toFunctionJson() => {
+    'source': 'flutter',
+    'order_type': 'wholesale',
+    'manager_id': managerId,
     'customer': {
       'name': name,
       'phone': phone,
@@ -97,6 +109,7 @@ class CheckoutRequest {
             'product_id': item.product.id,
             'slug': item.product.slug,
             'qty': item.quantity,
+            'unit_type': item.orderUnit.unitType,
           },
         )
         .toList(),
@@ -107,6 +120,7 @@ class CheckoutRequest {
     'number': number,
     'customer_id': customerId,
     'client_order_id': clientOrderId,
+    'manager_id': managerId,
     'customer': {
       'name': name,
       'phone': phone,
@@ -139,6 +153,7 @@ class CheckoutRequest {
 
 class OrderReceipt {
   const OrderReceipt({
+    required this.provenance,
     this.orderId = '',
     required this.number,
     required this.total,
@@ -153,6 +168,7 @@ class OrderReceipt {
     this.supportPhone = '+998501551010',
   });
 
+  final BackendProvenance provenance;
   final String orderId;
   final String number;
   final double total;
@@ -164,10 +180,56 @@ class OrderReceipt {
   final DateTime? paymentExpiresAt;
   final String clientOrderId;
   final String supportPhone;
+
+  factory OrderReceipt.fromJson(Map<String, dynamic> json) {
+    final provenanceName = '${json['provenance'] ?? ''}';
+    final provenance = BackendProvenance.values.firstWhere(
+      (value) => value.name == provenanceName,
+      orElse: () => BackendProvenance.website,
+    );
+    final number = '${json['number'] ?? ''}'.trim();
+    final total = (json['total'] as num?)?.toDouble();
+    if (number.isEmpty || total == null || !total.isFinite || total < 0) {
+      throw const FormatException('Stored order receipt is invalid.');
+    }
+    return OrderReceipt(
+      provenance: provenance,
+      orderId: '${json['order_id'] ?? ''}',
+      number: number,
+      total: total,
+      paymentStatus: '${json['payment_status'] ?? 'pending'}',
+      paymentMethod: '${json['payment_method'] ?? 'manager'}',
+      paymentLabel: '${json['payment_label'] ?? 'Menejer orqali'}',
+      paymentInstructions: '${json['payment_instructions'] ?? ''}',
+      paymentReference: '${json['payment_reference'] ?? ''}',
+      paymentExpiresAt: DateTime.tryParse(
+        '${json['payment_expires_at'] ?? ''}',
+      ),
+      clientOrderId: '${json['client_order_id'] ?? ''}',
+      supportPhone: '${json['support_phone'] ?? '+998501551010'}',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'provenance': provenance.name,
+    'order_id': orderId,
+    'number': number,
+    'total': total,
+    'payment_status': paymentStatus,
+    'payment_method': paymentMethod,
+    'payment_label': paymentLabel,
+    'payment_instructions': paymentInstructions,
+    'payment_reference': paymentReference,
+    if (paymentExpiresAt != null)
+      'payment_expires_at': paymentExpiresAt!.toUtc().toIso8601String(),
+    'client_order_id': clientOrderId,
+    'support_phone': supportPhone,
+  };
 }
 
 class PaymentSubmission {
   const PaymentSubmission({
+    required this.provenance,
     required this.orderId,
     required this.method,
     required this.amount,
@@ -175,6 +237,7 @@ class PaymentSubmission {
     required this.note,
   });
 
+  final BackendProvenance provenance;
   final String orderId;
   final String method;
   final double? amount;
@@ -192,19 +255,26 @@ class PaymentSubmission {
 
 class PaymentSubmissionReceipt {
   const PaymentSubmissionReceipt({
+    required this.provenance,
     required this.orderId,
     required this.paymentStatus,
     required this.submittedAt,
   });
 
+  final BackendProvenance provenance;
   final String orderId;
   final String paymentStatus;
   final DateTime? submittedAt;
 }
 
 class CancelOrderRequest {
-  const CancelOrderRequest({required this.orderId, this.reason = ''});
+  const CancelOrderRequest({
+    required this.provenance,
+    required this.orderId,
+    this.reason = '',
+  });
 
+  final BackendProvenance provenance;
   final String orderId;
   final String reason;
 
@@ -216,6 +286,7 @@ class CancelOrderRequest {
 
 class CancelOrderReceipt {
   const CancelOrderReceipt({
+    required this.provenance,
     required this.orderId,
     required this.status,
     required this.paymentStatus,
@@ -223,6 +294,7 @@ class CancelOrderReceipt {
     required this.stockReleasedQop,
   });
 
+  final BackendProvenance provenance;
   final String orderId;
   final String status;
   final String paymentStatus;
@@ -240,6 +312,7 @@ class OrderLineItem {
     required this.bagSize,
     required this.bagPrice,
     required this.lineTotal,
+    this.unitType = bagUnitType,
     this.modelNo = '',
     this.variant = '',
     this.gender = 'women',
@@ -266,6 +339,7 @@ class OrderLineItem {
   final int bagSize;
   final double bagPrice;
   final double lineTotal;
+  final String unitType;
   final String image;
   final List<String> images;
   final List<String> sizes;
@@ -318,6 +392,7 @@ class OrderLineItem {
       bagSize: bagSize,
       bagPrice: bagPrice,
       lineTotal: lineTotal,
+      unitType: normalizeOrderUnitType('${data['unit_type'] ?? bagUnitType}'),
       image: image,
       images: images.isEmpty && image.isNotEmpty ? [image] : images,
       sizes: sizes.isEmpty
@@ -328,6 +403,13 @@ class OrderLineItem {
   }
 
   CartItem toCartItem() {
+    final selectedUnitType = normalizeOrderUnitType(unitType);
+    final selectedPerSize = sizeMix.isEmpty
+        ? (bagSize / (sizes.isEmpty ? sizeCount : sizes.length)).round().clamp(
+            1,
+            bagSize,
+          )
+        : sizeMix.first.qty;
     return CartItem(
       product: Product(
         id: id.isNotEmpty ? id : slug,
@@ -342,8 +424,18 @@ class OrderLineItem {
         variant: variant,
         fabric: fabric,
         description: description,
+        orderUnits: [
+          ProductOrderUnit(
+            unitType: selectedUnitType,
+            label: orderUnitLabel(selectedUnitType),
+            pieces: bagSize,
+            perSize: selectedPerSize,
+            minQty: 1,
+          ),
+        ],
       ),
       quantity: qty.clamp(1, 20),
+      unitType: selectedUnitType,
     );
   }
 }
@@ -364,6 +456,7 @@ class OrderSizeMix {
 
 class OrderSummary {
   const OrderSummary({
+    required this.provenance,
     required this.id,
     required this.number,
     required this.total,
@@ -387,6 +480,7 @@ class OrderSummary {
     this.items = const [],
   });
 
+  final BackendProvenance provenance;
   final String id;
   final String number;
   final double total;
@@ -409,7 +503,10 @@ class OrderSummary {
   final List<OrderActivity> activity;
   final List<OrderLineItem> items;
 
-  factory OrderSummary.fromMap(Map<String, dynamic> data) {
+  factory OrderSummary.fromMap(
+    Map<String, dynamic> data, {
+    required BackendProvenance provenance,
+  }) {
     final itemRows = data['items'] is List ? data['items'] as List : const [];
     final items = itemRows
         .whereType<Map>()
@@ -431,6 +528,7 @@ class OrderSummary {
               .toList()
         : const <OrderActivity>[];
     return OrderSummary(
+      provenance: provenance,
       id: '${data['id'] ?? data['order_id'] ?? ''}',
       number: '${data['number'] ?? ''}',
       total: (data['total'] as num?)?.toDouble() ?? 0,

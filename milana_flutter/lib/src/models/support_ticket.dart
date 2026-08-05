@@ -1,3 +1,7 @@
+import 'backend_provenance.dart';
+
+export 'backend_provenance.dart';
+
 class SupportTicket {
   const SupportTicket({
     required this.name,
@@ -50,6 +54,8 @@ class SupportTicket {
 
 class SupportTicketSummary {
   const SupportTicketSummary({
+    required this.provenance,
+    this.id = '',
     required this.number,
     required this.topic,
     required this.message,
@@ -59,6 +65,8 @@ class SupportTicketSummary {
     this.repliedAt,
   });
 
+  final BackendProvenance provenance;
+  final String id;
   final String number;
   final String topic;
   final String message;
@@ -67,8 +75,13 @@ class SupportTicketSummary {
   final String reply;
   final DateTime? repliedAt;
 
-  factory SupportTicketSummary.fromMap(Map<String, dynamic> data) {
+  factory SupportTicketSummary.fromMap(
+    Map<String, dynamic> data, {
+    required BackendProvenance provenance,
+  }) {
     return SupportTicketSummary(
+      provenance: provenance,
+      id: '${data['id'] ?? data['support_id'] ?? ''}',
       number: '${data['number'] ?? ''}',
       topic: '${data['topic'] ?? 'general'}',
       message: '${data['message'] ?? ''}',

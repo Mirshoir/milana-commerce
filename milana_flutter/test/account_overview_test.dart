@@ -12,6 +12,7 @@ void main() {
     DateTime? createdAt,
   }) {
     return OrderSummary(
+      provenance: BackendProvenance.website,
       id: 'order-$status-$paymentStatus',
       number: 'MP-2026-ABCD',
       total: total,
@@ -27,6 +28,7 @@ void main() {
 
   SupportTicketSummary ticket(String status) {
     return SupportTicketSummary(
+      provenance: BackendProvenance.website,
       number: 'MS-2026-ABCD',
       topic: 'payment',
       message: 'To‘lov haqida',
@@ -67,9 +69,9 @@ void main() {
     expect(overview.totalOrders, 4);
     expect(overview.activeOrders, 2);
     expect(overview.pendingPaymentOrders, 1);
-    expect(overview.totalQop, 6);
-    expect(overview.activeQop, 5);
-    expect(overview.activeClothes, 300);
+    expect(overview.totalPackages, 6);
+    expect(overview.activePackages, 5);
+    expect(overview.activePieces, 300);
     expect(overview.confirmedSpend, 1080);
     expect(overview.openSupportTickets, 2);
     expect(overview.latestOrderAt, DateTime.utc(2026, 6, 28));
@@ -81,5 +83,53 @@ void main() {
     expect(isClosedOrder(order(status: 'cancelled')), true);
     expect(isClosedOrder(order(status: 'failed')), true);
     expect(isClosedOrder(order(status: 'shipped')), false);
+  });
+
+  test('overview counts mixed packs and bags by their actual piece size', () {
+    const rows = [
+      OrderLineItem(
+        id: 'pack',
+        slug: 'pack',
+        name: 'Pack model',
+        qty: 2,
+        unitPrice: 5,
+        bagSize: 6,
+        bagPrice: 30,
+        lineTotal: 60,
+        unitType: 'pachka',
+      ),
+      OrderLineItem(
+        id: 'bag',
+        slug: 'bag',
+        name: 'Bag model',
+        qty: 1,
+        unitPrice: 5,
+        bagSize: 60,
+        bagPrice: 300,
+        lineTotal: 300,
+      ),
+    ];
+    final overview = buildAccountOverview(
+      orders: [
+        OrderSummary(
+          provenance: BackendProvenance.website,
+          id: 'mixed',
+          number: 'MP-2026-MIXED',
+          total: 360,
+          status: 'new',
+          paymentStatus: 'pending',
+          paymentMethod: 'manager',
+          paymentLabel: 'Menejer',
+          paymentInstructions: '',
+          createdAt: DateTime.utc(2026, 8, 4),
+          itemCount: 3,
+          items: rows,
+        ),
+      ],
+      supportTickets: const [],
+    );
+
+    expect(overview.activePackages, 3);
+    expect(overview.activePieces, 72);
   });
 }

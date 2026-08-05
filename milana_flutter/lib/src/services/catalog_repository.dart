@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:http/http.dart' as http;
 
 import '../models/product.dart';
@@ -8,8 +8,9 @@ import 'catalog_cache_store.dart';
 
 const String apiBaseUrl = String.fromEnvironment(
   'API_BASE_URL',
-  defaultValue: 'http://127.0.0.1:4173',
+  defaultValue: 'https://milanapremium.uz',
 );
+const Duration maxCatalogCacheAge = Duration(days: 7);
 
 enum CatalogLoadSource { fresh, cache, empty }
 
@@ -29,19 +30,37 @@ class CatalogRepository {
     required this.firebaseEnabled,
     CatalogCacheStore? cache,
     http.Client? client,
+    DateTime Function()? now,
+    this.cacheMaxAge = maxCatalogCacheAge,
   }) : _cache = cache ?? CatalogCacheStore(),
-       _client = client ?? http.Client();
+       _client = client ?? http.Client(),
+       _now = now ?? DateTime.now;
 
   final bool firebaseEnabled;
   final CatalogCacheStore _cache;
   final http.Client _client;
+  final DateTime Function() _now;
+  final Duration cacheMaxAge;
+  Future<List<Product>>? _inFlightLoad;
   CatalogLoadInfo _lastLoadInfo = const CatalogLoadInfo(
     source: CatalogLoadSource.empty,
   );
 
   CatalogLoadInfo get lastLoadInfo => _lastLoadInfo;
 
-  Future<List<Product>> loadProducts() async {
+  Future<List<Product>> loadProducts() {
+    final activeLoad = _inFlightLoad;
+    if (activeLoad != null) return activeLoad;
+
+    late final Future<List<Product>> nextLoad;
+    nextLoad = _loadProducts().whenComplete(() {
+      if (identical(_inFlightLoad, nextLoad)) _inFlightLoad = null;
+    });
+    _inFlightLoad = nextLoad;
+    return nextLoad;
+  }
+
+  Future<List<Product>> _loadProducts() async {
     try {
       final products = await _loadFreshProducts();
       if (products.isNotEmpty) {
@@ -76,9 +95,22 @@ class CatalogRepository {
 
   Future<_CatalogCacheSnapshot> _loadCacheSnapshot({String error = ''}) async {
     try {
+      final cachedAt = await _cache.cachedAt();
+      final age = cachedAt == null
+          ? null
+          : _now().toUtc().difference(cachedAt.toUtc());
+      if (cachedAt == null ||
+          age == null ||
+          age.isNegative ||
+          age > cacheMaxAge) {
+        return _CatalogCacheSnapshot(
+          cachedAt: cachedAt,
+          error: 'cache-expired',
+        );
+      }
       return _CatalogCacheSnapshot(
         products: await _cache.load(),
-        cachedAt: await _cache.cachedAt(),
+        cachedAt: cachedAt,
         error: error,
       );
     } catch (_) {
@@ -95,29 +127,20 @@ class CatalogRepository {
   }
 
   Future<List<Product>> _loadFreshProducts() async {
-    if (firebaseEnabled) {
-      final fromFirebase = await _loadFirestoreProducts();
-      if (fromFirebase.isNotEmpty) return fromFirebase;
-    }
+    // The website commerce API is the single catalog authority, independent of
+    // the database driver used by a particular deployment.
+    // Firebase remains enabled for mobile identity and account sync only.
     return _loadApiProducts();
   }
 
-  Future<List<Product>> _loadFirestoreProducts() async {
-    final snap = await FirebaseFirestore.instance
-        .collection('products')
-        .where('active', isEqualTo: true)
-        .limit(500)
-        .get();
-    return snap.docs
-        .map((doc) => Product.fromJson({...doc.data(), 'doc_id': doc.id}))
-        .where((product) => product.active)
-        .toList()
-      ..sort((a, b) => a.name.compareTo(b.name));
-  }
-
   Future<List<Product>> _loadApiProducts() async {
-    final uri = Uri.parse('$apiBaseUrl/api/products?limit=500');
-    final response = await _client.get(uri);
+    final uri = Uri.parse('$apiBaseUrl/api/products?limit=2500');
+    final response = await _client
+        .get(uri)
+        .timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => throw TimeoutException('Catalog request timed out'),
+        );
     if (response.statusCode != 200) {
       throw Exception('Catalog failed: ${response.statusCode}');
     }
@@ -134,25 +157,10 @@ class CatalogRepository {
       if (image.startsWith('/')) return '$apiBaseUrl$image';
       return image;
     }).toList();
-    return Product(
-      id: product.id,
-      slug: product.slug,
-      name: product.name,
-      gender: product.gender,
-      category: product.category,
-      price: product.price,
-      sizes: product.sizes,
-      images: images,
-      modelNo: product.modelNo,
-      variant: product.variant,
-      fabric: product.fabric,
-      description: product.description,
-      rating: product.rating,
-      reviews: product.reviews,
-      active: product.active,
-      availableQop: product.availableQop,
-    );
+    return product.copyWith(images: images);
   }
+
+  void close() => _client.close();
 }
 
 class _CatalogCacheSnapshot {

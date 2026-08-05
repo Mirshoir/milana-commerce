@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import '../models/product.dart';
 import 'catalog_repository.dart';
 
+const _defaultAssistantTimeout = Duration(seconds: 20);
+
 class AssistantReply {
   const AssistantReply({
     required this.reply,
@@ -18,28 +20,39 @@ class AssistantReply {
 }
 
 class AssistantService {
-  AssistantService({http.Client? client, String? baseUrl})
-    : _client = client ?? http.Client(),
-      _baseUrl = (baseUrl ?? apiBaseUrl).replaceAll(RegExp(r'/+$'), '');
+  AssistantService({
+    http.Client? client,
+    String? baseUrl,
+    this.requestTimeout = _defaultAssistantTimeout,
+  }) : _client = client ?? http.Client(),
+       _baseUrl = (baseUrl ?? apiBaseUrl).replaceAll(RegExp(r'/+$'), '');
 
   final http.Client _client;
   final String _baseUrl;
+  final Duration requestTimeout;
 
   Future<AssistantReply> send({
     required String message,
     int? sessionId,
     String lang = 'uz',
   }) async {
-    final response = await _client.post(
-      Uri.parse('$_baseUrl/api/chat/message'),
-      headers: const {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'session_id': sessionId,
-        'message': message,
-        'lang': lang,
-      }),
-    );
-    final body = jsonDecode(response.body.isEmpty ? '{}' : response.body);
+    final response = await _client
+        .post(
+          Uri.parse('$_baseUrl/api/chat/message'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'session_id': sessionId,
+            'message': message,
+            'lang': lang,
+          }),
+        )
+        .timeout(requestTimeout);
+    dynamic body;
+    try {
+      body = jsonDecode(response.body.isEmpty ? '{}' : response.body);
+    } on FormatException {
+      body = const <String, dynamic>{};
+    }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final error = body is Map ? body['error'] : null;
       throw Exception(error ?? 'assistant_failed');
@@ -68,23 +81,6 @@ class AssistantService {
       if (image.startsWith('/')) return '$_baseUrl$image';
       return image;
     }).toList();
-    return Product(
-      id: product.id,
-      slug: product.slug,
-      name: product.name,
-      gender: product.gender,
-      category: product.category,
-      price: product.price,
-      sizes: product.sizes,
-      images: images,
-      modelNo: product.modelNo,
-      variant: product.variant,
-      fabric: product.fabric,
-      description: product.description,
-      rating: product.rating,
-      reviews: product.reviews,
-      active: product.active,
-      availableQop: product.availableQop,
-    );
+    return product.copyWith(images: images);
   }
 }
