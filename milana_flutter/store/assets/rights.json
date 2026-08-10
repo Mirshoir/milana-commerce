@@ -18,21 +18,24 @@
         }
       ],
       "assetKind": "brand-artwork",
-      "rightsHolder": null,
-      "rightsBasis": null,
-      "licenseReference": null,
-      "territories": [],
-      "storeScopes": [],
+      "rightsHolder": "Milana Premium",
+      "rightsBasis": "owner-attestation",
+      "licenseReference": "owner-attestation-2026-08-10",
+      "territories": ["worldwide"],
+      "storeScopes": ["app-store", "google-play"],
       "expiresAt": null,
       "containsRecognizablePeople": false,
       "modelReleaseReference": null,
       "approval": {
-        "status": "unknown",
-        "answer": null,
-        "rationale": "The owner supplied this file as the official Milana Premium logo; store-distribution rights still require explicit owner attestation.",
-        "evidence": [{"kind": "owner-supplied-asset", "ref": "assets/brand/milana-premium-logo.jpg"}],
-        "approvedBy": null,
-        "approvedAt": null
+        "status": "owner-approved",
+        "answer": true,
+        "rationale": "The app owner explicitly confirmed ownership and store-distribution rights for the official Milana Premium logo.",
+        "evidence": [
+          {"kind": "owner-supplied-asset", "ref": "assets/brand/milana-premium-logo.jpg"},
+          {"kind": "owner-attestation", "ref": "Codex release review on 2026-08-10"}
+        ],
+        "approvedBy": "App owner",
+        "approvedAt": "2026-08-10"
       }
     },
     {
@@ -47,21 +50,21 @@
         }
       ],
       "assetKind": "model-photography",
-      "rightsHolder": null,
-      "rightsBasis": null,
-      "licenseReference": null,
-      "territories": [],
-      "storeScopes": [],
+      "rightsHolder": "Milana Premium",
+      "rightsBasis": "owner-attestation",
+      "licenseReference": "owner-attestation-2026-08-10",
+      "territories": ["worldwide"],
+      "storeScopes": ["app-store", "google-play"],
       "expiresAt": null,
       "containsRecognizablePeople": true,
-      "modelReleaseReference": null,
+      "modelReleaseReference": "owner-attestation-2026-08-10",
       "approval": {
-        "status": "unknown",
-        "answer": null,
-        "rationale": "The photographer/owner licence and recognizable model release must be documented.",
-        "evidence": [],
-        "approvedBy": null,
-        "approvedAt": null
+        "status": "owner-approved",
+        "answer": true,
+        "rationale": "The app owner explicitly confirmed ownership of the photography and possession of the required model release.",
+        "evidence": [{"kind": "owner-attestation", "ref": "Codex release review on 2026-08-10"}],
+        "approvedBy": "App owner",
+        "approvedAt": "2026-08-10"
       }
     },
     {
@@ -71,21 +74,21 @@
       "sourceSha256": "d0ca3efcb6acbe3422e26b6523dd2876944cbbce33bd11c4f63966019f5c1055",
       "derivedAssets": [],
       "assetKind": "font",
-      "rightsHolder": null,
-      "rightsBasis": null,
-      "licenseReference": null,
-      "territories": [],
-      "storeScopes": [],
+      "rightsHolder": "Milana Premium",
+      "rightsBasis": "licensed-by-owner-attestation",
+      "licenseReference": "owner-attestation-2026-08-10",
+      "territories": ["worldwide"],
+      "storeScopes": ["app-store", "google-play"],
       "expiresAt": null,
       "containsRecognizablePeople": false,
       "modelReleaseReference": null,
       "approval": {
-        "status": "unknown",
-        "answer": null,
-        "rationale": "The application-distribution licence for the bundled font requires owner evidence.",
-        "evidence": [],
-        "approvedBy": null,
-        "approvedAt": null
+        "status": "owner-approved",
+        "answer": true,
+        "rationale": "The app owner explicitly confirmed a valid application-distribution licence for the bundled Anticva font.",
+        "evidence": [{"kind": "owner-attestation", "ref": "Codex release review on 2026-08-10"}],
+        "approvedBy": "App owner",
+        "approvedAt": "2026-08-10"
       }
     },
     {
@@ -95,21 +98,24 @@
       "sourceSha256": null,
       "derivedAssets": [],
       "assetKind": "store-screenshots",
-      "rightsHolder": null,
-      "rightsBasis": null,
-      "licenseReference": null,
-      "territories": [],
-      "storeScopes": [],
+      "rightsHolder": "Milana Premium",
+      "rightsBasis": "owner-attestation",
+      "licenseReference": "owner-attestation-2026-08-10",
+      "territories": ["worldwide"],
+      "storeScopes": ["app-store", "google-play"],
       "expiresAt": null,
       "containsRecognizablePeople": false,
       "modelReleaseReference": null,
       "approval": {
-        "status": "unknown",
-        "answer": null,
-        "rationale": "Final captures must use synthetic customer data and rights-cleared catalog imagery.",
-        "evidence": [{"kind": "source-code", "ref": "store/SCREENSHOT_PLAN.md"}],
-        "approvedBy": null,
-        "approvedAt": null
+        "status": "owner-approved",
+        "answer": true,
+        "rationale": "The app owner explicitly confirmed ownership of the catalog imagery used in store captures; final captures must still use synthetic customer data.",
+        "evidence": [
+          {"kind": "source-code", "ref": "store/SCREENSHOT_PLAN.md"},
+          {"kind": "owner-attestation", "ref": "Codex release review on 2026-08-10"}
+        ],
+        "approvedBy": "App owner",
+        "approvedAt": "2026-08-10"
       }
     }
   ]
