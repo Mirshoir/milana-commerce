@@ -62,6 +62,9 @@ In Firebase Console:
 - Enable Authentication with Email/Password.
 - Enable Cloud Firestore.
 - Enable Cloud Functions billing/deployment for callable checkout.
+- Enable Cloud Messaging. Upload the APNs authentication key for the iOS app,
+  keep the iOS Push Notifications capability enabled, and create a Web Push
+  certificate if web push will be shipped.
 - Optional later: enable Storage for product images if images move away from the existing catalog URLs.
 
 ## 3. Export and import catalog
@@ -138,6 +141,14 @@ API and never create a second manager-unaware Firebase order.
 The older `placeOrder` callable remains available for legacy/emulator
 verification, but current Flutter checkout does not use it.
 
+Distributor onboarding uses `submitDistributorApplication`. It supports guest
+leads, requires consent, generates an idempotent application number, and limits
+repeated submissions per normalized phone. A Firebase account with the
+`manager` or `admin` claim can call `updateDistributorApplicationStatus`.
+Signed-in customers can also call `updateNotificationPreferences`,
+`registerNotificationDevice`, and `markNotificationRead`; direct client writes
+to the underlying collections are denied by Firestore rules.
+
 `verify:firebase` checks the Firebase Web/Android/iOS apps, active product count, Firebase-hosted `/uploads/...` product images, Hosting URL, deployed checkout API proxies and the remaining support/payment/admin Cloud Functions, and required Function runtime configuration such as `PAYMENT_WEBHOOK_SECRET` on `paymentWebhook`. Use `--skip-mobile-apps`, `--skip-functions`, `--skip-function-env`, `--skip-hosting`, or `--skip-image-hosting` only for partial troubleshooting.
 
 ### Admin and ERP roles
@@ -172,6 +183,11 @@ npm run build:firebase:ios:nocodesign
 ```
 
 `build:firebase:android` reads `firebase/mobile-dart-defines.env` and builds a release APK. `build:firebase:ios:nocodesign` builds iOS with the same Firebase settings without code signing, which is useful for CI validation.
+
+For Android/iOS push, verify a real-device token registration and send a test
+message from Firebase Console before release. For web push, add the public
+`FIREBASE_WEB_PUSH_VAPID_KEY` define and a Firebase Messaging service worker;
+the mobile notification inbox remains usable even when web push is not enabled.
 
 ## Local Firebase emulator mode
 
@@ -234,6 +250,13 @@ flutter run -d emulator --dart-define=API_BASE_URL=http://10.0.2.2:4173
 ```
 
 ## Firestore collections expected by the app
+
+The B2B platform additionally creates `distributor_applications`,
+`customer_notifications`, `notification_preferences`, and private
+`notification_devices`. `distributor_rate_limits` contains only hashed rate
+keys and counters. Customer-facing reads are owner-scoped; all writes go
+through callable functions. Deploy both rules and indexes before enabling the
+new screens in production.
 
 ### `products`
 

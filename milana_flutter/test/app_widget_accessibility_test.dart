@@ -3,10 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:milana_flutter/src/app.dart';
+import 'package:milana_flutter/src/localization/app_localization.dart';
 import 'package:milana_flutter/src/models/cart_item.dart';
 import 'package:milana_flutter/src/models/order.dart';
 import 'package:milana_flutter/src/models/product.dart';
 import 'package:milana_flutter/src/services/auth_service.dart';
+import 'package:milana_flutter/src/services/assistant_service.dart';
 import 'package:milana_flutter/src/services/cart_controller.dart';
 import 'package:milana_flutter/src/services/cart_store.dart';
 import 'package:milana_flutter/src/services/catalog_repository.dart';
@@ -36,7 +38,10 @@ void main() {
       );
       await tester.pump(const Duration(milliseconds: 100));
 
-      final initialCta = find.widgetWithText(FilledButton, r'$30.00 · savatga');
+      final initialCta = find.widgetWithText(
+        FilledButton,
+        r'Добавить в корзину · $30.00',
+      );
       expect(initialCta, findsOneWidget);
       expect(tester.getBottomRight(initialCta).dy, lessThanOrEqualTo(844));
 
@@ -53,61 +58,64 @@ void main() {
       expect(addedItems.single.product.id, _product.id);
       expect(addedItems.single.unitType, packUnitType);
       expect(addedItems.single.quantity, 1);
-      expect(find.text('Savatga qo‘shildi'), findsOneWidget);
+      expect(find.text('Добавлено в корзину'), findsOneWidget);
       expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
 
       await tester.pump(const Duration(seconds: 2));
       await tester.pump(const Duration(milliseconds: 1));
 
-      expect(find.text(r'$30.00 · savatga'), findsOneWidget);
-      expect(find.text('Savatga qo‘shildi'), findsNothing);
+      expect(find.text(r'Добавить в корзину · $30.00'), findsOneWidget);
+      expect(find.text('Добавлено в корзину'), findsNothing);
     });
 
-    testWidgets(
-      'exposes unit semantics and disables purchase when unavailable',
-      (tester) async {
-        _useViewport(tester, const Size(390, 844));
-        final semantics = tester.ensureSemantics();
-        var addCalls = 0;
+    testWidgets('exposes unit semantics and disables purchase when unavailable', (
+      tester,
+    ) async {
+      _useViewport(tester, const Size(390, 844));
+      final semantics = tester.ensureSemantics();
+      var addCalls = 0;
 
-        await tester.pumpWidget(
-          _testApp(
-            ProductSheet(
-              product: _unavailableProduct,
-              relatedProducts: const <Product>[],
-              onAdd: (_) {
-                addCalls += 1;
-                return true;
-              },
-              onOpenRelated: (_) {},
-              onAddRelated: (_) {},
-            ),
+      await tester.pumpWidget(
+        _testApp(
+          ProductSheet(
+            product: _unavailableProduct,
+            relatedProducts: const <Product>[],
+            onAdd: (_) {
+              addCalls += 1;
+              return true;
+            },
+            onOpenRelated: (_) {},
+            onAddRelated: (_) {},
           ),
-        );
-        await tester.pump(const Duration(milliseconds: 100));
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
 
-        expect(
-          find.bySemanticsLabel(
-            RegExp('Qadoq, 6 dona, har o‘lchamdan 1 tadan'),
+      expect(
+        find.bySemanticsLabel(
+          RegExp(
+            '${orderUnitLabel(packUnitType, languageCode: 'ru')}, 6 шт., по 1 шт.',
           ),
-          findsOneWidget,
-        );
-        expect(
-          find.bySemanticsLabel(
-            RegExp('Qop, 60 dona, har o‘lchamdan 10 tadan'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.bySemanticsLabel(
+          RegExp(
+            '${orderUnitLabel(bagUnitType, languageCode: 'ru')}, 60 шт., по 10 шт.',
           ),
-          findsOneWidget,
-        );
+        ),
+        findsOneWidget,
+      );
 
-        final unavailableCta = find.widgetWithText(FilledButton, 'Mavjud emas');
-        expect(unavailableCta, findsOneWidget);
-        expect(tester.widget<FilledButton>(unavailableCta).onPressed, isNull);
-        await tester.tap(unavailableCta, warnIfMissed: false);
-        await tester.pump(const Duration(milliseconds: 50));
-        expect(addCalls, 0);
-        semantics.dispose();
-      },
-    );
+      final unavailableCta = find.widgetWithText(FilledButton, 'Нет в наличии');
+      expect(unavailableCta, findsOneWidget);
+      expect(tester.widget<FilledButton>(unavailableCta).onPressed, isNull);
+      await tester.tap(unavailableCta, warnIfMissed: false);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(addCalls, 0);
+      semantics.dispose();
+    });
   });
 
   group('CatalogLoadingView', () {
@@ -120,11 +128,11 @@ void main() {
       await tester.pumpWidget(_testApp(const CatalogLoadingView()));
       await tester.pump(const Duration(milliseconds: 50));
 
-      final loading = find.bySemanticsLabel('Katalog yuklanmoqda');
+      final loading = find.bySemanticsLabel('Загрузка каталога');
       expect(loading, findsOneWidget);
       expect(
         tester.getSemantics(loading),
-        isSemantics(label: 'Katalog yuklanmoqda', isLiveRegion: true),
+        isSemantics(label: 'Загрузка каталога', isLiveRegion: true),
       );
       _expectSkeletonGrid(tester, columns: 2, itemCount: 4);
       expect(tester.takeException(), isNull);
@@ -140,15 +148,194 @@ void main() {
       await tester.pump(const Duration(milliseconds: 50));
 
       _expectSkeletonGrid(tester, columns: 4, itemCount: 8);
-      expect(find.bySemanticsLabel('Katalog yuklanmoqda'), findsOneWidget);
+      expect(find.bySemanticsLabel('Загрузка каталога'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+  });
+
+  testWidgets('AI responses expose a working report flow', (tester) async {
+    _useViewport(tester, const Size(390, 844));
+    final reports = <Map<String, String>>[];
+    final language = LanguageController(languageCode: 'en');
+
+    await tester.pumpWidget(
+      AppLanguageScope(
+        notifier: language,
+        child: MaterialApp(
+          home: Scaffold(
+            body: AssistantSheet(
+              assistant: AssistantService(baseUrl: 'https://example.test'),
+              onProduct: (_) {},
+              onAdd: (_) {},
+              onContactSales: () {},
+              onReport:
+                  ({
+                    required response,
+                    required reasonCode,
+                    required comment,
+                  }) async {
+                    reports.add({
+                      'response': response,
+                      'reason': reasonCode,
+                      'comment': comment,
+                    });
+                    return 'MS-TEST';
+                  },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('Report response'));
+    await tester.pumpAndSettle();
+    expect(find.text('Report AI response'), findsOneWidget);
+
+    await tester.tap(find.text('Offensive or unsafe'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Inaccurate or misleading').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Additional comment (optional)'),
+      'The answer has the wrong delivery price.',
+    );
+    await tester.tap(find.text('Submit report'));
+    await tester.pumpAndSettle();
+
+    expect(reports, hasLength(1));
+    expect(reports.single['reason'], 'inaccurate_or_misleading');
+    expect(reports.single['response'], contains('Ask about model'));
+    expect(
+      reports.single['comment'],
+      'The answer has the wrong delivery price.',
+    );
+    expect(find.text('Report submitted. Thank you.'), findsOneWidget);
   });
 
   testWidgets('AppShell shows branded Uzbek navigation and changes tabs', (
     tester,
   ) async {
-    _useViewport(tester, const Size(900, 900));
+    _useViewport(tester, const Size(390, 844));
+    final catalog = _MemoryCatalogRepository(
+      MockClient((_) async => http.Response('[]', 200)),
+    );
+    final orders = OrderRepository(
+      firebaseEnabled: false,
+      baseUrl: 'http://127.0.0.1:1',
+      client: MockClient((_) async => http.Response('[]', 200)),
+    );
+    final auth = AuthService(firebaseEnabled: false);
+    final cart = CartController(store: _MemoryCartStore(), auth: auth);
+    addTearDown(() {
+      cart.dispose();
+      auth.dispose();
+      orders.close();
+      catalog.close();
+    });
+    final languageController = LanguageController(languageCode: 'uz');
+
+    await tester.pumpWidget(
+      AppLanguageScope(
+        notifier: languageController,
+        child: MaterialApp(
+          home: AppShell(
+            catalog: catalog,
+            orders: orders,
+            auth: auth,
+            cart: cart,
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    for (final label in const [
+      'Asosiy',
+      'Katalog',
+      'Savat',
+      'Hamkor',
+      'Akkaunt',
+    ]) {
+      expect(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text(label),
+        ),
+        findsOneWidget,
+      );
+    }
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      0,
+    );
+    expect(find.byIcon(Icons.business_center_outlined), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('Katalog'),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      1,
+    );
+    expect(find.byType(CatalogScreen), findsOneWidget);
+    expect(find.text('MILANA'), findsOneWidget);
+    expect(find.text('PREMIUM'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 50));
+  });
+
+  testWidgets('account deletion stays inside collapsed security settings', (
+    tester,
+  ) async {
+    _useViewport(tester, const Size(390, 844));
+    var deleteCalls = 0;
+
+    await tester.pumpWidget(
+      _testApp(
+        ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            AccountDashboardCard(
+              customer: const Customer(
+                id: 'customer-1',
+                email: 'buyer@example.test',
+                name: 'Buyer',
+                phone: '+998 90 123 45 67',
+              ),
+              onEdit: () {},
+              onSignOut: () {},
+            ),
+            const SizedBox(height: 16),
+            AccountSecurityPanel(onDelete: () => deleteCalls += 1),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Удалить аккаунт'), findsNothing);
+    expect(find.text('Аккаунт и безопасность'), findsOneWidget);
+
+    await tester.tap(find.text('Аккаунт и безопасность'));
+    await tester.pumpAndSettle();
+    expect(find.text('Удалить аккаунт'), findsOneWidget);
+
+    await tester.tap(find.text('Удалить аккаунт'));
+    await tester.pump();
+    expect(deleteCalls, 1);
+  });
+
+  testWidgets('home header wordmark fits beside actions at phone width', (
+    tester,
+  ) async {
+    _useViewport(tester, const Size(375, 844));
     final catalog = _MemoryCatalogRepository(
       MockClient((_) async => http.Response('[]', 200)),
     );
@@ -178,41 +365,38 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 100));
 
-    for (final label in const [
-      'Asosiy',
-      'Katalog',
-      'Savat',
-      'Yordam',
-      'Akkaunt',
-    ]) {
-      expect(
-        find.descendant(
-          of: find.byType(NavigationBar),
-          matching: find.text(label),
-        ),
-        findsOneWidget,
-      );
-    }
-    expect(
-      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-      0,
-    );
+    expect(find.text('MILANA PREMIUM'), findsOneWidget);
+    expect(find.byType(FittedBox), findsWidgets);
+    expect(tester.takeException(), isNull);
 
-    await tester.tap(
-      find.descendant(
-        of: find.byType(NavigationBar),
-        matching: find.text('Katalog'),
-      ),
-    );
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 50));
+  });
 
-    expect(
-      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-      1,
+  testWidgets('MilanaApp falls back to the shell for unknown routes', (
+    tester,
+  ) async {
+    final catalog = _MemoryCatalogRepository(
+      MockClient((_) async => http.Response('[]', 200)),
     );
-    expect(find.byType(CatalogScreen), findsOneWidget);
-    expect(find.text('MILANA'), findsOneWidget);
-    expect(find.text('PREMIUM'), findsOneWidget);
+    final orders = OrderRepository(
+      firebaseEnabled: false,
+      baseUrl: 'http://127.0.0.1:1',
+      client: MockClient((_) async => http.Response('[]', 200)),
+    );
+    final auth = AuthService(firebaseEnabled: false);
+
+    await tester.pumpWidget(
+      MilanaApp(catalog: catalog, orders: orders, auth: auth),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+
+    tester.state<NavigatorState>(find.byType(Navigator)).pushNamed('/catalog');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(AppShell), findsWidgets);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 50));
@@ -254,8 +438,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Savat bo‘sh'), findsOneWidget);
-    expect(find.text('Katalogga o‘tish'), findsOneWidget);
+    expect(find.text('Корзина пуста'), findsOneWidget);
+    expect(find.text('Перейти в каталог'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -342,7 +526,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.drag(find.byType(ListView).first, const Offset(0, -700));
     await tester.pump();
-    await tester.tap(find.text('FILTERLAR'));
+    await tester.tap(find.text('Показать фильтры'));
     await tester.pump();
 
     expect(find.byType(ChoiceChip), findsWidgets);

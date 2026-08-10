@@ -15,6 +15,12 @@ void main() {
     expect(tabIndexFromFragment('akkaunt'), 4);
   });
 
+  test('tabIndexFromFragment opens the distributor partnership area', () {
+    expect(tabIndexFromFragment('partnership'), 3);
+    expect(tabIndexFromFragment('distributor'), 3);
+    expect(tabIndexFromFragment('hamkorlik'), 3);
+  });
+
   test('tabIndexFromFragment ignores casing and surrounding whitespace', () {
     expect(tabIndexFromFragment(' CART '), 2);
     expect(tabIndexFromFragment('Support'), 3);

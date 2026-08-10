@@ -161,7 +161,10 @@ void main() {
     controller.add(product);
     await settleCart();
 
-    await auth.deleteAccount(confirmation: 'DELETE');
+    await auth.deleteAccount(
+      confirmation: 'DELETE',
+      reasonCode: 'technical_problems',
+    );
     await settleCart();
     await auth.signIn('delete-me@example.test', 'strong-pass');
     await settleCart();
@@ -292,6 +295,100 @@ void main() {
       expect(controller.bagCount, 1);
       expect(controller.pieceCount, 66);
       expect(controller.total, 330);
+    },
+  );
+
+  test('mixed Pack and Bag lines cannot exceed aggregate stock', () async {
+    SharedPreferences.setMockInitialValues({});
+    const stockedProduct = Product(
+      id: 'one-qop-product',
+      slug: 'one-qop-product',
+      name: 'One qop product',
+      gender: 'women',
+      category: 'pajamas',
+      price: 5,
+      sizes: ['44', '46', '48', '50', '52', '54'],
+      images: [],
+      availableQop: 1,
+      orderUnits: [
+        ProductOrderUnit(
+          unitType: packUnitType,
+          label: 'Qadoq',
+          pieces: 6,
+          perSize: 1,
+        ),
+        ProductOrderUnit(
+          unitType: bagUnitType,
+          label: 'Qop',
+          pieces: 60,
+          perSize: 10,
+        ),
+      ],
+    );
+    final controller = CartController(store: CartStore());
+    await settleCart();
+
+    controller.add(stockedProduct, unitType: bagUnitType);
+
+    expect(controller.canAdd(stockedProduct, unitType: packUnitType), isFalse);
+    expect(controller.quantityLimit(stockedProduct, unitType: packUnitType), 0);
+
+    controller.add(stockedProduct, unitType: packUnitType);
+
+    expect(controller.items, hasLength(1));
+    expect(controller.bagCount, 1);
+    expect(controller.packCount, 0);
+    expect(controller.pieceCount, 60);
+    controller.dispose();
+  });
+
+  test(
+    'cart refresh clamps mixed units to the latest aggregate stock',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      const productWithRoom = Product(
+        id: 'shrinking-stock',
+        slug: 'shrinking-stock',
+        name: 'Shrinking stock',
+        gender: 'women',
+        category: 'pajamas',
+        price: 5,
+        sizes: ['44', '46', '48', '50', '52', '54'],
+        images: [],
+        availableQop: 2,
+        orderUnits: [
+          ProductOrderUnit(
+            unitType: packUnitType,
+            label: 'Qadoq',
+            pieces: 6,
+            perSize: 1,
+          ),
+          ProductOrderUnit(
+            unitType: bagUnitType,
+            label: 'Qop',
+            pieces: 60,
+            perSize: 10,
+          ),
+        ],
+      );
+      final controller = CartController(store: CartStore());
+      await settleCart();
+      controller.add(productWithRoom, unitType: bagUnitType);
+      controller.addItem(
+        const CartItem(
+          product: productWithRoom,
+          unitType: packUnitType,
+          quantity: 10,
+        ),
+      );
+
+      controller.refreshProducts([productWithRoom.copyWith(availableQop: 1)]);
+
+      expect(controller.items, hasLength(1));
+      expect(controller.bagCount, 1);
+      expect(controller.packCount, 0);
+      expect(controller.pieceCount, 60);
+      controller.dispose();
     },
   );
 }

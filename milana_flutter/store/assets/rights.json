@@ -5,12 +5,16 @@
     {
       "id": "app-icon-artwork",
       "platforms": ["android", "ios"],
-      "sourcePath": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
-      "sourceSha256": "63ad64b4db3e13b031da0c79b0b9e7f96e35d764ddffabda908257fece745c62",
+      "sourcePath": "assets/brand/milana-premium-logo.jpg",
+      "sourceSha256": "52a217b00599fdbeaefba2759c3f8ffcb88738fde3dcd144ed584cf99b5d6114",
       "derivedAssets": [
         {
+          "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
+          "sha256": "e96be620b935da88e5b86e263aeecf112657505a2b7841c26b60cc7a3a7574de"
+        },
+        {
           "path": "store/google-play/graphics/app-icon-512.png",
-          "sha256": "ebc5ec853d08081bf286b069831968dac7fc86b3433ae3c5087920bcbf8c5dc7"
+          "sha256": "0904d1ef4ae45609a06207ac7f68bc9a1655aa1a7dfeef594c3b81289ea36dc7"
         }
       ],
       "assetKind": "brand-artwork",
@@ -25,8 +29,8 @@
       "approval": {
         "status": "unknown",
         "answer": null,
-        "rationale": "Brand ownership and store-marketing usage require owner attestation.",
-        "evidence": [],
+        "rationale": "The owner supplied this file as the official Milana Premium logo; store-distribution rights still require explicit owner attestation.",
+        "evidence": [{"kind": "owner-supplied-asset", "ref": "assets/brand/milana-premium-logo.jpg"}],
         "approvedBy": null,
         "approvedAt": null
       }

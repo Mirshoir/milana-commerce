@@ -149,13 +149,13 @@ void main() {
       supportPhone: '+998501551010',
     );
 
-    final text = orderReceiptShareText(receipt);
+    final text = orderReceiptShareText(receipt, languageCode: 'uz');
 
-    expect(text, contains('Milana Premium buyurtma'));
+    expect(text, contains('Buyurtma ma’lumoti'));
     expect(text, contains('Raqam: MP-2026-ABCD'));
     expect(text, contains(r'Jami: $540.00'));
-    expect(text, contains('To‘lov: Payme'));
-    expect(text, contains('Reference: MP2026ABCD'));
+    expect(text, contains('To‘lov turi: Payme'));
+    expect(text, contains('To‘lov referecensiya: MP2026ABCD'));
     expect(text, contains('Menejer: +998501551010'));
   });
 }

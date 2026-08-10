@@ -121,4 +121,40 @@ void main() {
     expect(paymentReferenceFromOrderNumber('MP-2026-abcd'), 'MP2026ABCD');
     expect(paymentReferenceFromOrderNumber(''), '');
   });
+
+  test('order summary parses website string numbers and product_id rows', () {
+    final order = OrderSummary.fromMap({
+      'id': 'order-2',
+      'number': 'MP-2026-STR',
+      'total': '60.50',
+      'items': [
+        {
+          'product_id': '5288',
+          'slug': 'string-row',
+          'name': 'String row',
+          'qty': '2',
+          'unit_type': 'pack',
+          'unit_price': '5',
+          'bag_size': '6',
+          'price': '30',
+          'line_total': '60',
+          'size_mix': [
+            {'size': '44', 'qty': '1'},
+          ],
+        },
+      ],
+    }, provenance: BackendProvenance.website);
+
+    expect(order.total, 60.5);
+    expect(order.itemCount, 2);
+    expect(order.items.single.id, '5288');
+    expect(order.items.single.qty, 2);
+    expect(order.items.single.unitType, packUnitType);
+    expect(order.items.single.unitPrice, 5);
+    expect(order.items.single.bagSize, 6);
+    expect(order.items.single.bagPrice, 30);
+    expect(order.items.single.lineTotal, 60);
+    expect(order.items.single.sizeMix.single.qty, 1);
+    expect(order.items.single.toCartItem().product.id, '5288');
+  });
 }

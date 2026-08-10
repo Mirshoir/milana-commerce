@@ -7,6 +7,7 @@ import '../models/product.dart';
 class CatalogCacheStore {
   static const _key = 'milana_catalog_products';
   static const _timestampKey = 'milana_catalog_cached_at';
+  static const _maxCachedItems = 2500;
 
   Future<List<Product>> load() async {
     try {
@@ -19,6 +20,7 @@ class CatalogCacheStore {
           .whereType<Map>()
           .map((row) => Product.fromJson(Map<String, dynamic>.from(row)))
           .where((product) => product.active)
+          .take(_maxCachedItems)
           .toList();
     } catch (_) {
       return const <Product>[];
@@ -37,7 +39,10 @@ class CatalogCacheStore {
   }
 
   Future<void> save(List<Product> products) async {
-    final active = products.where((product) => product.active).toList();
+    final active = products
+        .where((product) => product.active)
+        .take(_maxCachedItems)
+        .toList();
     if (active.isEmpty) return;
     try {
       final prefs = await SharedPreferences.getInstance();

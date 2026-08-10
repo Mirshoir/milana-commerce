@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  accountDeletionFeedbackDocument,
   erpEventAnonymizationPatch,
   normalizeAccountDeletionRequest,
   orderAnonymizationPatch,
@@ -14,14 +15,27 @@ const {
 const nowIso = '2026-08-04T08:00:00.000Z';
 const deleteField = Symbol('delete-field');
 const options = { deleteField, nowIso };
+const validDeletionRequest = {
+  confirmation: 'DELETE',
+  reason_code: 'missing_features',
+  reason_detail: '  Better stock filters would help.  ',
+  locale: 'en',
+};
 
 test('requires the exact DELETE account-deletion confirmation', () => {
-  assert.deepEqual(normalizeAccountDeletionRequest({ confirmation: 'DELETE' }), {
+  assert.deepEqual(normalizeAccountDeletionRequest(validDeletionRequest), {
     confirmation: 'DELETE',
+    reasonCode: 'missing_features',
+    reasonDetail: 'Better stock filters would help.',
+    locale: 'en',
   });
   for (const confirmation of ['delete', ' DELETE', 'DELETE ', '', null, 42]) {
     assert.throws(
-      () => normalizeAccountDeletionRequest({ confirmation }),
+      () =>
+        normalizeAccountDeletionRequest({
+          ...validDeletionRequest,
+          confirmation,
+        }),
       /invalid-deletion-confirmation/,
     );
   }
@@ -29,6 +43,50 @@ test('requires the exact DELETE account-deletion confirmation', () => {
     () => normalizeAccountDeletionRequest(null),
     /invalid-deletion-confirmation/,
   );
+});
+
+test('requires a structured deletion reason and useful other feedback', () => {
+  for (const reason_code of ['', 'unknown', null, 42]) {
+    assert.throws(
+      () =>
+        normalizeAccountDeletionRequest({
+          ...validDeletionRequest,
+          reason_code,
+        }),
+      /invalid-deletion-reason/,
+    );
+  }
+  assert.throws(
+    () =>
+      normalizeAccountDeletionRequest({
+        ...validDeletionRequest,
+        reason_code: 'other',
+        reason_detail: ' ',
+      }),
+    /invalid-deletion-reason-detail/,
+  );
+  assert.equal(
+    normalizeAccountDeletionRequest({
+      ...validDeletionRequest,
+      reason_code: 'prefer_not_to_say',
+      reason_detail: '',
+    }).reasonCode,
+    'prefer_not_to_say',
+  );
+});
+
+test('builds anonymous deletion feedback without a customer identifier', () => {
+  const normalized = normalizeAccountDeletionRequest(validDeletionRequest);
+  const feedback = accountDeletionFeedbackDocument(normalized, { nowIso });
+  assert.deepEqual(feedback, {
+    reason_code: 'missing_features',
+    reason_detail: 'Better stock filters would help.',
+    locale: 'en',
+    source: 'customer_self_service',
+    schema_version: 1,
+    created_at: nowIso,
+  });
+  assert.equal(Object.hasOwn(feedback, 'customer_id'), false);
 });
 
 test('anonymizes order identity and free text while retaining transaction data', () => {

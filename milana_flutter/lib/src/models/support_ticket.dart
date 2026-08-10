@@ -1,3 +1,4 @@
+import '../localization/app_localization.dart';
 import 'backend_provenance.dart';
 
 export 'backend_provenance.dart';
@@ -10,6 +11,7 @@ class SupportTicket {
     required this.message,
     this.email = '',
     this.customerId,
+    this.languageCode = defaultLanguageCode,
   });
 
   final String name;
@@ -18,6 +20,7 @@ class SupportTicket {
   final String topic;
   final String message;
   final String? customerId;
+  final String languageCode;
 
   Map<String, dynamic> toBackendJson() => {
     'name': name,
@@ -25,7 +28,7 @@ class SupportTicket {
     'email': email,
     'topic': topic,
     'message': message,
-    'lang': 'uz',
+    'lang': normalizeLanguageCode(languageCode),
   };
 
   Map<String, dynamic> toFunctionJson() => {
@@ -34,7 +37,7 @@ class SupportTicket {
     'email': email,
     'topic': topic,
     'message': message,
-    'lang': 'uz',
+    'lang': normalizeLanguageCode(languageCode),
   };
 
   Map<String, dynamic> toFirestore(String number) => {
@@ -46,7 +49,7 @@ class SupportTicket {
     'topic': topic,
     'message': message,
     'status': 'new',
-    'lang': 'uz',
+    'lang': normalizeLanguageCode(languageCode),
     'created_at': DateTime.now().toUtc().toIso8601String(),
     'updated_at': DateTime.now().toUtc().toIso8601String(),
   };

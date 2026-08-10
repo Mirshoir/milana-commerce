@@ -449,6 +449,20 @@ test('normalizes and builds support request payload', () => {
   assert.equal(payload.ticket.status, 'new');
 });
 
+test('accepts AI content reports as support requests', () => {
+  const request = normalizeSupportRequest({
+    name: 'AI assistant report',
+    phone: 'not-provided',
+    topic: 'ai_content_report',
+    message:
+      'AI assistant response report\nReason: inaccurate_or_misleading\nResponse: Example response',
+    lang: 'en',
+  });
+
+  assert.equal(request.topic, 'ai_content_report');
+  assert.match(request.message, /inaccurate_or_misleading/);
+});
+
 test('validates support status updates and manager replies', () => {
   assert.equal(normalizeSupportStatus('open'), 'open');
   assert.equal(normalizeSupportStatus('waiting_for_customer'), 'waiting_for_customer');

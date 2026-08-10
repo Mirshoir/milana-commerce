@@ -15,7 +15,26 @@ for (let i = 2; i < process.argv.length; i += 1) {
   }
 }
 
-const definesFile = args.get('--defines') || 'firebase/flutter-dart-defines.env';
+async function firstReadableFile(paths) {
+  for (const path of paths) {
+    try {
+      await fs.access(path);
+      return path;
+    } catch {
+      // Try the next supported Firebase defines file.
+    }
+  }
+  throw new Error(
+    `Firebase dart-defines file not found. Checked: ${paths.join(', ')}`,
+  );
+}
+
+const definesFile =
+  args.get('--defines') ||
+  (await firstReadableFile([
+    'firebase/flutter-dart-defines.env',
+    'firebase/mobile-dart-defines.env',
+  ]));
 const catalogFile = args.get('--catalog') || 'firebase/catalog.products.json';
 const mirroredCatalogFile = args.get('--mirrored-catalog') || 'firebase/catalog.firebase-products.json';
 const uploadsDir = args.get('--uploads-dir') || '../Claude Code/milana-premium/data/uploads';

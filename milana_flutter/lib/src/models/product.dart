@@ -11,15 +11,17 @@ class ProductOrderUnit {
     final rawType = '${json['unit_type'] ?? json['type'] ?? ''}'
         .trim()
         .toLowerCase();
-    final unitType = rawType == 'qadoq' ? 'pachka' : rawType;
+    final unitType = switch (rawType) {
+      'qadoq' || 'pack' => 'pachka',
+      'bag' => 'qop',
+      _ => rawType,
+    };
     return ProductOrderUnit(
       unitType: unitType,
       label: '${json['label'] ?? (unitType == 'pachka' ? 'Qadoq' : 'Qop')}',
-      pieces: ((json['pieces'] as num?)?.toInt() ?? 0).clamp(1, 1000).toInt(),
-      perSize: ((json['per_size'] as num?)?.toInt() ?? 1)
-          .clamp(1, 1000)
-          .toInt(),
-      minQty: ((json['min_qty'] as num?)?.toInt() ?? 1).clamp(1, 1000).toInt(),
+      pieces: (_asInt(json['pieces']) ?? 0).clamp(1, 1000).toInt(),
+      perSize: (_asInt(json['per_size']) ?? 1).clamp(1, 1000).toInt(),
+      minQty: (_asInt(json['min_qty']) ?? 1).clamp(1, 1000).toInt(),
     );
   }
 
@@ -181,7 +183,7 @@ class Product {
     }
 
     final idValue = json['id'] ?? json['doc_id'] ?? json['slug'];
-    final availableQop = (json['available_qop'] as num?)?.toDouble();
+    final availableQop = _asDouble(json['available_qop']);
     final active = asBool(json['active'], fallback: true);
     final preorder = asBool(json['preorder'], fallback: false);
     final inStock = asBool(
@@ -213,7 +215,7 @@ class Product {
           : localized(json['name']),
       gender: '${json['gender'] ?? 'women'}'.trim().toLowerCase(),
       category: productType(),
-      price: (json['price'] as num?)?.toDouble() ?? 0,
+      price: _asDouble(json['price']) ?? 0,
       sizes: asList(json['sizes']),
       images: asList(json['images']),
       modelNo: '${json['model_no'] ?? ''}',
@@ -232,8 +234,8 @@ class Product {
       season: localized(json['season']),
       tag: '${json['tag'] ?? ''}'.trim().toLowerCase(),
       collection: localized(json['collection']),
-      rating: (json['rating'] as num?)?.toDouble() ?? 4.8,
-      reviews: (json['reviews'] as num?)?.toInt() ?? 0,
+      rating: _asDouble(json['rating']) ?? 4.8,
+      reviews: _asInt(json['reviews']) ?? 0,
       active: active,
       availableQop: availableQop,
       preorder: preorder,
@@ -308,4 +310,17 @@ class Product {
     'can_order_wholesale': canOrderWholesale,
     'order_units': orderUnits.map((unit) => unit.toJson()).toList(),
   };
+}
+
+double? _asDouble(dynamic value) {
+  if (value is num) return value.toDouble();
+  final normalized = '$value'.trim().replaceAll(',', '.');
+  if (normalized.isEmpty || normalized == 'null') return null;
+  return double.tryParse(normalized);
+}
+
+int? _asInt(dynamic value) {
+  if (value is num) return value.toInt();
+  final parsed = _asDouble(value);
+  return parsed?.toInt();
 }

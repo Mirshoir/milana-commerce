@@ -84,6 +84,27 @@ void main() {
     expect(await cache.cachedAt(), isNotNull);
   });
 
+  test('product parsing accepts website string numbers and unit aliases', () {
+    final product = Product.fromJson({
+      ...productRow('5288'),
+      'price': '5.75',
+      'available_qop': '1.5',
+      'rating': '4.6',
+      'reviews': '12',
+      'order_units': [
+        {'type': 'pack', 'pieces': '6', 'per_size': '1'},
+        {'type': 'bag', 'pieces': '60', 'per_size': '10'},
+      ],
+    });
+
+    expect(product.price, 5.75);
+    expect(product.availableQop, 1.5);
+    expect(product.rating, 4.6);
+    expect(product.reviews, 12);
+    expect(product.orderUnitFor(packUnitType).pieces, 6);
+    expect(product.orderUnitFor(bagUnitType).pieces, 60);
+  });
+
   test('concurrent catalog loads share one in-flight HTTP request', () async {
     SharedPreferences.setMockInitialValues({});
     final response = Completer<http.Response>();

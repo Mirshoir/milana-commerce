@@ -75,4 +75,21 @@ void main() {
       {'size': '54', 'qty': 1},
     ]);
   });
+
+  test('women pajamas without explicit sizes use adult fallback sizes', () {
+    const product = Product(
+      id: 'fallback-sizes',
+      slug: 'fallback-sizes',
+      name: 'Fallback sizes',
+      gender: 'women',
+      category: 'pajamas',
+      price: 5,
+      sizes: [],
+      images: [],
+    );
+
+    const item = CartItem(product: product, unitType: packUnitType);
+
+    expect(item.mixSizes, ['44', '46', '48', '50', '52', '54']);
+  });
 }

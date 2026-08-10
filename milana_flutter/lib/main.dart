@@ -52,7 +52,11 @@ Future<void> _bootstrap() async {
       ),
     ),
   );
-  await initializeDateFormatting('uz');
+  await Future.wait([
+    initializeDateFormatting('uz'),
+    initializeDateFormatting('ru'),
+    initializeDateFormatting('en'),
+  ]);
 
   final firebaseReady = MilanaFirebaseOptions.isConfigured;
   if (kReleaseMode && !firebaseReady) {

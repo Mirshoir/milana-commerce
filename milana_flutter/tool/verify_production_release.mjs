@@ -566,6 +566,9 @@ export async function verifyProductionRelease(options = {}) {
         'NSPrivacyCollectedDataTypePurchaseHistory',
         'NSPrivacyCollectedDataTypeCustomerSupport',
         'NSPrivacyCollectedDataTypeProductInteraction',
+        'NSPrivacyCollectedDataTypeDeviceID',
+        'NSPrivacyCollectedDataTypeCoarseLocation',
+        'NSPrivacyCollectedDataTypeOtherDiagnosticData',
       ]) {
         if (!privacyText.includes(requirement)) {
           throw new Error(`PrivacyInfo.xcprivacy must declare ${requirement}.`);
@@ -578,6 +581,39 @@ export async function verifyProductionRelease(options = {}) {
         throw new Error('PrivacyInfo.xcprivacy must be included in Runner resources.');
       }
       return 'app privacy inventory packaged';
+    });
+
+    await record('ios-release-entitlements', async () => {
+      const releaseEntitlements = await maybeRead(
+        path.join(root, 'ios/Runner/RunnerRelease.entitlements'),
+      );
+      if (releaseEntitlements === null) {
+        throw new Error('RunnerRelease.entitlements does not exist.');
+      }
+      if (
+        !/<key>aps-environment<\/key>\s*<string>production<\/string>/.test(
+          releaseEntitlements,
+        )
+      ) {
+        throw new Error('Release entitlements must use the production APNs environment.');
+      }
+      if (
+        !releaseEntitlements.includes('com.apple.developer.applesignin') ||
+        !/<string>Default<\/string>/.test(releaseEntitlements)
+      ) {
+        throw new Error('Release entitlements must enable Sign in with Apple.');
+      }
+      const projectText = await maybeRead(
+        path.join(root, 'ios/Runner.xcodeproj/project.pbxproj'),
+      );
+      if (
+        !projectText?.includes(
+          'CODE_SIGN_ENTITLEMENTS = Runner/RunnerRelease.entitlements;',
+        )
+      ) {
+        throw new Error('Runner release builds must use RunnerRelease.entitlements.');
+      }
+      return 'production push and Sign in with Apple enabled';
     });
   }
 

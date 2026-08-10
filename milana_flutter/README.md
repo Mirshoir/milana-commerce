@@ -1,6 +1,7 @@
-# Milana Premium Flutter
+# Milana Premium B2B Flutter Platform
 
-Flutter storefront, ordering, and customer-account app for Milana Premium.
+Flutter distributor acquisition, wholesale ordering, and partner-account app for
+Milana Premium.
 
 ## What is included
 
@@ -8,18 +9,34 @@ Flutter storefront, ordering, and customer-account app for Milana Premium.
 - Last successful catalog is cached locally so the app can still open during short Firebase/API outages.
 - Cached product imagery with branded loading and broken-image states for smoother catalog browsing.
 - Gender/type filters and search.
+- A dedicated Partnership area with Milana production/export proof, partner
+  requirements, logistics guidance, direct sales links, and a validated
+  distributor application.
+- Signed-in distributors can track application status from Partnership and
+  Account screens; sales managers update applications through a protected
+  callable workflow.
+- Customer notification inbox, category preferences, Android/iOS push opt-in,
+  device-token lifecycle, and server push for distributor application, order,
+  and support status changes.
+- Manageable B2B profiles with contact, company, country, city, and delivery
+  address fields.
 - Saved products with guest-local persistence and Firebase customer profile sync after sign in.
 - Recently viewed products with guest-local persistence and Firebase customer profile sync after sign in.
 - Product detail sheet with similar model recommendations.
 - Wholesale cart with guest-local persistence and Firebase customer profile sync after sign in.
-- Website-driven order units: customers can choose a smaller Pack or a 60-piece Bag using each product's current API rules.
+- Website-driven order units: customers can choose a smaller Pack or a 60-piece
+  Bag using each product's current API rules. Per-unit MOQ is displayed and
+  enforced in product details, quick-add, cart restoration, and quantity edits.
 - Backend checkout: server-authoritative Pack/Bag units, stock and totals, order creation, payment status, and customer support through the shared Milana API.
 - Customer order timeline for creation, payment review, and fulfillment updates.
 - Production commerce source: the canonical Milanapremium website API, shared by the website admin panel, Flutter apps, and ERP. Its database driver is deployment-specific.
 - Production account features use Firebase Auth for verified identity, then exchange the Firebase ID token for a revocable Milanapremium website session. Authenticated native and web commerce calls pass through Firebase callable proxies that bind the session to the verified account before forwarding it; browsing and limited guest flows can still work without an account.
 - Production account lifecycle includes explicit legal consent and authenticated Firebase profile deletion/anonymization; the public website deletion process must be configured before store submission.
 - Customer support form backed by the shared API.
-- Firebase remains required for production identity and callable protection, but Firestore is not the canonical order/support database. Firebase Hosting, push, analytics, and emulator tooling remain optional capabilities.
+- Firebase remains required for production identity, protected distributor and
+  notification workflows, and mobile push. Firestore is not the canonical
+  order/support database. Firebase Hosting, analytics, and emulator tooling
+  remain optional capabilities.
 - Branded Milana PWA manifest, favicon, install icons, and local no-cache preview server.
 
 ## Run locally
@@ -27,9 +44,14 @@ Flutter storefront, ordering, and customer-account app for Milana Premium.
 For a local browser preview backed by the live website API:
 
 ```bash
-flutter build web --dart-define=API_BASE_URL=http://127.0.0.1:5411
+npm run build:firebase:web
 PORT=5411 npm run serve:web
 ```
+
+The Firebase web build automatically loads
+`firebase/flutter-dart-defines.env` when present and otherwise reuses the
+verified `firebase/mobile-dart-defines.env`. This keeps Firebase Authentication,
+including Google and Apple sign-in, enabled after local rebuilds.
 
 The preview server proxies only `/api` and `/uploads` to
 `https://milanapremium.uz`, avoiding browser CORS restrictions without changing
@@ -60,6 +82,13 @@ Production web/mobile builds use
 `--dart-define=API_BASE_URL=https://milanapremium.uz`. The Firebase
 preparation scripts add this value to their generated define files
 automatically.
+
+For web push, also provide `FIREBASE_WEB_PUSH_VAPID_KEY` and deploy a reviewed
+Firebase Messaging service worker. `SALES_TELEGRAM_URL` is optional; WhatsApp
+and phone sales actions remain available without it. Android requires the
+notification runtime permission on Android 13+, while iOS requires the Push
+Notifications capability, APNs key/certificate in Firebase, and the checked-in
+remote-notification entitlement/background mode.
 
 To preview the built app locally:
 

@@ -66,19 +66,47 @@ class OrderRepository {
     return token == null || token.isEmpty ? null : token;
   }
 
-  Map<String, String> _apiHeaders({bool json = false, String? websiteToken}) {
-    return {
+  Map<String, String> _apiHeaders({
+    bool json = false,
+    String? websiteToken,
+    String? idempotencyKey,
+  }) {
+    final headers = {
       'accept': 'application/json',
       if (json) 'content-type': 'application/json',
       if (websiteToken != null) 'authorization': 'Bearer $websiteToken',
     };
+    final requestKey = idempotencyKey?.trim() ?? '';
+    if (requestKey.isNotEmpty) {
+      headers['x-idempotency-key'] = requestKey;
+    }
+    return headers;
   }
 
   Future<OrderReceipt> placeOrder(CheckoutRequest request) async {
+    final requestWithId = _ensureClientOrderId(request);
     if (_useFirebaseApiProxy) {
-      return _placeFirebaseApiOrder(request);
+      return _placeFirebaseApiOrder(requestWithId);
     }
-    return _placeApiOrder(request);
+    return _placeApiOrder(requestWithId);
+  }
+
+  CheckoutRequest _ensureClientOrderId(CheckoutRequest request) {
+    if (request.clientOrderId.trim().isNotEmpty) return request;
+    return CheckoutRequest(
+      name: request.name,
+      phone: request.phone,
+      city: request.city,
+      address: request.address,
+      comment: request.comment,
+      paymentMethod: request.paymentMethod,
+      managerId: request.managerId,
+      customerEmail: request.customerEmail,
+      customerId: request.customerId,
+      clientOrderId: createClientOrderId(),
+      languageCode: request.languageCode,
+      items: request.items,
+    );
   }
 
   Future<List<CheckoutManager>> loadManagers() async {
@@ -329,10 +357,15 @@ class OrderRepository {
 
   Future<OrderReceipt> _placeApiOrder(CheckoutRequest request) async {
     final websiteToken = _websiteSessionToken;
+    final idempotencyKey = request.clientOrderId.trim();
     final response = await _client
         .post(
           Uri.parse('$_baseUrl/api/orders'),
-          headers: _apiHeaders(json: true, websiteToken: websiteToken),
+          headers: _apiHeaders(
+            json: true,
+            websiteToken: websiteToken,
+            idempotencyKey: idempotencyKey,
+          ),
           body: jsonEncode(request.toBackendJson()),
         )
         .timeout(requestTimeout);
@@ -405,7 +438,11 @@ class OrderRepository {
     final response = await _client
         .post(
           Uri.parse('$_baseUrl/api/support'),
-          headers: _apiHeaders(json: true, websiteToken: websiteToken),
+          headers: _apiHeaders(
+            json: true,
+            websiteToken: websiteToken,
+            idempotencyKey: '${ticket.name}-${ticket.topic}-${ticket.phone}',
+          ),
           body: jsonEncode(ticket.toBackendJson()),
         )
         .timeout(requestTimeout);

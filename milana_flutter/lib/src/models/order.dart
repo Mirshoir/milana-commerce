@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../localization/app_localization.dart';
 import 'backend_provenance.dart';
 import 'cart_item.dart';
 import 'product.dart';
@@ -9,17 +10,20 @@ export 'backend_provenance.dart';
 String paymentReferenceFromOrderNumber(String number) =>
     number.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').toUpperCase();
 
-String orderReceiptShareText(OrderReceipt receipt) {
+String orderReceiptShareText(
+  OrderReceipt receipt, {
+  String languageCode = defaultLanguageCode,
+}) {
   final lines = [
-    'Milana Premium buyurtma',
-    'Raqam: ${receipt.number}',
-    'Jami: \$${receipt.total.toStringAsFixed(2)}',
-    'To‘lov: ${receipt.paymentLabel}',
+    localizedText('order.share.title', languageCode: languageCode),
+    '${localizedText('order.share.number', languageCode: languageCode)}: ${receipt.number}',
+    '${localizedText('order.share.total', languageCode: languageCode)}: \$${receipt.total.toStringAsFixed(2)}',
+    '${localizedText('order.share.payment_label', languageCode: languageCode)}: ${receipt.paymentLabel}',
     if (receipt.paymentReference.isNotEmpty)
-      'Reference: ${receipt.paymentReference}',
+      '${localizedText('order.share.payment_reference', languageCode: languageCode)}: ${receipt.paymentReference}',
     if (receipt.paymentExpiresAt != null)
-      'Reference muddati: ${receipt.paymentExpiresAt!.toUtc().toIso8601String()}',
-    'Holat: ${receipt.paymentStatus}',
+      '${localizedText('order.share.payment_expires_at', languageCode: languageCode)}: ${receipt.paymentExpiresAt!.toUtc().toIso8601String()}',
+    '${localizedText('order.share.status', languageCode: languageCode)}: ${receipt.paymentStatus}',
     'Menejer: ${receipt.supportPhone}',
   ];
   return lines.join('\n');
@@ -46,6 +50,7 @@ class CheckoutRequest {
     this.customerEmail = '',
     this.customerId,
     this.clientOrderId = '',
+    this.languageCode = defaultLanguageCode,
   });
 
   final String name;
@@ -58,6 +63,7 @@ class CheckoutRequest {
   final String customerEmail;
   final String? customerId;
   final String clientOrderId;
+  final String languageCode;
   final List<CartItem> items;
 
   double get total => items.fold(0, (sum, item) => sum + item.lineTotal);
@@ -86,7 +92,7 @@ class CheckoutRequest {
           },
         )
         .toList(),
-    'lang': 'uz',
+    'lang': normalizeLanguageCode(languageCode),
   };
 
   Map<String, dynamic> toFunctionJson() => {
@@ -113,7 +119,7 @@ class CheckoutRequest {
           },
         )
         .toList(),
-    'lang': 'uz',
+    'lang': normalizeLanguageCode(languageCode),
   };
 
   Map<String, dynamic> toFirestore(String number) => {
@@ -132,7 +138,7 @@ class CheckoutRequest {
     'items': items.map((item) => item.toOrderJson()).toList(),
     'total': double.parse(total.toStringAsFixed(2)),
     'status': 'new',
-    'lang': 'uz',
+    'lang': normalizeLanguageCode(languageCode),
     'payment': {
       'method': paymentMethod,
       'provider':
@@ -160,12 +166,12 @@ class OrderReceipt {
     required this.paymentStatus,
     this.paymentMethod = 'manager',
     this.paymentLabel = 'Menejer orqali',
-    this.paymentInstructions =
-        'Menejerimiz +998501551010 orqali narx, mavjudlik va to‘lovni tasdiqlaydi.',
+    this.paymentInstructions = '',
     this.paymentReference = '',
     this.paymentExpiresAt,
     this.clientOrderId = '',
     this.supportPhone = '+998501551010',
+    this.languageCode = defaultLanguageCode,
   });
 
   final BackendProvenance provenance;
@@ -180,6 +186,7 @@ class OrderReceipt {
   final DateTime? paymentExpiresAt;
   final String clientOrderId;
   final String supportPhone;
+  final String languageCode;
 
   factory OrderReceipt.fromJson(Map<String, dynamic> json) {
     final provenanceName = '${json['provenance'] ?? ''}';
@@ -188,7 +195,10 @@ class OrderReceipt {
       orElse: () => BackendProvenance.website,
     );
     final number = '${json['number'] ?? ''}'.trim();
-    final total = (json['total'] as num?)?.toDouble();
+    final total = _asDouble(json['total']);
+    final language = normalizeLanguageCode(
+      '${json['language_code'] ?? json['language'] ?? json['lang'] ?? defaultLanguageCode}',
+    );
     if (number.isEmpty || total == null || !total.isFinite || total < 0) {
       throw const FormatException('Stored order receipt is invalid.');
     }
@@ -199,8 +209,10 @@ class OrderReceipt {
       total: total,
       paymentStatus: '${json['payment_status'] ?? 'pending'}',
       paymentMethod: '${json['payment_method'] ?? 'manager'}',
-      paymentLabel: '${json['payment_label'] ?? 'Menejer orqali'}',
+      paymentLabel:
+          '${json['payment_label'] ?? localizedText('checkout.payment_manager', languageCode: language)}',
       paymentInstructions: '${json['payment_instructions'] ?? ''}',
+      languageCode: language,
       paymentReference: '${json['payment_reference'] ?? ''}',
       paymentExpiresAt: DateTime.tryParse(
         '${json['payment_expires_at'] ?? ''}',
@@ -356,13 +368,12 @@ class OrderLineItem {
       return const [];
     }
 
-    final qty = (data['qty'] as num?)?.toInt() ?? 0;
-    final unitPrice = (data['unit_price'] as num?)?.toDouble() ?? 0;
-    final bagSize = (data['bag_size'] as num?)?.toInt() ?? 60;
+    final qty = _asInt(data['qty']) ?? 0;
+    final unitPrice = _asDouble(data['unit_price']) ?? 0;
+    final bagSize = _asInt(data['bag_size']) ?? 60;
     final fallbackBagPrice = unitPrice * bagSize;
-    final bagPrice = (data['price'] as num?)?.toDouble() ?? fallbackBagPrice;
-    final lineTotal =
-        (data['line_total'] as num?)?.toDouble() ?? bagPrice * qty;
+    final bagPrice = _asDouble(data['price']) ?? fallbackBagPrice;
+    final lineTotal = _asDouble(data['line_total']) ?? bagPrice * qty;
     final sizeMix = data['size_mix'] is List
         ? (data['size_mix'] as List)
               .whereType<Map>()
@@ -376,7 +387,7 @@ class OrderLineItem {
     final images = stringList(data['images']);
     final sizes = stringList(data['sizes']);
     return OrderLineItem(
-      id: '${data['id'] ?? ''}',
+      id: '${data['id'] ?? data['product_id'] ?? ''}',
       slug: '${data['slug'] ?? ''}',
       name: '${data['name'] ?? 'Milana'}',
       modelNo: '${data['model_no'] ?? ''}',
@@ -427,7 +438,10 @@ class OrderLineItem {
         orderUnits: [
           ProductOrderUnit(
             unitType: selectedUnitType,
-            label: orderUnitLabel(selectedUnitType),
+            label: orderUnitLabel(
+              selectedUnitType,
+              languageCode: defaultLanguageCode,
+            ),
             pieces: bagSize,
             perSize: selectedPerSize,
             minQty: 1,
@@ -449,7 +463,7 @@ class OrderSizeMix {
   factory OrderSizeMix.fromMap(Map<String, dynamic> data) {
     return OrderSizeMix(
       size: '${data['size'] ?? ''}',
-      qty: (data['qty'] as num?)?.toInt() ?? 0,
+      qty: _asInt(data['qty']) ?? 0,
     );
   }
 }
@@ -531,7 +545,7 @@ class OrderSummary {
       provenance: provenance,
       id: '${data['id'] ?? data['order_id'] ?? ''}',
       number: '${data['number'] ?? ''}',
-      total: (data['total'] as num?)?.toDouble() ?? 0,
+      total: _asDouble(data['total']) ?? 0,
       status: '${data['status'] ?? 'new'}',
       paymentStatus: '${payment['status'] ?? 'pending'}',
       paymentMethod: '${payment['method'] ?? 'manager'}',
@@ -554,6 +568,19 @@ class OrderSummary {
       itemCount: items.fold<int>(0, (sum, item) => sum + item.qty),
     );
   }
+}
+
+double? _asDouble(dynamic value) {
+  if (value is num) return value.toDouble();
+  final normalized = '$value'.trim().replaceAll(',', '.');
+  if (normalized.isEmpty || normalized == 'null') return null;
+  return double.tryParse(normalized);
+}
+
+int? _asInt(dynamic value) {
+  if (value is num) return value.toInt();
+  final parsed = _asDouble(value);
+  return parsed?.toInt();
 }
 
 class OrderActivity {

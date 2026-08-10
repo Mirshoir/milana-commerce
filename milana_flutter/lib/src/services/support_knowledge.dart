@@ -1,3 +1,5 @@
+import '../localization/app_localization.dart';
+
 class SupportFaq {
   const SupportFaq({
     required this.id,
@@ -12,7 +14,18 @@ class SupportFaq {
   final String question;
   final String answer;
   final List<String> keywords;
+
+  String localizedTopic(String languageCode) =>
+      localizedText('support.faq.topic.$id', languageCode: languageCode);
+
+  String localizedQuestion(String languageCode) =>
+      localizedText('support.faq.question.$id', languageCode: languageCode);
+
+  String localizedAnswer(String languageCode) =>
+      localizedText('support.faq.answer.$id', languageCode: languageCode);
 }
+
+const _defaultSupportFaqLanguageCode = defaultLanguageCode;
 
 const milanaSupportPhone = '+998 50 155 10 10';
 const milanaSupportPhoneCompact = '+998501551010';
@@ -102,6 +115,7 @@ const milanaSupportFaqs = [
 List<SupportFaq> filterSupportFaqs(
   List<SupportFaq> faqs,
   String query, {
+  String languageCode = _defaultSupportFaqLanguageCode,
   int limit = 6,
 }) {
   final normalized = query.trim().toLowerCase();
@@ -110,8 +124,8 @@ List<SupportFaq> filterSupportFaqs(
       : faqs.where((faq) {
           final haystack = [
             faq.topic,
-            faq.question,
-            faq.answer,
+            faq.localizedQuestion(languageCode),
+            faq.localizedAnswer(languageCode),
             ...faq.keywords,
           ].join(' ').toLowerCase();
           return haystack.contains(normalized);

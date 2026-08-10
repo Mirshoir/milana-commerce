@@ -1,4 +1,5 @@
 import 'product.dart';
+import '../localization/app_localization.dart';
 
 const int bagSize = 60;
 const int sizeCount = 6;
@@ -14,11 +15,12 @@ String normalizeOrderUnitType(String value) {
   return bagUnitType;
 }
 
-String orderUnitLabel(String unitType) =>
-    normalizeOrderUnitType(unitType) == packUnitType ? 'Qadoq' : 'Qop';
-
-String orderUnitEnglishLabel(String unitType) =>
-    normalizeOrderUnitType(unitType) == packUnitType ? 'Pack' : 'Bag';
+String orderUnitLabel(
+  String unitType, {
+  String languageCode = defaultLanguageCode,
+}) => normalizeOrderUnitType(unitType) == packUnitType
+    ? localizedText('product.pack.label', languageCode: languageCode)
+    : localizedText('product.bag.label', languageCode: languageCode);
 
 class CartItem {
   const CartItem({
@@ -86,6 +88,7 @@ class CartItem {
 
   ProductOrderUnit get orderUnit => product.orderUnitFor(unitType);
   String get storageKey => '${product.id}:${orderUnit.unitType}';
+  int get minimumQuantity => orderUnit.minQty;
   int get piecesPerUnit => orderUnit.pieces;
   int get pieceCount => piecesPerUnit * quantity;
   double get packagePrice => product.price * piecesPerUnit;
@@ -104,7 +107,7 @@ class CartItem {
   List<String> get mixSizes {
     final defaults = product.gender == 'men'
         ? ['46', '48', '50', '52', '54', '56']
-        : product.gender == 'kids' || product.category == 'pajamas'
+        : product.gender == 'kids'
         ? ['28', '30', '32', '34', '36', '38']
         : ['44', '46', '48', '50', '52', '54'];
     final seen = <String>{};

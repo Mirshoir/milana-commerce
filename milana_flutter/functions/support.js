@@ -7,6 +7,7 @@ const allowedTopics = new Set([
   'delivery',
   'payment',
   'defect',
+  'ai_content_report',
 ]);
 const allowedSupportStatuses = new Set([
   'new',

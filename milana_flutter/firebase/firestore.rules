@@ -18,6 +18,7 @@ service cloud.firestore {
         ]) &&
         request.resource.data.keys().hasOnly([
           'email', 'name', 'phone', 'city', 'address', 'status',
+          'company_name', 'country',
           'saved_product_ids', 'recent_product_ids', 'cart_items',
           'legal_consent_version', 'legal_accepted_at',
           'created_at', 'updated_at'
@@ -35,6 +36,7 @@ service cloud.firestore {
         isText(request.resource.data.updated_at, 40) &&
         validLegalConsent() &&
         validCustomerDeliveryProfile() &&
+        validCustomerBusinessProfile() &&
         validSavedProducts() &&
         validRecentProducts() &&
         validProfileCart();
@@ -62,6 +64,13 @@ service cloud.firestore {
           isText(request.resource.data.city, 80)) &&
         (!request.resource.data.keys().hasAny(['address']) ||
           isText(request.resource.data.address, 200));
+    }
+
+    function validCustomerBusinessProfile() {
+      return (!request.resource.data.keys().hasAny(['company_name']) ||
+          isText(request.resource.data.company_name, 160)) &&
+        (!request.resource.data.keys().hasAny(['country']) ||
+          isText(request.resource.data.country, 80));
     }
 
     function validSavedProducts() {
@@ -120,7 +129,32 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    match /distributor_applications/{applicationId} {
+      allow read: if ownsResource();
+      allow create, update, delete: if false;
+    }
+
+    match /customer_notifications/{notificationId} {
+      allow read: if ownsResource();
+      allow create, update, delete: if false;
+    }
+
+    match /notification_preferences/{customerId} {
+      allow read: if ownsCustomerDoc(customerId);
+      allow create, update, delete: if false;
+    }
+
+    match /notification_devices/{deviceId} {
+      allow read, create, update, delete: if false;
+    }
+
     match /erp_events/{eventId} {
+      allow read, create, update, delete: if false;
+    }
+
+    // Written only by the trusted account-deletion callable. Feedback is
+    // intentionally anonymous and is not exposed to customer clients.
+    match /account_deletion_feedback/{feedbackId} {
       allow read, create, update, delete: if false;
     }
 

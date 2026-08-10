@@ -12,6 +12,7 @@ void main() {
         'milana_cart_items': '[{"legacy":"account-a"}]',
         'milana_saved_product_ids': ['account-a-favorite'],
         'milana_recent_product_ids': ['account-a-recent'],
+        'milana_checkout_recovery_v1': '{"pending_client_order_id":"co_old"}',
       });
 
       expect(await CartStore().load(), isEmpty);
@@ -23,6 +24,7 @@ void main() {
       expect(prefs.containsKey('milana_cart_items'), isFalse);
       expect(prefs.containsKey('milana_saved_product_ids'), isFalse);
       expect(prefs.containsKey('milana_recent_product_ids'), isFalse);
+      expect(prefs.containsKey('milana_checkout_recovery_v1'), isFalse);
     },
   );
 

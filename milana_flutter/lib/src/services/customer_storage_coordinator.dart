@@ -11,6 +11,7 @@ class CustomerStorageCoordinator {
     'milana_cart_items',
     'milana_saved_product_ids',
     'milana_recent_product_ids',
+    'milana_checkout_recovery_v1',
   ];
 
   static Future<void> _migrationTail = Future<void>.value();
