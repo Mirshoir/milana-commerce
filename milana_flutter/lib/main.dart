@@ -25,6 +25,12 @@ void main() {
 
 Future<void> _bootstrap() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Product photos dominate catalog memory. Keep decoded images bounded so a
+  // fast fling cannot retain enough full-resolution frames for iOS to kill the
+  // process under memory pressure.
+  PaintingBinding.instance.imageCache
+    ..maximumSize = 160
+    ..maximumSizeBytes = 64 << 20;
   if (kIsWeb) {
     // Flutter web normally waits for a user gesture before exposing its
     // semantics tree. Keep it enabled so keyboard and assistive-technology
