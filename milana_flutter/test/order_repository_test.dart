@@ -67,6 +67,44 @@ void main() {
   });
 
   test(
+    'falls back to the public manager API when the callable fails',
+    () async {
+      var publicApiCalls = 0;
+      final repository = OrderRepository(
+        firebaseEnabled: true,
+        baseUrl: 'https://milanapremium.uz',
+        firebaseWebsiteApiCaller: (callableName, data) async {
+          expect(callableName, 'listCheckoutManagers');
+          throw _TestFirebaseFunctionsException('unavailable');
+        },
+        client: MockClient((request) async {
+          publicApiCalls += 1;
+          expect(
+            request.url.toString(),
+            'https://milanapremium.uz/api/managers',
+          );
+          return http.Response(
+            jsonEncode([
+              {'id': 1, 'name': 'General manager'},
+              {'id': 3, 'name': 'Jasurbek'},
+            ]),
+            200,
+          );
+        }),
+      );
+      addTearDown(repository.close);
+
+      final managers = await repository.loadManagers();
+
+      expect(publicApiCalls, 1);
+      expect(managers.map((manager) => manager.name), [
+        'General manager',
+        'Jasurbek',
+      ]);
+    },
+  );
+
+  test(
     'direct-HTTP override still uses the manager-aware public API',
     () async {
       late Map<String, dynamic> sentBody;
@@ -357,6 +395,7 @@ void main() {
       requestTimeout: const Duration(milliseconds: 5),
       firebaseWebsiteApiCaller: (callableName, data) =>
           Completer<dynamic>().future,
+      client: MockClient((request) => Completer<http.Response>().future),
     );
     addTearDown(repository.close);
 

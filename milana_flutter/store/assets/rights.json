@@ -6,15 +6,15 @@
       "id": "app-icon-artwork",
       "platforms": ["android", "ios"],
       "sourcePath": "assets/brand/milana-premium-logo.jpg",
-      "sourceSha256": "52a217b00599fdbeaefba2759c3f8ffcb88738fde3dcd144ed584cf99b5d6114",
+      "sourceSha256": "ece9dec54c21f80d5965fd87d7b1102541d2c85eaf9cf47e204a77dfcd6f3c2f",
       "derivedAssets": [
         {
           "path": "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png",
-          "sha256": "e96be620b935da88e5b86e263aeecf112657505a2b7841c26b60cc7a3a7574de"
+          "sha256": "d9a2ffe03864975d685d6aca8a6407c985b1a5125179af05a86ffccb6f21e991"
         },
         {
           "path": "store/google-play/graphics/app-icon-512.png",
-          "sha256": "0904d1ef4ae45609a06207ac7f68bc9a1655aa1a7dfeef594c3b81289ea36dc7"
+          "sha256": "2477bbcf8d3407f831cdcde2e3468d48a1d580a5a804ec645f335f054c25d91f"
         }
       ],
       "assetKind": "brand-artwork",
@@ -44,6 +44,10 @@
       "sourcePath": "assets/hero-poster.jpg",
       "sourceSha256": "09bd164cc798100703ea9e79e532411c6e8a2fe3d0a6984c64b832d590326c75",
       "derivedAssets": [
+        {
+          "path": "assets/hero-mobile.mp4",
+          "sha256": "48129b0f065f364e96a75cfa502d92e7795237a6f4dc79259a5ef74338f9f30a"
+        },
         {
           "path": "store/google-play/graphics/feature-graphic-1024x500.jpg",
           "sha256": "6797dd1245b60d5f2b9cf2be72d0504046a83ab2c26b0835583eea08ee1e74c4"

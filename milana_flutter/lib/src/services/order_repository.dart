@@ -111,9 +111,19 @@ class OrderRepository {
 
   Future<List<CheckoutManager>> loadManagers() async {
     if (_useFirebaseApiProxy) {
-      final data = await _callFirebaseWebsiteApi('listCheckoutManagers');
-      return _parseManagers(data);
+      try {
+        final data = await _callFirebaseWebsiteApi('listCheckoutManagers');
+        return _parseManagers(data);
+      } catch (error) {
+        // The manager list is public. Keep checkout usable when a callable is
+        // unavailable, misconfigured, or slow in a production build.
+        return _loadManagersFromPublicApi();
+      }
     }
+    return _loadManagersFromPublicApi();
+  }
+
+  Future<List<CheckoutManager>> _loadManagersFromPublicApi() async {
     final response = await _client
         .get(
           Uri.parse('$_baseUrl/api/managers'),

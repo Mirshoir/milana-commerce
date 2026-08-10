@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:video_player/video_player.dart';
 
 import 'localization/app_localization.dart';
 import 'features/distributor/distributor_screen.dart';
@@ -662,10 +663,6 @@ class _AppShellState extends State<AppShell> {
                         ),
                       ),
                     ],
-                    bottom: const PreferredSize(
-                      preferredSize: Size.fromHeight(24),
-                      child: _WholesaleTicker(),
-                    ),
                   ),
             body: IndexedStack(index: index, children: pages),
             floatingActionButton: FloatingActionButton.small(
@@ -890,32 +887,6 @@ class _AppShellState extends State<AppShell> {
 
 enum CatalogLaunchMode { browse, search, saved }
 
-class _WholesaleTicker extends StatelessWidget {
-  const _WholesaleTicker();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: 24,
-      color: milanaInk,
-      alignment: Alignment.center,
-      child: Text(
-        context.localize('home.wholesale_ticker'),
-        maxLines: 1,
-        overflow: TextOverflow.fade,
-        softWrap: false,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 9,
-          letterSpacing: 1.4,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-    );
-  }
-}
-
 class _BrandLockup extends StatelessWidget {
   const _BrandLockup();
 
@@ -1010,65 +981,60 @@ class _StorefrontHomeHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return SafeArea(
       bottom: false,
-      child: Column(
-        children: [
-          const _WholesaleTicker(),
-          SizedBox(
-            height: 62,
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: onMenu,
-                  color: Colors.white,
-                  icon: const Icon(Icons.menu),
-                  tooltip: context.localize('menu'),
-                ),
-                const Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 4),
-                    child: _ScaleDownToFit(
-                      alignment: Alignment.center,
-                      child: Text(
-                        'MILANA PREMIUM',
-                        maxLines: 1,
-                        softWrap: false,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          letterSpacing: 4,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+      child: SizedBox(
+        height: 62,
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: onMenu,
+              color: Colors.white,
+              icon: const Icon(Icons.menu),
+              tooltip: context.localize('menu'),
+            ),
+            const Expanded(
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4),
+                child: _ScaleDownToFit(
+                  alignment: Alignment.center,
+                  child: Text(
+                    'MILANA PREMIUM',
+                    maxLines: 1,
+                    softWrap: false,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      letterSpacing: 4,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: onSaved,
-                  color: Colors.white,
-                  icon: const Icon(Icons.favorite_border, size: 21),
-                  tooltip: context.localize('app.bar.saved.tooltip'),
-                ),
-                IconButton(
-                  onPressed: onSearch,
-                  color: Colors.white,
-                  icon: const Icon(Icons.search, size: 22),
-                  tooltip: context.localize('app.bar.search.tooltip'),
-                ),
-                Badge(
-                  isLabelVisible: cartCount > 0,
-                  label: Text('$cartCount'),
-                  child: IconButton(
-                    onPressed: onCart,
-                    color: Colors.white,
-                    icon: const Icon(Icons.shopping_bag_outlined, size: 21),
-                    tooltip: context.localize('app.bar.cart.tooltip'),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        ],
+            IconButton(
+              onPressed: onSaved,
+              color: Colors.white,
+              icon: const Icon(Icons.favorite_border, size: 21),
+              tooltip: context.localize('app.bar.saved.tooltip'),
+            ),
+            IconButton(
+              onPressed: onSearch,
+              color: Colors.white,
+              icon: const Icon(Icons.search, size: 22),
+              tooltip: context.localize('app.bar.search.tooltip'),
+            ),
+            Badge(
+              isLabelVisible: cartCount > 0,
+              label: Text('$cartCount'),
+              child: IconButton(
+                onPressed: onCart,
+                color: Colors.white,
+                icon: const Icon(Icons.shopping_bag_outlined, size: 21),
+                tooltip: context.localize('app.bar.cart.tooltip'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1573,10 +1539,12 @@ class _HomeHeroState extends State<HomeHero> {
                 fit: StackFit.expand,
                 children: [
                   if (product == null)
-                    Image.asset(
-                      'assets/hero-poster.jpg',
-                      fit: BoxFit.cover,
-                      alignment: Alignment.center,
+                    _HeroVideo(
+                      shouldPlay:
+                          widget.autoPlay &&
+                          !reduceMotion &&
+                          !userPaused &&
+                          index == 0,
                     )
                   else
                     ProductImage(product: product),
@@ -1654,6 +1622,108 @@ class _HomeHeroState extends State<HomeHero> {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _HeroVideo extends StatefulWidget {
+  const _HeroVideo({required this.shouldPlay});
+
+  final bool shouldPlay;
+
+  @override
+  State<_HeroVideo> createState() => _HeroVideoState();
+}
+
+class _HeroVideoState extends State<_HeroVideo> with WidgetsBindingObserver {
+  late final VideoPlayerController _controller;
+  bool _ready = false;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _controller = VideoPlayerController.asset('assets/hero-mobile.mp4');
+    unawaited(_initialize());
+  }
+
+  Future<void> _initialize() async {
+    try {
+      await _controller.initialize();
+      await _controller.setLooping(true);
+      await _controller.setVolume(0);
+      if (!mounted) return;
+      setState(() => _ready = true);
+      await _syncPlayback();
+    } catch (error) {
+      debugPrint('Hero video unavailable; showing poster instead: $error');
+      if (mounted) setState(() => _failed = true);
+    }
+  }
+
+  Future<void> _syncPlayback() async {
+    if (!_ready || _failed) return;
+    try {
+      if (widget.shouldPlay &&
+          WidgetsBinding.instance.lifecycleState != AppLifecycleState.paused &&
+          WidgetsBinding.instance.lifecycleState !=
+              AppLifecycleState.detached) {
+        await _controller.play();
+      } else {
+        await _controller.pause();
+      }
+    } catch (error) {
+      debugPrint('Could not change hero video playback: $error');
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _HeroVideo oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.shouldPlay != widget.shouldPlay) {
+      unawaited(_syncPlayback());
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_syncPlayback());
+    } else {
+      unawaited(_controller.pause());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(_controller.dispose());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Image.asset(
+          'assets/hero-poster.jpg',
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+        ),
+        if (_ready && !_failed)
+          ClipRect(
+            child: FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: _controller.value.size.width,
+                height: _controller.value.size.height,
+                child: VideoPlayer(_controller),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

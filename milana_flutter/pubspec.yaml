@@ -47,6 +47,7 @@ dependencies:
   shared_preferences: ^2.5.3
   cached_network_image: ^3.4.1
   url_launcher: ^6.3.2
+  video_player: ^2.13.0
 
 dev_dependencies:
   flutter_test:
@@ -77,6 +78,7 @@ flutter:
 
   assets:
     - assets/hero-poster.jpg
+    - assets/hero-mobile.mp4
 
   fonts:
     - family: MilanaDisplay
