@@ -21,6 +21,8 @@
     "test:emulator:checkout": "PAYMENT_WEBHOOK_SECRET=local-payment-webhook-secret FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase emulators:exec --project milana-local --only auth,firestore,functions \"npm run verify:checkout-function:emulator\"",
     "verify:hosting:emulator": "node tool/verify_hosting_emulator.mjs",
     "verify:hosting-tools:self-test": "node --test tool/test/hosting_asset_tools.test.mjs",
+    "verify:load-test:self-test": "node --test tool/test/load_test_public_api.test.mjs",
+    "verify:capacity:staging": "node tool/load_test_public_api.mjs",
     "test:emulator:full": "npm run build:emulator:web && PAYMENT_WEBHOOK_SECRET=local-payment-webhook-secret FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase emulators:exec --project milana-local --only auth,firestore,functions,hosting \"npm run import:catalog:emulator && npm run verify:catalog:emulator && npm run verify:customer-rules:emulator && npm run verify:checkout-function:emulator && npm run verify:hosting:emulator\"",
     "prepare:firebase": "node tool/prepare_firebase_web.mjs",
     "prepare:firebase:mobile": "node tool/prepare_firebase_mobile.mjs",

@@ -91,6 +91,28 @@ service cloud.firestore {
           request.resource.data.cart_items.size() <= 100);
     }
 
+    function validCustomerState(customerId, stateId) {
+      return ownsCustomerDoc(customerId) &&
+        request.resource.data.keys().hasAll(['schema_version', 'updated_at']) &&
+        request.resource.data.keys().hasOnly([
+          'schema_version', 'product_ids', 'items', 'updated_at'
+        ]) &&
+        request.resource.data.schema_version == 1 &&
+        isText(request.resource.data.updated_at, 40) &&
+        ((stateId == 'saved' &&
+            request.resource.data.keys().hasAll(['product_ids']) &&
+            request.resource.data.product_ids is list &&
+            request.resource.data.product_ids.size() <= 500) ||
+          (stateId == 'recent' &&
+            request.resource.data.keys().hasAll(['product_ids']) &&
+            request.resource.data.product_ids is list &&
+            request.resource.data.product_ids.size() <= 100) ||
+          (stateId == 'cart' &&
+            request.resource.data.keys().hasAll(['items']) &&
+            request.resource.data.items is list &&
+            request.resource.data.items.size() <= 100));
+    }
+
     function ownsResource() {
       return request.auth != null &&
         resource.data.keys().hasAny(['customer_id']) &&
@@ -113,6 +135,12 @@ service cloud.firestore {
       allow update: if validCustomerProfile(customerId) &&
         immutableCustomerAuditFields();
       allow delete: if false;
+
+      match /state/{stateId} {
+        allow read: if ownsCustomerDoc(customerId);
+        allow create, update: if validCustomerState(customerId, stateId);
+        allow delete: if false;
+      }
     }
 
     match /orders/{orderId} {

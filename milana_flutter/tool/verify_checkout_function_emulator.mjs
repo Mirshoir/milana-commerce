@@ -835,7 +835,12 @@ const claimed = await callClaimErpEvents(adminUser.token, {
   lease_seconds: 120,
   worker: 'milana-erp-test',
 });
-if (claimed.claimed !== 2 || claimed.events.length !== 2 || !claimed.events[0].lease_until) {
+if (
+  claimed.claimed !== 2 ||
+  claimed.events.length !== 2 ||
+  !claimed.events[0].lease_until ||
+  !claimed.events[0].lease_token
+) {
   throw new Error(`ERP claim mismatch: ${JSON.stringify(claimed)}`);
 }
 const claimedDoc = await adminDb.collection('erp_events').doc(claimed.events[0].id).get();
@@ -845,8 +850,22 @@ if (
 ) {
   throw new Error(`ERP claimed doc mismatch: ${JSON.stringify(claimedDoc.data())}`);
 }
+const wrongLeaseAckError = await callAckErpEvent(
+  adminUser.token,
+  {
+    event_id: claimed.events[0].id,
+    lease_token: 'wrong-lease-token',
+    status: 'processed',
+    worker: 'milana-erp-test',
+  },
+  true,
+);
+if (wrongLeaseAckError.status !== 'FAILED_PRECONDITION') {
+  throw new Error(`Unexpected wrong-lease ERP ack error: ${JSON.stringify(wrongLeaseAckError)}`);
+}
 const ackProcessed = await callAckErpEvent(adminUser.token, {
   event_id: claimed.events[0].id,
+  lease_token: claimed.events[0].lease_token,
   status: 'processed',
   worker: 'milana-erp-test',
   external_id: `ERP-${runId}`,
@@ -863,6 +882,7 @@ if (
 }
 const ackFailed = await callAckErpEvent(adminUser.token, {
   event_id: claimed.events[1].id,
+  lease_token: claimed.events[1].lease_token,
   status: 'failed',
   worker: 'milana-erp-test',
   error: 'ERP test failure',
@@ -888,6 +908,7 @@ await expiredLeaseRef.set({
   status: 'processing',
   attempts: 1,
   lease_owner: 'stalled-worker',
+  lease_token: 'expired-lease-token',
   lease_until: '2000-01-01T00:00:00.000Z',
   created_at: '2000-01-01T00:00:00.000Z',
   updated_at: '2000-01-01T00:00:00.000Z',
@@ -901,10 +922,24 @@ await activeLeaseRef.set({
   status: 'processing',
   attempts: 1,
   lease_owner: 'active-worker',
+  lease_token: 'active-lease-token',
   lease_until: '2999-01-01T00:00:00.000Z',
   created_at: '2000-01-01T00:00:01.000Z',
   updated_at: '2000-01-01T00:00:01.000Z',
 });
+const expiredLeaseAckError = await callAckErpEvent(
+  adminUser.token,
+  {
+    event_id: expiredLeaseRef.id,
+    lease_token: 'expired-lease-token',
+    status: 'processed',
+    worker: 'stalled-worker',
+  },
+  true,
+);
+if (expiredLeaseAckError.status !== 'FAILED_PRECONDITION') {
+  throw new Error(`Unexpected expired-lease ERP ack error: ${JSON.stringify(expiredLeaseAckError)}`);
+}
 const reclaimed = await callClaimErpEvents(adminUser.token, {
   limit: 100,
   lease_seconds: 120,
@@ -927,7 +962,11 @@ if (
 }
 const duplicateAckError = await callAckErpEvent(
   adminUser.token,
-  { event_id: claimed.events[0].id, status: 'processed' },
+  {
+    event_id: claimed.events[0].id,
+    lease_token: claimed.events[0].lease_token,
+    status: 'processed',
+  },
   true,
 );
 if (duplicateAckError.status !== 'FAILED_PRECONDITION') {
@@ -996,8 +1035,10 @@ console.log(JSON.stringify({
     'erp_event_support_status_updated',
     'customer_cannot_claim_erp_events',
     'admin_can_claim_erp_events',
+    'wrong_erp_lease_token_cannot_ack',
     'admin_can_ack_erp_event_processed',
     'admin_can_ack_erp_event_failed',
+    'expired_erp_lease_cannot_ack',
     'expired_erp_processing_lease_is_reclaimed',
     'active_erp_processing_lease_is_not_reclaimed',
     'processed_erp_event_cannot_be_acked_twice',

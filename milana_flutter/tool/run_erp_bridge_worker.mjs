@@ -151,6 +151,7 @@ for (const event of claim.events) {
     const delivery = await deliverEvent(event);
     await callFunction(idToken, 'ackErpEvent', {
       event_id: event.id,
+      lease_token: event.lease_token,
       status: 'processed',
       worker,
       external_id: delivery.externalId,
@@ -159,6 +160,7 @@ for (const event of claim.events) {
   } catch (error) {
     await callFunction(idToken, 'ackErpEvent', {
       event_id: event.id,
+      lease_token: event.lease_token,
       status: 'failed',
       worker,
       error: error.message,

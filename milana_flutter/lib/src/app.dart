@@ -2471,6 +2471,30 @@ class _CatalogScreenState extends State<CatalogScreen> {
     return products;
   }
 
+  Future<void> _loadMoreCatalog(List<Product> loadedProducts) async {
+    if (visibleProductCount < loadedProducts.length) {
+      setState(() {
+        visibleProductCount = nextCatalogVisibleCount(
+          total: loadedProducts.length,
+          current: visibleProductCount,
+        );
+      });
+      return;
+    }
+    if (!widget.catalog.hasMore) return;
+    final next = widget.catalog.loadMoreProducts();
+    setState(() => productsFuture = next);
+    final products = await next;
+    if (!mounted) return;
+    widget.cart.refreshProducts(products);
+    setState(() {
+      visibleProductCount = nextCatalogVisibleCount(
+        total: products.length,
+        current: visibleProductCount,
+      );
+    });
+  }
+
   void _reloadCatalog() {
     setState(() => productsFuture = _loadProductsAndRefreshCart());
   }
@@ -2573,7 +2597,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 sliver: SliverList.list(
                   children: [
                     PremiumCatalogHeader(
-                      total: allProducts.length,
+                      total: widget.catalog.totalProducts,
                       visible: products.length,
                     ),
                     if (loadInfo.fromCache) ...[
@@ -2787,7 +2811,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   },
                 ),
               ),
-              if (products.length > visibleProducts.length)
+              if (products.length > visibleProducts.length ||
+                  widget.catalog.hasMore)
                 SliverPadding(
                   padding: EdgeInsets.fromLTRB(
                     contentInset,
@@ -2798,13 +2823,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   sliver: SliverToBoxAdapter(
                     child: LoadMoreCatalogButton(
                       visible: visibleProducts.length,
-                      total: products.length,
-                      onPressed: () => setState(() {
-                        visibleProductCount = nextCatalogVisibleCount(
-                          total: products.length,
-                          current: visibleProductCount,
-                        );
-                      }),
+                      total: query.isEmpty && _activeFilterCount == 0
+                          ? widget.catalog.totalProducts
+                          : products.length,
+                      onPressed: () => _loadMoreCatalog(allProducts),
                     ),
                   ),
                 ),

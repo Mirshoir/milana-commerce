@@ -1,5 +1,6 @@
 'use strict';
 
+const { randomUUID } = require('node:crypto');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { FieldValue, getFirestore } = require('firebase-admin/firestore');
@@ -596,6 +597,15 @@ exports.deleteCustomerAccount = onCall({ region }, async (request) => {
       db.collection('notification_preferences').doc(customerId),
     );
     finalBatch.delete(db.collection('customers').doc(customerId));
+    finalBatch.delete(
+      db.collection('customers').doc(customerId).collection('state').doc('saved'),
+    );
+    finalBatch.delete(
+      db.collection('customers').doc(customerId).collection('state').doc('recent'),
+    );
+    finalBatch.delete(
+      db.collection('customers').doc(customerId).collection('state').doc('cart'),
+    );
     finalBatch.set(
       db.collection('account_deletion_feedback').doc(),
       deletionFeedback,
@@ -1655,10 +1665,12 @@ exports.claimErpEvents = onCall({ region }, async (request) => {
     docs.forEach((doc) => {
       const data = doc.data();
       const attempts = Number(data.attempts || 0) + 1;
+      const leaseToken = randomUUID();
       tx.update(doc.ref, {
         status: 'processing',
         attempts,
         lease_owner: normalized.worker,
+        lease_token: leaseToken,
         lease_until: leaseUntil,
         claimed_at: nowIso,
         updated_at: nowIso,
@@ -1666,6 +1678,7 @@ exports.claimErpEvents = onCall({ region }, async (request) => {
       claimed.push({
         ...erpEventReceipt(doc),
         attempts,
+        lease_token: leaseToken,
         lease_until: leaseUntil,
       });
     });
@@ -1701,9 +1714,34 @@ exports.ackErpEvent = onCall({ region }, async (request) => {
     if (event.status === 'processed') {
       throw new HttpsError('failed-precondition', 'ERP event is already processed.');
     }
+    if (event.status !== 'processing') {
+      throw new HttpsError(
+        'failed-precondition',
+        'ERP event does not have an active processing lease.',
+      );
+    }
+    if (
+      event.lease_owner !== normalized.worker ||
+      event.lease_token !== normalized.leaseToken
+    ) {
+      throw new HttpsError(
+        'failed-precondition',
+        'ERP event lease belongs to another worker.',
+      );
+    }
+    if (!event.lease_until || event.lease_until <= nowIso) {
+      throw new HttpsError(
+        'failed-precondition',
+        'ERP event lease has expired.',
+      );
+    }
     const update = {
       status: normalized.status,
       ack_worker: normalized.worker,
+      ack_lease_token: normalized.leaseToken,
+      lease_owner: FieldValue.delete(),
+      lease_token: FieldValue.delete(),
+      lease_until: FieldValue.delete(),
       updated_at: nowIso,
     };
     if (normalized.status === 'processed') {

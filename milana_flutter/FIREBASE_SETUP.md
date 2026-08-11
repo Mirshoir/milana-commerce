@@ -284,7 +284,7 @@ Product documents should match the existing website API shape:
 
 ### `customers`, `orders`, `payments`, `support_requests`, `erp_events`
 
-The Flutter app creates and updates `customers/{uid}` profile documents for signed-in users, including `city` and `address` delivery defaults, `saved_product_ids` for account-synced saved products, `recent_product_ids` for cross-device recently viewed products, and `cart_items` for cross-device wholesale cart restore. Each `cart_items` entry stores a compact product snapshot, qop quantity, unit price, images, and size data; Firestore rules cap the profile cart and recent products at 100 items and limit profile `city` to 80 chars and `address` to 200 chars. The legacy `placeOrder` Cloud Function creates Firebase `orders` and `payments` for emulator/backward-compatibility flows; current checkout uses the shared website backend described above. `cancelOrder` and `submitPaymentProof` apply to those Firebase-backed legacy orders. The `updateProductAvailability`, `updatePaymentStatus`, `updateOrderStatus`, and `updateSupportStatus` Cloud Functions let trusted admin/ERP users update catalog availability, payment, fulfillment status, Cargo tracking, and support replies without exposing direct writes to client apps. The `createSupportTicket` Cloud Function creates `support_requests`. Mutating Cloud Functions create private `erp_events` with `type`, `entity_type`, `entity_id`, `actor`, `payload`, `status: pending`, `attempts`, `created_at`, and `updated_at`. Client apps cannot read or write `erp_events`; ERP bridge code should call `claimErpEvents` with a worker name and lease duration, push each payload to the Milana ERP, then call `ackErpEvent` with `processed` plus an ERP external id or `failed` plus an error message. If a worker crashes while events are `processing`, a later `claimErpEvents` call reclaims them after `lease_until` passes.
+The Flutter app stores identity and delivery fields in `customers/{uid}`. High-churn customer state is isolated in `customers/{uid}/state/saved`, `customers/{uid}/state/recent`, and `customers/{uid}/state/cart`, preventing cart or favorite updates from overwriting profile changes and keeping the profile document bounded. Existing root-level `saved_product_ids`, `recent_product_ids`, and `cart_items` remain readable during migration, but new clients write only the isolated state documents. Firestore rules cap saved products at 500 and recent/cart state at 100 items, and limit profile `city` to 80 chars and `address` to 200 chars. The legacy `placeOrder` Cloud Function creates Firebase `orders` and `payments` for emulator/backward-compatibility flows; current checkout uses the shared website backend described above. `cancelOrder` and `submitPaymentProof` apply to those Firebase-backed legacy orders. The `updateProductAvailability`, `updatePaymentStatus`, `updateOrderStatus`, and `updateSupportStatus` Cloud Functions let trusted admin/ERP users update catalog availability, payment, fulfillment status, Cargo tracking, and support replies without exposing direct writes to client apps. The `createSupportTicket` Cloud Function creates `support_requests`. Mutating Cloud Functions create private `erp_events` with `type`, `entity_type`, `entity_id`, `actor`, `payload`, `status: pending`, `attempts`, `created_at`, and `updated_at`. Client apps cannot read or write `erp_events`; ERP bridge code calls `claimErpEvents`, delivers each payload, then acknowledges it with the exact returned `lease_token`. The server accepts an acknowledgement only while that token, worker, and lease are still active. If a worker crashes, a later claim rotates the token after `lease_until`, so a stale worker cannot acknowledge the reclaimed event.
 
 ## ERP bridge worker
 
@@ -302,6 +302,19 @@ npm run erp:bridge
 
 The `ERP_BRIDGE_EMAIL` user must exist in Firebase Auth and have the custom claim `admin: true`. The worker signs in, calls `claimErpEvents`, POSTs each event to `ERP_WEBHOOK_URL`, then calls `ackErpEvent`. Webhook requests include `x-milana-event-id`, `x-milana-event-type`, and, when `ERP_WEBHOOK_SECRET` is set, `x-milana-signature: sha256=<hmac>`. Use `--dry-run` or `ERP_BRIDGE_DRY_RUN=1` to claim and acknowledge via dry payloads during staging without a live ERP endpoint.
 
+## Staging capacity gate
+
+Run bounded catalog-load verification only against an isolated staging backend:
+
+```bash
+ALLOW_REMOTE_LOAD_TEST=1 \
+LOAD_TEST_BASE_URL=https://staging.example.com \
+npm run verify:capacity:staging -- \
+  --requests 1000 --concurrency 25 --max-p95-ms 1000 --max-error-rate 0.01
+```
+
+The command fails when the p95 latency or error-rate threshold is exceeded. Remote targets require explicit authorization, and `milanapremium.uz` is independently blocked unless `ALLOW_PRODUCTION_LOAD_TEST=1` is deliberately set. Do not use production for capacity testing.
+
 ## Business rules implemented
 
 - Product cards show one clothing price only.
@@ -311,5 +324,5 @@ The `ERP_BRIDGE_EMAIL` user must exist in Firebase Auth and have the custom clai
 - Signed-in order owners can cancel early unpaid orders before submitting payment proof, or submit payment proof/reference details. The payment status becomes `submitted` until admin/ERP confirms it as `paid`, `failed`, or another reviewed status.
 - Order creation, customer payment proof, admin payment updates, and admin fulfillment updates append customer-visible order activity entries.
 - Product/order/payment/support mutations create private pending ERP outbox events for backend sync.
-- ERP bridge workers lease events with `claimErpEvents`; leased records move to `processing`, expired leases can be reclaimed by a later worker, and `ackErpEvent` finalizes them as `processed` or `failed`.
+- ERP bridge workers lease events with `claimErpEvents`; leased records move to `processing`, expired leases can be reclaimed with a new token, and `ackErpEvent` finalizes only the matching active lease as `processed` or `failed`.
 - Payment method is recorded with customer instructions and starts as pending. Admin/ERP users can move it to `waiting_for_customer`, `submitted`, `paid`, `failed`, `cancelled`, or `refunded`; signed provider/ERP webhooks can also confirm or reject payment idempotently. Real Click/Payme/card charging still needs merchant account credentials and provider-specific request mapping.

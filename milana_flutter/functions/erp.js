@@ -36,15 +36,20 @@ function normalizeClaimRequest(data = {}) {
 
 function normalizeAckRequest(data = {}) {
   const eventId = text(data.event_id, 120);
+  const leaseToken = text(data.lease_token, 160);
   const status = text(data.status, 30);
   if (!eventId) {
     throw new Error('missing-event-id');
+  }
+  if (!leaseToken) {
+    throw new Error('missing-lease-token');
   }
   if (!allowedAckStatuses.has(status)) {
     throw new Error('invalid-ack-status');
   }
   return {
     eventId,
+    leaseToken,
     status,
     worker: text(data.worker, 80, 'erp-bridge') || 'erp-bridge',
     externalId: text(data.external_id, 160),

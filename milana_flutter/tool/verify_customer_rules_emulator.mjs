@@ -269,6 +269,44 @@ const ownerProfile = customerDoc(owner);
 
 await createDoc('customers', owner.uid, ownerProfile, owner.token);
 await readDoc('customers', owner.uid, owner.token);
+const customerStateCollection = `customers/${owner.uid}/state`;
+await createDoc(customerStateCollection, 'saved', {
+  schema_version: 1,
+  product_ids: [`product-a-${runId}`, `product-b-${runId}`],
+  updated_at: new Date().toISOString(),
+}, owner.token);
+await createDoc(customerStateCollection, 'recent', {
+  schema_version: 1,
+  product_ids: [`recent-a-${runId}`, `recent-b-${runId}`],
+  updated_at: new Date().toISOString(),
+}, owner.token);
+await createDoc(customerStateCollection, 'cart', {
+  schema_version: 1,
+  items: [cartItem(1), cartItem(2)],
+  updated_at: new Date().toISOString(),
+}, owner.token);
+await readDoc(customerStateCollection, 'saved', owner.token);
+await readDoc(customerStateCollection, 'saved', stranger.token, 403);
+await patchDoc(customerStateCollection, 'saved', {
+  schema_version: 1,
+  product_ids: Array.from({ length: 501 }, (_, index) => `product-${index}`),
+  updated_at: new Date().toISOString(),
+}, owner.token, 403);
+await patchDoc(customerStateCollection, 'recent', {
+  schema_version: 1,
+  product_ids: Array.from({ length: 101 }, (_, index) => `recent-${index}`),
+  updated_at: new Date().toISOString(),
+}, owner.token, 403);
+await patchDoc(customerStateCollection, 'cart', {
+  schema_version: 1,
+  items: Array.from({ length: 101 }, (_, index) => cartItem(index)),
+  updated_at: new Date().toISOString(),
+}, owner.token, 403);
+await createDoc(`customers/${stranger.uid}/state`, 'saved', {
+  schema_version: 1,
+  product_ids: ['stolen-product'],
+  updated_at: new Date().toISOString(),
+}, owner.token, 403);
 await patchDoc('customers', owner.uid, {
   ...ownerProfile,
   saved_product_ids: [`product-a-${runId}`, `product-b-${runId}`],
@@ -364,6 +402,11 @@ console.log(JSON.stringify({
   checks: [
     'owner_can_create_customer_profile',
     'owner_can_read_customer_profile',
+    'owner_can_write_isolated_customer_state',
+    'owner_can_read_isolated_customer_state',
+    'stranger_cannot_read_isolated_customer_state',
+    'isolated_customer_state_enforces_collection_limits',
+    'owner_cannot_write_another_customer_state',
     'owner_can_update_saved_products',
     'owner_can_update_recent_products',
     'owner_can_update_profile_cart',

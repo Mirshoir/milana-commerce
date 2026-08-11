@@ -59,7 +59,13 @@ void main() {
       cache: cache,
       client: MockClient((request) async {
         requestedUri = request.url;
-        return http.Response(jsonEncode([productRow('5287')]), 200);
+        return http.Response(
+          jsonEncode({
+            'items': [productRow('5287')],
+            'meta': {'total': 1, 'has_more': false, 'next_offset': 1},
+          }),
+          200,
+        );
       }),
     );
 
@@ -77,12 +83,59 @@ void main() {
     expect(products.first.orderUnitFor(bagUnitType).pieces, 60);
     expect(products.first.images.first, startsWith(apiBaseUrl));
     expect(requestedUri?.path, '/api/products');
-    expect(requestedUri?.queryParameters['limit'], '2500');
+    expect(requestedUri?.queryParameters['limit'], '$catalogNetworkPageSize');
+    expect(requestedUri?.queryParameters['offset'], '0');
+    expect(requestedUri?.queryParameters['meta'], '1');
+    expect(repo.totalProducts, 1);
+    expect(repo.hasMore, isFalse);
     expect(repo.lastLoadInfo.isFresh, isTrue);
     expect(repo.lastLoadInfo.fromCache, isFalse);
     expect(cached, hasLength(1));
     expect(await cache.cachedAt(), isNotNull);
   });
+
+  test(
+    'catalog repository loads bounded pages without duplicate products',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final requestedOffsets = <String?>[];
+      final repo = CatalogRepository(
+        firebaseEnabled: false,
+        client: MockClient((request) async {
+          final offset = request.url.queryParameters['offset'];
+          requestedOffsets.add(offset);
+          final secondPage = offset == '$catalogNetworkPageSize';
+          return http.Response(
+            jsonEncode({
+              'items': secondPage
+                  ? [productRow('5000'), productRow('5288')]
+                  : List.generate(
+                      catalogNetworkPageSize,
+                      (index) => productRow('${5000 + index}'),
+                    ),
+              'meta': {
+                'total': catalogNetworkPageSize + 2,
+                'has_more': !secondPage,
+                'next_offset': secondPage
+                    ? catalogNetworkPageSize + 2
+                    : catalogNetworkPageSize,
+              },
+            }),
+            200,
+          );
+        }),
+      );
+
+      final first = await repo.loadProducts();
+      final all = await repo.loadMoreProducts();
+
+      expect(first, hasLength(catalogNetworkPageSize));
+      expect(all, hasLength(catalogNetworkPageSize + 1));
+      expect(requestedOffsets, ['0', '$catalogNetworkPageSize']);
+      expect(repo.totalProducts, catalogNetworkPageSize + 2);
+      expect(repo.hasMore, isFalse);
+    },
+  );
 
   test('product parsing accepts website string numbers and unit aliases', () {
     final product = Product.fromJson({

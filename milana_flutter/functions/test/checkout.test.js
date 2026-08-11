@@ -533,12 +533,14 @@ test('normalizes ERP event claim and acknowledgement requests', () => {
   assert.deepEqual(
     normalizeAckRequest({
       event_id: 'event-1',
+      lease_token: 'lease-1',
       status: 'processed',
       worker: 'milana-erp',
       external_id: 'ERP-42',
     }),
     {
       eventId: 'event-1',
+      leaseToken: 'lease-1',
       status: 'processed',
       worker: 'milana-erp',
       externalId: 'ERP-42',
@@ -552,7 +554,15 @@ test('normalizes ERP event claim and acknowledgement requests', () => {
   );
   assert.throws(() => normalizeAckRequest({ status: 'processed' }), /missing-event-id/);
   assert.throws(
-    () => normalizeAckRequest({ event_id: 'event-1', status: 'done' }),
+    () => normalizeAckRequest({ event_id: 'event-1', status: 'processed' }),
+    /missing-lease-token/,
+  );
+  assert.throws(
+    () => normalizeAckRequest({
+      event_id: 'event-1',
+      lease_token: 'lease-1',
+      status: 'done',
+    }),
     /invalid-ack-status/,
   );
 });
