@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -602,6 +603,75 @@ void main() {
     expect(catalogImageCacheDimension(600, 3), 1024);
     expect(catalogImageCacheDimension(double.infinity, 3), 720);
     expect(catalogImageCacheDimension(40, double.nan), 96);
+  });
+
+  testWidgets('product image decoding preserves the source aspect ratio', (
+    tester,
+  ) async {
+    _useViewport(tester, const Size(390, 844));
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SizedBox(
+          width: 240,
+          height: 240,
+          child: ProductImage(
+            product: Product(
+              id: 'portrait-image',
+              slug: 'portrait-image',
+              name: 'Portrait image',
+              gender: 'women',
+              category: 'pajamas',
+              price: 5,
+              sizes: ['44'],
+              images: ['https://example.test/portrait.webp'],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final image = tester.widget<CachedNetworkImage>(
+      find.byType(CachedNetworkImage),
+    );
+    expect(image.memCacheWidth, isNotNull);
+    expect(image.memCacheHeight, isNull);
+    expect(image.maxWidthDiskCache, 1200);
+    expect(image.maxHeightDiskCache, isNull);
+  });
+
+  testWidgets('full-screen gallery keeps an undistorted foreground', (
+    tester,
+  ) async {
+    _useViewport(tester, const Size(390, 844));
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ProductGalleryDialog(
+          product: Product(
+            id: 'gallery-image',
+            slug: 'gallery-image',
+            name: 'Gallery image',
+            gender: 'women',
+            category: 'pajamas',
+            price: 5,
+            sizes: ['44'],
+            images: ['https://example.test/portrait.webp'],
+          ),
+          images: ['https://example.test/portrait.webp'],
+          initialIndex: 0,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byType(ImageFiltered), findsOneWidget);
+    final images = tester
+        .widgetList<ProductImage>(find.byType(ProductImage))
+        .toList();
+    expect(
+      images.map((image) => image.fit),
+      containsAll([BoxFit.cover, BoxFit.contain]),
+    );
   });
 
   testWidgets('rounded category thumbnails fill the circle from the top', (

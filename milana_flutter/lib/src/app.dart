@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
@@ -4073,10 +4074,6 @@ class ProductImage extends StatelessWidget {
           constraints.maxWidth,
           pixelRatio,
         );
-        final cacheHeight = catalogImageCacheDimension(
-          constraints.maxHeight,
-          pixelRatio,
-        );
         return Semantics(
           image: true,
           label: localizedText(
@@ -4093,9 +4090,7 @@ class ProductImage extends StatelessWidget {
             fadeInDuration: const Duration(milliseconds: 100),
             fadeOutDuration: Duration.zero,
             memCacheWidth: cacheWidth,
-            memCacheHeight: cacheHeight,
             maxWidthDiskCache: 1200,
-            maxHeightDiskCache: 1600,
             placeholder: (context, url) => const ProductImagePlaceholder(),
             errorWidget: (context, url, error) => const ProductImageFallback(),
           ),
@@ -5445,18 +5440,35 @@ class _ProductGalleryDialogState extends State<ProductGalleryDialog> {
                 controller: controller,
                 itemCount: widget.images.length,
                 onPageChanged: (value) => setState(() => index = value),
-                itemBuilder: (context, imageIndex) => SafeArea(
-                  child: InteractiveViewer(
-                    minScale: 1,
-                    maxScale: 4,
-                    child: SizedBox.expand(
-                      child: ProductImage(
-                        product: widget.product,
-                        image: widget.images[imageIndex],
-                        fit: BoxFit.contain,
+                itemBuilder: (context, imageIndex) => Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ImageFiltered(
+                      imageFilter: ui.ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                      child: Transform.scale(
+                        scale: 1.08,
+                        child: ProductImage(
+                          product: widget.product,
+                          image: widget.images[imageIndex],
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ),
-                  ),
+                    ColoredBox(color: Colors.black.withValues(alpha: .34)),
+                    SafeArea(
+                      child: InteractiveViewer(
+                        minScale: 1,
+                        maxScale: 4,
+                        child: SizedBox.expand(
+                          child: ProductImage(
+                            product: widget.product,
+                            image: widget.images[imageIndex],
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
