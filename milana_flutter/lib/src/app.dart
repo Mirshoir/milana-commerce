@@ -37,8 +37,10 @@ import 'services/recent_products_store.dart';
 import 'services/support_knowledge.dart';
 
 final money = NumberFormat.currency(locale: 'en_US', symbol: r'$');
-final shortDate = DateFormat('dd MMM yyyy', 'uz');
-final shortDateTime = DateFormat('dd MMM HH:mm', 'uz');
+String shortDate(BuildContext context, DateTime value) =>
+    DateFormat('dd MMM yyyy', context.currentLanguageCode).format(value);
+String shortDateTime(BuildContext context, DateTime value) =>
+    DateFormat('dd MMM HH:mm', context.currentLanguageCode).format(value);
 const firebaseAssetBaseUrl = String.fromEnvironment('FIREBASE_ASSET_BASE_URL');
 const salesPhone = '+998501551010';
 const milanaBurgundy = Color(0xff171717);
@@ -48,6 +50,9 @@ const milanaBlush = Color(0xfff7f5f3);
 const milanaSand = Color(0xffeeeae5);
 const milanaMoss = Color(0xff566246);
 const milanaMuted = Color(0xff666666);
+
+String productName(BuildContext context, Product product) =>
+    product.nameFor(context.currentLanguageCode);
 
 String resolveImageUrl(String image) {
   final trimmed = image.trim();
@@ -839,7 +844,7 @@ class _AppShellState extends State<AppShell> {
           content: Text(
             context.localize(
               'cart.item_unavailable',
-              args: {'product': item.product.name},
+              args: {'product': productName(context, item.product)},
             ),
           ),
         ),
@@ -856,7 +861,7 @@ class _AppShellState extends State<AppShell> {
             context.localize(
               'cart.toast.added',
               args: {
-                'product': item.product.name,
+                'product': productName(context, item.product),
                 'count': '${item.quantity}',
                 'unit': orderUnitLabel(
                   item.unitType,
@@ -1384,7 +1389,7 @@ class _HomeScreenState extends State<HomeScreen> {
           content: Text(
             context.localize(
               'cart.item_unavailable',
-              args: {'product': item.product.name},
+              args: {'product': productName(context, item.product)},
             ),
           ),
         ),
@@ -1401,7 +1406,7 @@ class _HomeScreenState extends State<HomeScreen> {
             context.localize(
               'cart.toast.added',
               args: {
-                'product': item.product.name,
+                'product': productName(context, item.product),
                 'count': '${item.quantity}',
                 'unit': orderUnitLabel(
                   item.unitType,
@@ -2855,6 +2860,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
         savedOnly: savedOnly,
         savedProductIds: favorites,
         sort: catalogSortFromString(sort),
+        languageCode: context.currentLanguageCode,
       ),
     );
   }
@@ -3098,12 +3104,12 @@ class _CatalogScreenState extends State<CatalogScreen> {
       final message = limit < 1
           ? context.localize(
               'cart.item_unavailable',
-              args: {'product': product.name},
+              args: {'product': productName(context, product)},
             )
           : context.localize(
               'catalog.add.limit_exceeded',
               args: {
-                'product': product.name,
+                'product': productName(context, product),
                 'limit': '$limit',
                 'unit': unitLabel.toLowerCase(),
                 'current': '$current',
@@ -3124,7 +3130,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
             context.localize(
               'cart.toast.added',
               args: {
-                'product': product.name,
+                'product': productName(context, product),
                 'count': '${item.quantity}',
                 'unit': orderUnitLabel(
                   item.unitType,
@@ -3240,7 +3246,7 @@ class CatalogCacheNotice extends StatelessWidget {
         ? context.localize('catalog.cache.empty')
         : context.localize(
             'catalog.cache.timestamp',
-            args: {'time': shortDateTime.format(cachedAt.toLocal())},
+            args: {'time': shortDateTime(context, cachedAt.toLocal())},
           );
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -3408,7 +3414,7 @@ class FeaturedProductTile extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 10, bottom: 3),
                 child: Text(
-                  product.name.toUpperCase(),
+                  productName(context, product).toUpperCase(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -3848,7 +3854,7 @@ class ProductCard extends StatelessWidget {
     return Semantics(
       button: true,
       label:
-          '${product.name}. ${money.format(product.price)}. ${context.localize('product.card.open_details')}',
+          '${productName(context, product)}. ${money.format(product.price)}. ${context.localize('product.card.open_details')}',
       child: InkWell(
         onTap: onOpen,
         child: Column(
@@ -3917,7 +3923,7 @@ class ProductCard extends StatelessWidget {
                       child: Semantics(
                         button: true,
                         label:
-                            '${product.name}. ${context.localize('catalog.add_to_cart_count', args: {
+                            '${productName(context, product)}. ${context.localize('catalog.add_to_cart_count', args: {
                               'count': '${product.orderUnitFor(packUnitType).minQty}',
                               'unit': orderUnitLabel(packUnitType, languageCode: context.currentLanguageCode).toLowerCase(),
                             })}',
@@ -3948,7 +3954,7 @@ class ProductCard extends StatelessWidget {
             ),
             const SizedBox(height: 9),
             Text(
-              product.name.toUpperCase(),
+              productName(context, product).toUpperCase(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -4076,7 +4082,7 @@ class ProductImage extends StatelessWidget {
           label: localizedText(
             'product.image.label',
             languageCode: context.currentLanguageCode,
-            args: {'product': product.name},
+            args: {'product': productName(context, product)},
           ),
           child: CachedNetworkImage(
             imageUrl: imageUrl,
@@ -4097,6 +4103,77 @@ class ProductImage extends StatelessWidget {
       },
     );
   }
+}
+
+class _ProductDetailImage extends StatefulWidget {
+  const _ProductDetailImage({
+    required this.product,
+    required this.image,
+    required this.onAspectRatio,
+  });
+
+  final Product product;
+  final String? image;
+  final ValueChanged<double> onAspectRatio;
+
+  @override
+  State<_ProductDetailImage> createState() => _ProductDetailImageState();
+}
+
+class _ProductDetailImageState extends State<_ProductDetailImage> {
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _subscribeToDimensions();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProductDetailImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.image != widget.image) _subscribeToDimensions();
+  }
+
+  void _subscribeToDimensions() {
+    if (_stream != null && _listener != null) {
+      _stream!.removeListener(_listener!);
+    }
+    final source = widget.image?.trim() ?? '';
+    final url = source.isEmpty ? '' : resolveImageUrl(source);
+    if (url.isEmpty) return;
+    final stream = CachedNetworkImageProvider(
+      url,
+      maxWidth: 1200,
+    ).resolve(createLocalImageConfiguration(context));
+    final listener = ImageStreamListener((image, synchronousCall) {
+      final height = image.image.height;
+      if (height <= 0) return;
+      final ratio = image.image.width / height;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onAspectRatio(ratio);
+      });
+    });
+    _stream = stream;
+    _listener = listener;
+    stream.addListener(listener);
+  }
+
+  @override
+  void dispose() {
+    if (_stream != null && _listener != null) {
+      _stream!.removeListener(_listener!);
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ProductImage(
+    product: widget.product,
+    image: widget.image,
+    fit: BoxFit.contain,
+  );
 }
 
 int catalogImageCacheDimension(double logicalSize, double pixelRatio) {
@@ -4692,7 +4769,7 @@ class AssistantProductResult extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      product.name,
+                      productName(context, product),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w900),
@@ -4755,6 +4832,13 @@ class _ProductSheetState extends State<ProductSheet> {
   String unitType = packUnitType;
   bool addedRecently = false;
   late final PageController imageController;
+  final Map<int, double> imageAspectRatios = <int, double>{};
+
+  void _rememberImageAspectRatio(int index, double ratio) {
+    final safeRatio = ratio.clamp(.55, 1.6).toDouble();
+    if ((imageAspectRatios[index] ?? 0) == safeRatio) return;
+    setState(() => imageAspectRatios[index] = safeRatio);
+  }
 
   @override
   void initState() {
@@ -4820,100 +4904,112 @@ class _ProductSheetState extends State<ProductSheet> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  AspectRatio(
-                    aspectRatio: 4 / 5,
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: PageView.builder(
-                              controller: imageController,
-                              itemCount: images.isEmpty ? 1 : images.length,
-                              onPageChanged: (index) =>
-                                  setState(() => imageIndex = index),
-                              itemBuilder: (context, index) => GestureDetector(
-                                onTap: images.isEmpty
-                                    ? null
-                                    : () => _openFullScreenGallery(images),
-                                child: ProductImage(
-                                  product: product,
-                                  image: images.isEmpty ? null : images[index],
-                                  fit: BoxFit.contain,
-                                ),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    child: AspectRatio(
+                      aspectRatio: imageAspectRatios[imageIndex] ?? 3 / 4,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: PageView.builder(
+                                controller: imageController,
+                                itemCount: images.isEmpty ? 1 : images.length,
+                                onPageChanged: (index) =>
+                                    setState(() => imageIndex = index),
+                                itemBuilder: (context, index) =>
+                                    GestureDetector(
+                                      onTap: images.isEmpty
+                                          ? null
+                                          : () =>
+                                                _openFullScreenGallery(images),
+                                      child: _ProductDetailImage(
+                                        product: product,
+                                        image: images.isEmpty
+                                            ? null
+                                            : images[index],
+                                        onAspectRatio: (ratio) =>
+                                            _rememberImageAspectRatio(
+                                              index,
+                                              ratio,
+                                            ),
+                                      ),
+                                    ),
                               ),
                             ),
                           ),
-                        ),
-                        if (images.length > 1) ...[
-                          Positioned(
-                            left: 10,
-                            top: 0,
-                            bottom: 0,
-                            child: Center(
-                              child: IconButton.filledTonal(
-                                onPressed: imageIndex == 0
-                                    ? null
-                                    : () => _showImage(imageIndex - 1),
-                                icon: const Icon(Icons.chevron_left),
-                                tooltip: context.localize(
-                                  'product.gallery.previous',
+                          if (images.length > 1) ...[
+                            Positioned(
+                              left: 10,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: IconButton.filledTonal(
+                                  onPressed: imageIndex == 0
+                                      ? null
+                                      : () => _showImage(imageIndex - 1),
+                                  icon: const Icon(Icons.chevron_left),
+                                  tooltip: context.localize(
+                                    'product.gallery.previous',
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                          Positioned(
-                            right: 10,
-                            top: 0,
-                            bottom: 0,
-                            child: Center(
-                              child: IconButton.filledTonal(
-                                onPressed: imageIndex == images.length - 1
-                                    ? null
-                                    : () => _showImage(imageIndex + 1),
-                                icon: const Icon(Icons.chevron_right),
-                                tooltip: context.localize(
-                                  'product.gallery.next',
+                            Positioned(
+                              right: 10,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: IconButton.filledTonal(
+                                  onPressed: imageIndex == images.length - 1
+                                      ? null
+                                      : () => _showImage(imageIndex + 1),
+                                  icon: const Icon(Icons.chevron_right),
+                                  tooltip: context.localize(
+                                    'product.gallery.next',
+                                  ),
                                 ),
                               ),
+                            ),
+                            Positioned(
+                              right: 12,
+                              bottom: 12,
+                              child: _SoftBadge(
+                                icon: Icons.photo_library_outlined,
+                                label: '${imageIndex + 1}/${images.length}',
+                              ),
+                            ),
+                          ],
+                          Positioned(
+                            left: 12,
+                            top: 12,
+                            child: _SoftBadge(
+                              icon: product.availableQop == null
+                                  ? Icons.verified_outlined
+                                  : Icons.inventory_2_outlined,
+                              label: product.availableQop == null
+                                  ? context.localize('product.premium')
+                                  : qopAvailabilityLabel(
+                                      product,
+                                      languageCode: context.currentLanguageCode,
+                                    ),
                             ),
                           ),
                           Positioned(
                             right: 12,
-                            bottom: 12,
+                            top: 12,
                             child: _SoftBadge(
-                              icon: Icons.photo_library_outlined,
-                              label: '${imageIndex + 1}/${images.length}',
+                              icon: Icons.attach_money,
+                              label: context.localize(
+                                'product.unit',
+                                args: {'count': money.format(product.price)},
+                              ),
                             ),
                           ),
                         ],
-                        Positioned(
-                          left: 12,
-                          top: 12,
-                          child: _SoftBadge(
-                            icon: product.availableQop == null
-                                ? Icons.verified_outlined
-                                : Icons.inventory_2_outlined,
-                            label: product.availableQop == null
-                                ? context.localize('product.premium')
-                                : qopAvailabilityLabel(
-                                    product,
-                                    languageCode: context.currentLanguageCode,
-                                  ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 12,
-                          top: 12,
-                          child: _SoftBadge(
-                            icon: Icons.attach_money,
-                            label: context.localize(
-                              'product.unit',
-                              args: {'count': money.format(product.price)},
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                   if (images.length > 1) ...[
@@ -4961,7 +5057,7 @@ class _ProductSheetState extends State<ProductSheet> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              product.name,
+                              productName(context, product),
                               style: Theme.of(context).textTheme.headlineSmall
                                   ?.copyWith(fontWeight: FontWeight.w800),
                             ),
@@ -5032,15 +5128,19 @@ class _ProductSheetState extends State<ProductSheet> {
                   const SizedBox(height: 14),
                   ProductSpecGrid(specs: specs),
                   const SizedBox(height: 14),
-                  if (product.fabric.isNotEmpty)
+                  if (product.fabricFor(context.currentLanguageCode).isNotEmpty)
                     Text(
-                      product.fabric,
+                      product.fabricFor(context.currentLanguageCode),
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
-                  if (product.description.isNotEmpty)
+                  if (product
+                      .descriptionFor(context.currentLanguageCode)
+                      .isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: Text(product.description),
+                      child: Text(
+                        product.descriptionFor(context.currentLanguageCode),
+                      ),
                     ),
                   const SizedBox(height: 14),
                   ProductHighlightList(highlights: highlights),
@@ -6305,7 +6405,7 @@ class CartLine extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item.product.name,
+                    productName(context, item.product),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   Text(
@@ -6352,7 +6452,12 @@ class CartLine extends StatelessWidget {
                                 content: Text(
                                   context.localize(
                                     'cart.item.removed',
-                                    args: {'product': item.product.name},
+                                    args: {
+                                      'product': productName(
+                                        context,
+                                        item.product,
+                                      ),
+                                    },
                                   ),
                                 ),
                                 action: SnackBarAction(
@@ -6748,7 +6853,7 @@ class PaymentReferencePanel extends StatelessWidget {
         ? context.localize('cart.receipt.reference_active')
         : context.localize(
             'cart.receipt.reference_expires',
-            args: {'datetime': shortDateTime.format(expiresAt.toLocal())},
+            args: {'datetime': shortDateTime(context, expiresAt.toLocal())},
           );
     return Container(
       width: double.infinity,
@@ -8780,7 +8885,7 @@ class AccountOverviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final latest = overview.latestOrderAt == null
         ? context.localize('account.overview.none')
-        : shortDate.format(overview.latestOrderAt!.toLocal());
+        : shortDate(context, overview.latestOrderAt!.toLocal());
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -9053,7 +9158,7 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
     final order = widget.order;
     final created = order.createdAt == null
         ? ''
-        : shortDate.format(order.createdAt!.toLocal());
+        : shortDate(context, order.createdAt!.toLocal());
     final nextAction = orderNextAction(
       order,
       languageCode: context.currentLanguageCode,
@@ -9388,7 +9493,7 @@ class OrderDetailsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final created = order.createdAt == null
         ? ''
-        : shortDateTime.format(order.createdAt!.toLocal());
+        : shortDateTime(context, order.createdAt!.toLocal());
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: .82,
@@ -9864,7 +9969,7 @@ class _OrderActivityRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final created = entry.createdAt == null
         ? ''
-        : shortDateTime.format(entry.createdAt!.toLocal());
+        : shortDateTime(context, entry.createdAt!.toLocal());
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -10145,7 +10250,7 @@ class SupportTicketCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final created = ticket.createdAt == null
         ? ''
-        : shortDate.format(ticket.createdAt!.toLocal());
+        : shortDate(context, ticket.createdAt!.toLocal());
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: Padding(

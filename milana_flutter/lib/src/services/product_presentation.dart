@@ -51,7 +51,9 @@ List<ProductSpec> productSpecs(
   return [
     ProductSpec(
       label: localizedText('product.spec.model', languageCode: languageCode),
-      value: product.modelNo.isEmpty ? product.name : product.modelNo,
+      value: product.modelNo.isEmpty
+          ? product.nameFor(languageCode)
+          : product.modelNo,
     ),
     ProductSpec(
       label: localizedText('product.spec.gender', languageCode: languageCode),
@@ -70,26 +72,26 @@ List<ProductSpec> productSpecs(
           '${orderUnitLabel(item.unitType, languageCode: languageCode)} · '
           '${localizedText('product.unit', languageCode: languageCode, args: {'count': '${item.piecesPerUnit}'})}',
     ),
-    if (product.material.isNotEmpty)
+    if (product.materialFor(languageCode).isNotEmpty)
       ProductSpec(
         label: localizedText(
           'product.spec.material',
           languageCode: languageCode,
         ),
-        value: product.material,
+        value: product.materialFor(languageCode),
       ),
-    if (product.composition.isNotEmpty)
+    if (product.compositionFor(languageCode).isNotEmpty)
       ProductSpec(
         label: localizedText(
           'product.spec.composition',
           languageCode: languageCode,
         ),
-        value: product.composition,
+        value: product.compositionFor(languageCode),
       ),
-    if (product.season.isNotEmpty)
+    if (product.seasonFor(languageCode).isNotEmpty)
       ProductSpec(
         label: localizedText('product.spec.season', languageCode: languageCode),
-        value: product.season,
+        value: product.seasonFor(languageCode),
       ),
     if (product.availableQop != null)
       ProductSpec(
@@ -179,12 +181,13 @@ String productInquiryShareText(
       : '${_stockLabel(product.availableQop!)} ${localizedText('product.unit.bag', languageCode: languageCode)}';
   final lines = [
     localizedText('product.share.title', languageCode: languageCode),
-    '${localizedText('product.share.model', languageCode: languageCode)}: ${product.name}',
+    '${localizedText('product.share.model', languageCode: languageCode)}: ${product.nameFor(languageCode)}',
     '${localizedText('product.share.gender', languageCode: languageCode)}: '
         '${genderLabel(product.gender, languageCode: languageCode)}',
     '${localizedText('product.share.category', languageCode: languageCode)}: '
         '${categoryLabel(product.category, languageCode: languageCode)}',
-    if (product.fabric.isNotEmpty) 'Mato: ${product.fabric}',
+    if (product.fabricFor(languageCode).isNotEmpty)
+      '${localizedText('product.spec.material', languageCode: languageCode)}: ${product.fabricFor(languageCode)}',
     '${localizedText('product.share.price_per_item', languageCode: languageCode)}: \$${product.price.toStringAsFixed(2)}',
     '${localizedText('product.share.unit', languageCode: languageCode)}: ${qopItem.piecesPerUnit} ${localizedText('product.unit.item', languageCode: languageCode)} · \$${qopItem.packagePrice.toStringAsFixed(2)}',
     '${localizedText('product.share.size_mix', languageCode: languageCode)}: $mix',

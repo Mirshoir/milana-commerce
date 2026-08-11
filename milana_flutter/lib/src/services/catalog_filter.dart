@@ -20,6 +20,7 @@ class CatalogFilterOptions {
     this.sort = CatalogSort.featured,
     this.savedOnly = false,
     this.savedProductIds = const <String>{},
+    this.languageCode = 'ru',
   });
 
   final String query;
@@ -32,6 +33,7 @@ class CatalogFilterOptions {
   final CatalogSort sort;
   final bool savedOnly;
   final Set<String> savedProductIds;
+  final String languageCode;
 }
 
 List<Product> filterCatalog(
@@ -62,12 +64,18 @@ List<Product> filterCatalog(
     case CatalogSort.priceHigh:
       ranked.sort((a, b) => b.product.price.compareTo(a.product.price));
     case CatalogSort.name:
-      ranked.sort((a, b) => a.product.name.compareTo(b.product.name));
+      ranked.sort(
+        (a, b) => a.product
+            .nameFor(options.languageCode)
+            .compareTo(b.product.nameFor(options.languageCode)),
+      );
     case CatalogSort.featured:
       ranked.sort((a, b) {
         final byScore = b.score.compareTo(a.score);
         if (byScore != 0) return byScore;
-        return a.product.name.compareTo(b.product.name);
+        return a.product
+            .nameFor(options.languageCode)
+            .compareTo(b.product.nameFor(options.languageCode));
       });
   }
   return ranked.map((row) => row.product).toList();
@@ -184,6 +192,7 @@ String _productText(Product product) {
       product.season,
       product.tag,
       product.collection,
+      ...product.allLocalizedSearchText,
       product.sizes.join(' '),
     ].where((value) => value.trim().isNotEmpty).join(' '),
   );

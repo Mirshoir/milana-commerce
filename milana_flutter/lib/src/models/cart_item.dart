@@ -76,6 +76,13 @@ class CartItem {
         'in_stock': json['in_stock'],
         'can_order_wholesale': json['can_order_wholesale'],
         'order_units': json['order_units'],
+        'name_i18n': json['name_i18n'],
+        'fabric_i18n': json['fabric_i18n'],
+        'material_i18n': json['material_i18n'],
+        'composition_i18n': json['composition_i18n'],
+        'description_i18n': json['description_i18n'],
+        'season_i18n': json['season_i18n'],
+        'collection_i18n': json['collection_i18n'],
       }),
       quantity: qty.clamp(1, 20).toInt(),
       unitType: normalizeOrderUnitType('${json['unit_type'] ?? bagUnitType}'),
@@ -166,5 +173,18 @@ class CartItem {
     'in_stock': product.inStock,
     'can_order_wholesale': product.canOrderWholesale,
     'order_units': product.orderUnits.map((unit) => unit.toJson()).toList(),
+    if (product.localizedNames.isNotEmpty) 'name_i18n': product.localizedNames,
+    if (product.localizedFabrics.isNotEmpty)
+      'fabric_i18n': product.localizedFabrics,
+    if (product.localizedMaterials.isNotEmpty)
+      'material_i18n': product.localizedMaterials,
+    if (product.localizedCompositions.isNotEmpty)
+      'composition_i18n': product.localizedCompositions,
+    if (product.localizedDescriptions.isNotEmpty)
+      'description_i18n': product.localizedDescriptions,
+    if (product.localizedSeasons.isNotEmpty)
+      'season_i18n': product.localizedSeasons,
+    if (product.localizedCollections.isNotEmpty)
+      'collection_i18n': product.localizedCollections,
   };
 }

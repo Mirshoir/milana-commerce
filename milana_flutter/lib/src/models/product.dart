@@ -70,6 +70,13 @@ class Product {
     this.inStock = true,
     this.canOrderWholesale = true,
     this.orderUnits = const <ProductOrderUnit>[],
+    this.localizedNames = const <String, String>{},
+    this.localizedFabrics = const <String, String>{},
+    this.localizedMaterials = const <String, String>{},
+    this.localizedCompositions = const <String, String>{},
+    this.localizedDescriptions = const <String, String>{},
+    this.localizedSeasons = const <String, String>{},
+    this.localizedCollections = const <String, String>{},
   });
 
   final String id;
@@ -97,6 +104,63 @@ class Product {
   final bool inStock;
   final bool canOrderWholesale;
   final List<ProductOrderUnit> orderUnits;
+  final Map<String, String> localizedNames;
+  final Map<String, String> localizedFabrics;
+  final Map<String, String> localizedMaterials;
+  final Map<String, String> localizedCompositions;
+  final Map<String, String> localizedDescriptions;
+  final Map<String, String> localizedSeasons;
+  final Map<String, String> localizedCollections;
+
+  String nameFor(String languageCode) {
+    final translated = _localizedValue(localizedNames, languageCode);
+    if (translated.isNotEmpty) return translated;
+    if (languageCode == 'ru' || !_containsCyrillic(name)) return name;
+
+    // Older catalog rows only have a Russian title, but do contain a translated
+    // description. Use its concise product-type clause instead of leaking a
+    // Russian title into the English or Uzbek interface.
+    final description = _localizedValue(localizedDescriptions, languageCode);
+    final generated = _shortNameFromDescription(description);
+    if (generated.isNotEmpty) {
+      return modelNo.isEmpty ? generated : '$generated · $modelNo';
+    }
+    return modelNo.isEmpty ? name : modelNo;
+  }
+
+  String fabricFor(String languageCode) =>
+      _localizedValue(localizedFabrics, languageCode, fallback: fabric);
+
+  String materialFor(String languageCode) =>
+      _localizedValue(localizedMaterials, languageCode, fallback: material);
+
+  String compositionFor(String languageCode) => _localizedValue(
+    localizedCompositions,
+    languageCode,
+    fallback: composition,
+  );
+
+  String descriptionFor(String languageCode) => _localizedValue(
+    localizedDescriptions,
+    languageCode,
+    fallback: description,
+  );
+
+  String seasonFor(String languageCode) =>
+      _localizedValue(localizedSeasons, languageCode, fallback: season);
+
+  String collectionFor(String languageCode) =>
+      _localizedValue(localizedCollections, languageCode, fallback: collection);
+
+  Iterable<String> get allLocalizedSearchText sync* {
+    yield* localizedNames.values;
+    yield* localizedFabrics.values;
+    yield* localizedMaterials.values;
+    yield* localizedCompositions.values;
+    yield* localizedDescriptions.values;
+    yield* localizedSeasons.values;
+    yield* localizedCollections.values;
+  }
 
   List<ProductOrderUnit> get effectiveOrderUnits {
     final packPieces = sizes.isEmpty ? 6 : sizes.length;
@@ -140,17 +204,6 @@ class Product {
             .toList();
       }
       return const [];
-    }
-
-    String localized(dynamic value) {
-      if (value is Map) {
-        for (final key in const ['uz', 'en', 'ru']) {
-          final text = '${value[key] ?? ''}'.trim();
-          if (text.isNotEmpty) return text;
-        }
-        return '';
-      }
-      return '${value ?? ''}'.trim();
     }
 
     bool asBool(dynamic value, {required bool fallback}) {
@@ -207,12 +260,27 @@ class Product {
               )
               .toList(growable: false)
         : const <ProductOrderUnit>[];
+    final localizedNames = _readLocalizedField(json, const ['name']);
+    final localizedFabrics = _readLocalizedField(json, const ['fabric']);
+    final localizedMaterials = _readLocalizedField(json, const ['material']);
+    final localizedCompositions = _readLocalizedField(json, const [
+      'composition',
+    ]);
+    final localizedDescriptions = _readLocalizedField(json, const [
+      'desc',
+      'description',
+    ]);
+    final localizedSeasons = _readLocalizedField(json, const ['season']);
+    final localizedCollections = _readLocalizedField(json, const [
+      'collection',
+    ]);
+    final canonicalName = _canonicalValue(json, const ['name'], localizedNames);
     return Product(
       id: '$idValue',
       slug: '${json['slug'] ?? idValue}',
-      name: localized(json['name']).isEmpty
+      name: canonicalName.isEmpty
           ? '${json['model_no'] ?? 'Milana'}'
-          : localized(json['name']),
+          : canonicalName,
       gender: '${json['gender'] ?? 'women'}'.trim().toLowerCase(),
       category: productType(),
       price: _asDouble(json['price']) ?? 0,
@@ -220,20 +288,20 @@ class Product {
       images: asList(json['images']),
       modelNo: '${json['model_no'] ?? ''}',
       variant: '${json['variant'] ?? ''}',
-      fabric: localized(
-        json['fabric_uz'] ?? json['fabric_en'] ?? json['fabric'],
-      ),
-      material: localized(json['material']),
-      composition: localized(json['composition']),
-      description: localized(
-        json['desc_uz'] ??
-            json['desc_en'] ??
-            json['desc'] ??
-            json['description'],
-      ),
-      season: localized(json['season']),
+      fabric: _canonicalValue(json, const ['fabric'], localizedFabrics),
+      material: _canonicalValue(json, const ['material'], localizedMaterials),
+      composition: _canonicalValue(json, const [
+        'composition',
+      ], localizedCompositions),
+      description: _canonicalValue(json, const [
+        'desc',
+        'description',
+      ], localizedDescriptions),
+      season: _canonicalValue(json, const ['season'], localizedSeasons),
       tag: '${json['tag'] ?? ''}'.trim().toLowerCase(),
-      collection: localized(json['collection']),
+      collection: _canonicalValue(json, const [
+        'collection',
+      ], localizedCollections),
       rating: _asDouble(json['rating']) ?? 4.8,
       reviews: _asInt(json['reviews']) ?? 0,
       active: active,
@@ -242,6 +310,13 @@ class Product {
       inStock: inStock,
       canOrderWholesale: canOrderWholesale,
       orderUnits: orderUnits,
+      localizedNames: localizedNames,
+      localizedFabrics: localizedFabrics,
+      localizedMaterials: localizedMaterials,
+      localizedCompositions: localizedCompositions,
+      localizedDescriptions: localizedDescriptions,
+      localizedSeasons: localizedSeasons,
+      localizedCollections: localizedCollections,
     );
   }
 
@@ -277,6 +352,13 @@ class Product {
       inStock: inStock,
       canOrderWholesale: canOrderWholesale,
       orderUnits: orderUnits,
+      localizedNames: localizedNames,
+      localizedFabrics: localizedFabrics,
+      localizedMaterials: localizedMaterials,
+      localizedCompositions: localizedCompositions,
+      localizedDescriptions: localizedDescriptions,
+      localizedSeasons: localizedSeasons,
+      localizedCollections: localizedCollections,
     );
   }
 
@@ -309,7 +391,91 @@ class Product {
     'in_stock': inStock,
     'can_order_wholesale': canOrderWholesale,
     'order_units': orderUnits.map((unit) => unit.toJson()).toList(),
+    if (localizedNames.isNotEmpty) 'name_i18n': localizedNames,
+    if (localizedFabrics.isNotEmpty) 'fabric_i18n': localizedFabrics,
+    if (localizedMaterials.isNotEmpty) 'material_i18n': localizedMaterials,
+    if (localizedCompositions.isNotEmpty)
+      'composition_i18n': localizedCompositions,
+    if (localizedDescriptions.isNotEmpty)
+      'description_i18n': localizedDescriptions,
+    if (localizedSeasons.isNotEmpty) 'season_i18n': localizedSeasons,
+    if (localizedCollections.isNotEmpty)
+      'collection_i18n': localizedCollections,
   };
+}
+
+const _productLanguageCodes = <String>['uz', 'ru', 'en'];
+
+Map<String, String> _readLocalizedField(
+  Map<String, dynamic> json,
+  List<String> fieldNames,
+) {
+  final result = <String, String>{};
+  for (final field in fieldNames) {
+    for (final source in [
+      json['${field}_i18n'],
+      json['${field}_localized'],
+      json[field],
+    ]) {
+      if (source is! Map) continue;
+      for (final languageCode in _productLanguageCodes) {
+        final value = '${source[languageCode] ?? ''}'.trim();
+        if (value.isNotEmpty) result.putIfAbsent(languageCode, () => value);
+      }
+    }
+    for (final languageCode in _productLanguageCodes) {
+      final value = '${json['${field}_$languageCode'] ?? ''}'.trim();
+      if (value.isNotEmpty) result.putIfAbsent(languageCode, () => value);
+    }
+  }
+  return Map<String, String>.unmodifiable(result);
+}
+
+String _canonicalValue(
+  Map<String, dynamic> json,
+  List<String> fieldNames,
+  Map<String, String> localized,
+) {
+  for (final field in fieldNames) {
+    final value = json[field];
+    if (value is! Map) {
+      final text = '${value ?? ''}'.trim();
+      if (text.isNotEmpty && text != 'null') return text;
+    }
+  }
+  for (final languageCode in const ['ru', 'uz', 'en']) {
+    final value = localized[languageCode]?.trim() ?? '';
+    if (value.isNotEmpty) return value;
+  }
+  return '';
+}
+
+String _localizedValue(
+  Map<String, String> values,
+  String languageCode, {
+  String fallback = '',
+}) {
+  final selected = values[languageCode]?.trim() ?? '';
+  if (selected.isNotEmpty) return selected;
+  if (fallback.trim().isNotEmpty) return fallback.trim();
+  for (final code in const ['ru', 'uz', 'en']) {
+    final value = values[code]?.trim() ?? '';
+    if (value.isNotEmpty) return value;
+  }
+  return '';
+}
+
+bool _containsCyrillic(String value) =>
+    RegExp(r'[\u0400-\u052f]').hasMatch(value);
+
+String _shortNameFromDescription(String description) {
+  if (description.trim().isEmpty) return '';
+  final firstSentence = description.trim().split(RegExp(r'[.!?]')).first;
+  final colon = firstSentence.indexOf(':');
+  if (colon < 0 || colon == firstSentence.length - 1) return '';
+  final candidate = firstSentence.substring(colon + 1).split(';').first.trim();
+  if (candidate.length < 2 || candidate.length > 48) return '';
+  return '${candidate[0].toUpperCase()}${candidate.substring(1)}';
 }
 
 double? _asDouble(dynamic value) {
