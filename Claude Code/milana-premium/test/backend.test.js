@@ -479,6 +479,16 @@ test("external catalog source stays disconnected", async (t) => {
   assert.equal(catalog.hits(), 0);
 });
 
+test("public catalog clamps oversized legacy requests", async (t) => {
+  const app = await startServer(t);
+  const response = await fetch(app.base + "/api/products?limit=2500&offset=0&meta=1");
+  assert.equal(response.status, 200);
+  const page = await response.json();
+  assert.equal(page.meta.limit, 250);
+  assert.equal(page.meta.offset, 0);
+  assert.ok(page.items.length <= 250);
+});
+
 test("rate limits trust forwarded IPs only from configured proxies", async (t) => {
   const trusted = await startServer(t);
   for (let i = 0; i < 5; i++) {

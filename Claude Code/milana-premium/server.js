@@ -4261,7 +4261,7 @@ const api = {
   "GET /api/products": async (req, res, u) => {
     const q = u.searchParams;
     const customer = await customerFromRequest(req);
-    const paging = paginationFrom(q, { defaultLimit: 48, maxLimit: 2500 });
+    const paging = paginationFrom(q, { defaultLimit: 48, maxLimit: 250 });
     if (CATALOG_SOURCE_ENABLED) {
       try {
         let products = await activeProductsForCatalog();
