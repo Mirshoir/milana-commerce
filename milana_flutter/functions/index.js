@@ -6,6 +6,7 @@ const { getAuth } = require('firebase-admin/auth');
 const { FieldValue, getFirestore } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { HttpsError, onCall, onRequest } = require('firebase-functions/v2/https');
+const { defineSecret } = require('firebase-functions/params');
 const {
   activityEntry,
   buildOrderPayload,
@@ -63,6 +64,7 @@ const db = getFirestore(app);
 const messaging = getMessaging(app);
 const region = 'asia-southeast1';
 const accountDeletionBatchSize = 400;
+const paymentWebhookSecret = defineSecret('PAYMENT_WEBHOOK_SECRET');
 
 const notificationPreferenceByType = Object.freeze({
   application_submitted: 'application_updates',
@@ -1153,7 +1155,7 @@ exports.updatePaymentStatus = onCall({ region }, async (request) => {
   return receipt;
 });
 
-exports.paymentWebhook = onRequest({ region }, async (req, res) => {
+async function handlePaymentWebhook(req, res) {
   if (req.method !== 'POST') {
     res.set('allow', 'POST');
     res.status(405).json({ ok: false, error: 'method-not-allowed' });
@@ -1166,7 +1168,7 @@ exports.paymentWebhook = onRequest({ region }, async (req, res) => {
         typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {}),
         'utf8',
       );
-  const secret = process.env.PAYMENT_WEBHOOK_SECRET || '';
+  const secret = paymentWebhookSecret.value();
   const signature =
     req.get('x-milana-signature') ||
     req.get('x-payment-signature') ||
@@ -1229,7 +1231,12 @@ exports.paymentWebhook = onRequest({ region }, async (req, res) => {
     }
     res.status(500).json({ ok: false, error: 'payment-webhook-failed' });
   }
-});
+}
+
+exports.paymentWebhook = onRequest(
+  { region, secrets: [paymentWebhookSecret] },
+  handlePaymentWebhook,
+);
 
 exports.submitPaymentProof = onCall({ region }, async (request) => {
   if (!request.auth?.uid) {
