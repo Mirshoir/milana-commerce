@@ -35,6 +35,7 @@ const { normalizeAckRequest, normalizeClaimRequest } = require('./erp');
 const { requestPublicApi } = require('./public_api');
 const {
   forwardWebsiteRequest,
+  normalizeWebsiteOrderRequest,
   websitePublicApiError,
 } = require('./website_account');
 const {
@@ -445,7 +446,7 @@ exports.placeWebsiteOrder = onCall({ region }, async (request) => {
     request,
     path: '/api/orders',
     method: 'POST',
-    data: { ...data, source: 'flutter' },
+    data: normalizeWebsiteOrderRequest(data),
     fallback: 'Order could not be submitted.',
     optionalSession: true,
   });

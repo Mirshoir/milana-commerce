@@ -50,6 +50,23 @@ function stripWebsiteSessionTokens(value) {
   return sanitized;
 }
 
+function normalizeWebsiteOrderRequest(value) {
+  const data =
+    value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const requestedMarketType = String(data.market_type || '')
+    .trim()
+    .toLowerCase();
+  const requestedOrderType = String(data.order_type || '')
+    .trim()
+    .toLowerCase();
+  return {
+    ...data,
+    source: 'flutter',
+    market_type: requestedMarketType === 'export' ? 'export' : 'internal',
+    order_type: requestedOrderType === 'retail' ? 'retail' : 'wholesale',
+  };
+}
+
 function websitePublicApiError(result, fallback) {
   const message =
     result?.body && typeof result.body.error === 'string'
@@ -152,6 +169,7 @@ async function forwardWebsiteRequest({
 module.exports = {
   forwardWebsiteRequest,
   normalizeEmail,
+  normalizeWebsiteOrderRequest,
   stripWebsiteSessionTokens,
   suppliedWebsiteSessionToken,
   validatedWebsiteSession,

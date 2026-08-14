@@ -6282,14 +6282,14 @@ class _CartScreenState extends State<CartScreen> {
           );
         }
       }
-    } catch (e) {
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('Checkout submission failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              context.localize('cart.submit.failed', args: {'error': '$e'}),
-            ),
-          ),
+          SnackBar(content: Text(context.localize('cart.submit.failed_safe'))),
         );
       }
     } finally {

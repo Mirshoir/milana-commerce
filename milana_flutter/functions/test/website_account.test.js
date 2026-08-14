@@ -4,12 +4,37 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   forwardWebsiteRequest,
+  normalizeWebsiteOrderRequest,
   stripWebsiteSessionTokens,
   validatedWebsiteSession,
 } = require('../website_account');
 
 const websiteToken =
   '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+test('normalizes legacy Flutter orders to the current website contract', () => {
+  assert.deepEqual(
+    normalizeWebsiteOrderRequest({
+      order_type: 'wholesale',
+      customer: { name: 'Ali' },
+    }),
+    {
+      source: 'flutter',
+      market_type: 'internal',
+      order_type: 'wholesale',
+      customer: { name: 'Ali' },
+    },
+  );
+
+  assert.equal(
+    normalizeWebsiteOrderRequest({ market_type: ' EXPORT ' }).market_type,
+    'export',
+  );
+  assert.equal(
+    normalizeWebsiteOrderRequest({ order_type: ' RETAIL ' }).order_type,
+    'retail',
+  );
+});
 
 function firebaseRequest({
   uid = 'firebase-buyer-1',

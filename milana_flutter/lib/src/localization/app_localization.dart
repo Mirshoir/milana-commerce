@@ -499,6 +499,8 @@ const Map<String, Map<String, String>> localizedStrings = {
     'cart.manager.list_error': 'Menejerlar ro‘yxatini yuklab bo‘lmadi',
     'cart.manager.unavailable': 'Menejer topilmadi',
     'cart.submit.failed': 'Buyurtma yuborilmadi: {error}',
+    'cart.submit.failed_safe':
+        'Buyurtmani yuborib bo‘lmadi. Iltimos, qayta urinib ko‘ring yoki +998 50 155 10 10 raqamiga murojaat qiling.',
     'cart.submit.note':
         'Iltimos, barcha maydonlarni to‘ldiring va to‘lov usulini aniqlang.',
     'cart.submit.receipt_save_failed': 'Buyurtma nusxasini saqlab bo‘lmadi',
@@ -1209,6 +1211,8 @@ const Map<String, Map<String, String>> localizedStrings = {
     'cart.manager.list_error': 'Не удалось загрузить список менеджеров',
     'cart.manager.unavailable': 'Менеджеры отсутствуют',
     'cart.submit.failed': 'Не удалось отправить заказ: {error}',
+    'cart.submit.failed_safe':
+        'Не удалось отправить заказ. Повторите попытку или свяжитесь с нами: +998 50 155 10 10.',
     'cart.submit.note':
         'Проверьте все поля и выберите способ оплаты перед отправкой.',
     'cart.submit.receipt_save_failed': 'Не удалось сохранить подтверждение',
@@ -1701,6 +1705,8 @@ const Map<String, Map<String, String>> localizedStrings = {
     'cart.manager.list_error': 'Could not load manager list',
     'cart.manager.unavailable': 'No manager found',
     'cart.submit.failed': 'Unable to submit order: {error}',
+    'cart.submit.failed_safe':
+        'Could not submit the order. Try again or contact us at +998 50 155 10 10.',
     'cart.submit.note':
         'Please complete all fields and choose a payment method before submitting.',
     'cart.submit.receipt_save_failed': 'Unable to save order confirmation',

@@ -42,6 +42,8 @@ void main() {
     expect(json['client_order_id'], 'co_2026_checkout');
     expect(json['manager_id'], 4);
     expect(json['source'], 'flutter');
+    expect(json['market_type'], 'internal');
+    expect(json['order_type'], 'wholesale');
     expect(json['items'], [
       {
         'product_id': '5287',
@@ -95,10 +97,29 @@ void main() {
 
     expect(json['manager_id'], 2);
     expect(json['source'], 'flutter');
+    expect(json['market_type'], 'internal');
     expect(json['order_type'], 'wholesale');
     expect(json['items'], [
       {'id': 5287, 'qty': 3, 'unit_type': 'qop'},
     ]);
+  });
+
+  test('checkout normalizes the supported export market type', () {
+    const request = CheckoutRequest(
+      name: 'Ali',
+      phone: '+998 90 123 45 67',
+      city: 'Moscow',
+      address: 'Delivery depot',
+      comment: '',
+      paymentMethod: 'manager',
+      managerId: 2,
+      marketType: ' EXPORT ',
+      items: [CartItem(product: product)],
+    );
+
+    expect(request.toBackendJson()['market_type'], 'export');
+    expect(request.toFunctionJson()['market_type'], 'export');
+    expect(request.toFirestore('MP-1')['market_type'], 'export');
   });
 
   test('payment submission sends order payment proof to callable', () {

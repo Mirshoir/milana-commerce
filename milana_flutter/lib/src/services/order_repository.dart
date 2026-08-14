@@ -105,6 +105,7 @@ class OrderRepository {
       customerId: request.customerId,
       clientOrderId: createClientOrderId(),
       languageCode: request.languageCode,
+      marketType: request.marketType,
       items: request.items,
     );
   }

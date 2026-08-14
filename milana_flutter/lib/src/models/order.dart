@@ -37,6 +37,14 @@ String createClientOrderId() {
   return 'co_${timestamp}_$suffix';
 }
 
+const internalCheckoutMarketType = 'internal';
+const exportCheckoutMarketType = 'export';
+
+String normalizeCheckoutMarketType(String value) =>
+    value.trim().toLowerCase() == exportCheckoutMarketType
+    ? exportCheckoutMarketType
+    : internalCheckoutMarketType;
+
 class CheckoutRequest {
   const CheckoutRequest({
     required this.name,
@@ -51,6 +59,7 @@ class CheckoutRequest {
     this.customerId,
     this.clientOrderId = '',
     this.languageCode = defaultLanguageCode,
+    this.marketType = internalCheckoutMarketType,
   });
 
   final String name;
@@ -64,12 +73,14 @@ class CheckoutRequest {
   final String? customerId;
   final String clientOrderId;
   final String languageCode;
+  final String marketType;
   final List<CartItem> items;
 
   double get total => items.fold(0, (sum, item) => sum + item.lineTotal);
 
   Map<String, dynamic> toBackendJson() => {
     'source': 'flutter',
+    'market_type': normalizeCheckoutMarketType(marketType),
     'order_type': 'wholesale',
     'manager_id': managerId,
     'customer': {
@@ -97,6 +108,7 @@ class CheckoutRequest {
 
   Map<String, dynamic> toFunctionJson() => {
     'source': 'flutter',
+    'market_type': normalizeCheckoutMarketType(marketType),
     'order_type': 'wholesale',
     'manager_id': managerId,
     'customer': {
@@ -124,6 +136,8 @@ class CheckoutRequest {
 
   Map<String, dynamic> toFirestore(String number) => {
     'number': number,
+    'market_type': normalizeCheckoutMarketType(marketType),
+    'order_type': 'wholesale',
     'customer_id': customerId,
     'client_order_id': clientOrderId,
     'manager_id': managerId,
