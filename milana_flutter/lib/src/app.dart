@@ -6483,6 +6483,8 @@ class CartLine extends StatelessWidget {
                             ..hideCurrentSnackBar()
                             ..showSnackBar(
                               SnackBar(
+                                duration: const Duration(seconds: 4),
+                                persist: false,
                                 content: Text(
                                   context.localize(
                                     'cart.item.removed',

@@ -444,6 +444,41 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('cart removal message expires even when undo is available', (
+    tester,
+  ) async {
+    _useViewport(tester, const Size(700, 844));
+    const item = CartItem(product: _product, unitType: packUnitType);
+    final store = _MemoryCartStore()
+      ..items = const <CartItem>[item];
+    final auth = AuthService(firebaseEnabled: false);
+    final cart = CartController(store: store, auth: auth);
+    addTearDown(() {
+      cart.dispose();
+      auth.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: CartLine(item: item, cart: cart)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.delete_outline));
+    await tester.pumpAndSettle();
+
+    final snackBar = tester.widget<SnackBar>(find.byType(SnackBar));
+    expect(snackBar.persist, isFalse);
+    expect(snackBar.duration, const Duration(seconds: 4));
+
+    await tester.pump(const Duration(seconds: 4, milliseconds: 1));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SnackBar), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('payment form scrolls above a large keyboard inset', (
     tester,
   ) async {
