@@ -4802,6 +4802,7 @@ const api = {
     const source = str(b.source || req.headers["x-client-name"] || "website", 40) || "website";
     const customerCity = str(c.city, 80);
     const customerAddress = str(c.address, 300);
+    const customerCountry = str(c.country, 80);
     const customerPostcode = str(c.postcode || c.post_code || c.zip || c.postal_code, 40);
     const customerDeliveryNote = str(c.delivery_note || c.note, 500);
     if (name.length < 2) return fail(res, 400, "name");
@@ -4829,6 +4830,7 @@ const api = {
       email: signedInCustomer?.email || normalizeEmail(c.email || ""),
       city: customerCity,
       address: customerAddress,
+      country: customerCountry,
       postcode: customerPostcode,
       delivery_note: customerDeliveryNote,
       comment: str(c.comment, 1000),

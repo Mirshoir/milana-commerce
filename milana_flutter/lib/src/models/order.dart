@@ -58,6 +58,7 @@ class CheckoutRequest {
     this.customerEmail = '',
     this.customerId,
     this.clientOrderId = '',
+    this.country = '',
     this.languageCode = defaultLanguageCode,
     this.marketType = internalCheckoutMarketType,
   });
@@ -66,6 +67,7 @@ class CheckoutRequest {
   final String phone;
   final String city;
   final String address;
+  final String country;
   final String comment;
   final String paymentMethod;
   final int managerId;
@@ -89,6 +91,7 @@ class CheckoutRequest {
       'email': customerEmail,
       'city': city,
       'address': address,
+      'country': country,
       'comment': comment,
       'payment_method': paymentMethod,
     },
@@ -117,6 +120,7 @@ class CheckoutRequest {
       'email': customerEmail,
       'city': city,
       'address': address,
+      'country': country,
       'comment': comment,
     },
     'payment_method': paymentMethod,
@@ -147,6 +151,7 @@ class CheckoutRequest {
       'email': customerEmail,
       'city': city,
       'address': address,
+      'country': country,
       'comment': comment,
     },
     'items': items.map((item) => item.toOrderJson()).toList(),

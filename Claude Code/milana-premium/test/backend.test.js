@@ -298,6 +298,7 @@ test("order placement sends Telegram notification when configured", async (t) =>
       phone: "+998 90 777 88 99",
       city: "Andijon",
       address: "Qoratut 605",
+      country: "Uzbekistan",
       postcode: "170100",
       delivery_note: "Entrance from the main road",
       comment: "Call before delivery",
@@ -337,7 +338,11 @@ test("order placement sends Telegram notification when configured", async (t) =>
 
   const database = new DatabaseSync(path.join(app.dataDir, "milana.db"), { readOnly: true });
   const outbox = database.prepare("SELECT * FROM telegram_order_outbox WHERE order_id=?").get(order.order_id);
+  const storedCustomer = JSON.parse(
+    database.prepare("SELECT customer FROM orders WHERE id=?").get(order.order_id).customer,
+  );
   database.close();
+  assert.equal(storedCustomer.country, "Uzbekistan");
   assert.equal(outbox.status, "sent");
   assert.equal(outbox.attempts, 1);
   assert.equal(outbox.chat_id, "-1001234567890");

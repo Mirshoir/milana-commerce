@@ -6,6 +6,7 @@ import 'package:http/testing.dart';
 import 'package:milana_flutter/src/app.dart';
 import 'package:milana_flutter/src/localization/app_localization.dart';
 import 'package:milana_flutter/src/models/cart_item.dart';
+import 'package:milana_flutter/src/models/checkout_manager.dart';
 import 'package:milana_flutter/src/models/order.dart';
 import 'package:milana_flutter/src/models/product.dart';
 import 'package:milana_flutter/src/services/auth_service.dart';
@@ -271,6 +272,12 @@ void main() {
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
       0,
     );
+    final homeSafeArea = find.descendant(
+      of: find.byType(HomeScreen),
+      matching: find.byType(SafeArea),
+    );
+    expect(homeSafeArea, findsOneWidget);
+    expect(tester.widget<SafeArea>(homeSafeArea).top, isTrue);
     expect(find.byIcon(Icons.business_center_outlined), findsOneWidget);
 
     await tester.tap(
@@ -449,6 +456,68 @@ void main() {
     expect(find.text('Корзина пуста'), findsOneWidget);
     expect(find.text('Перейти в каталог'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('checkout country limits the suggested managers', (tester) async {
+    _useViewport(tester, const Size(700, 844));
+    const item = CartItem(product: _product, unitType: packUnitType);
+    final store = _MemoryCartStore()..items = const <CartItem>[item];
+    final auth = AuthService(firebaseEnabled: false, enableLocalAuth: true);
+    final cart = CartController(store: store, auth: auth);
+    final orders = _CheckoutManagersOrderRepository();
+    addTearDown(() {
+      cart.dispose();
+      auth.dispose();
+      orders.close();
+    });
+
+    await tester.pumpWidget(
+      AppLanguageScope(
+        notifier: LanguageController(languageCode: 'uz'),
+        child: MaterialApp(
+          home: Scaffold(
+            body: CartScreen(
+              cart: cart,
+              orders: orders,
+              auth: auth,
+              onOpenCatalog: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    var country = find.byKey(const ValueKey('checkout-country--none'));
+    await tester.ensureVisible(country.first);
+    await tester.tap(country.first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('O‘zbekiston').last);
+    await tester.pumpAndSettle();
+
+    var managerField = tester.widget<DropdownButton<int>>(
+      find.byType(DropdownButton<int>),
+    );
+    expect(managerField.items!.map((item) => (item.child as Text).data), [
+      'Marjona',
+      'Shaxrizoda',
+    ]);
+
+    country = find.byKey(const ValueKey('checkout-country--uzbekistan'));
+    await tester.ensureVisible(country.first);
+    await tester.tap(country.first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Boshqa mamlakat').last);
+    await tester.pumpAndSettle();
+
+    managerField = tester.widget<DropdownButton<int>>(
+      find.byType(DropdownButton<int>),
+    );
+    expect(managerField.items!.map((item) => (item.child as Text).data), [
+      'Jasurbek',
+      'Oybek',
+      'Muhammadma’ruf',
+    ]);
   });
 
   testWidgets('cart removal message expires even when undo is available', (
@@ -650,6 +719,30 @@ void main() {
     );
   });
 
+  testWidgets('home category images preserve the full model framing', (
+    tester,
+  ) async {
+    _useViewport(tester, const Size(390, 844));
+    await tester.pumpWidget(
+      _testApp(
+        SingleChildScrollView(
+          child: HomeCategoryTile(
+            title: 'Ayollar',
+            subtitle: 'Xalat va pijama',
+            count: 691,
+            product: _product,
+            onTap: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.widget<ProductImage>(find.byType(ProductImage)).fit,
+      BoxFit.contain,
+    );
+  });
+
   testWidgets('rounded category thumbnails fill the circle from the top', (
     tester,
   ) async {
@@ -800,4 +893,18 @@ class _MemoryCartStore extends CartStore {
   Future<void> clear({String? scope}) async {
     items = const <CartItem>[];
   }
+}
+
+class _CheckoutManagersOrderRepository extends OrderRepository {
+  _CheckoutManagersOrderRepository() : super(firebaseEnabled: false);
+
+  @override
+  Future<List<CheckoutManager>> loadManagers() async => const [
+    CheckoutManager(id: 31, name: 'Marjona'),
+    CheckoutManager(id: 6, name: 'Shaxrizoda'),
+    CheckoutManager(id: 3, name: 'Jasurbek'),
+    CheckoutManager(id: 2, name: 'Oybek'),
+    CheckoutManager(id: 4, name: 'Muhammadma’ruf'),
+    CheckoutManager(id: 1, name: 'General manager'),
+  ];
 }

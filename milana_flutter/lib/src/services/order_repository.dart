@@ -98,6 +98,7 @@ class OrderRepository {
       phone: request.phone,
       city: request.city,
       address: request.address,
+      country: request.country,
       comment: request.comment,
       paymentMethod: request.paymentMethod,
       managerId: request.managerId,

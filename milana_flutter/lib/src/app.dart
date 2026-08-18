@@ -1017,62 +1017,59 @@ class _StorefrontHomeHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      bottom: false,
-      child: SizedBox(
-        height: 62,
-        child: Row(
-          children: [
-            IconButton(
-              onPressed: onMenu,
-              color: Colors.white,
-              icon: const Icon(Icons.menu),
-              tooltip: context.localize('menu'),
-            ),
-            const Expanded(
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4),
-                child: _ScaleDownToFit(
-                  alignment: Alignment.center,
-                  child: Text(
-                    'MILANA PREMIUM',
-                    maxLines: 1,
-                    softWrap: false,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      letterSpacing: 4,
-                      fontWeight: FontWeight.w500,
-                    ),
+    return SizedBox(
+      height: 62,
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: onMenu,
+            color: Colors.white,
+            icon: const Icon(Icons.menu),
+            tooltip: context.localize('menu'),
+          ),
+          const Expanded(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4),
+              child: _ScaleDownToFit(
+                alignment: Alignment.center,
+                child: Text(
+                  'MILANA PREMIUM',
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    letterSpacing: 4,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
             ),
-            IconButton(
-              onPressed: onSaved,
+          ),
+          IconButton(
+            onPressed: onSaved,
+            color: Colors.white,
+            icon: const Icon(Icons.favorite_border, size: 21),
+            tooltip: context.localize('app.bar.saved.tooltip'),
+          ),
+          IconButton(
+            onPressed: onSearch,
+            color: Colors.white,
+            icon: const Icon(Icons.search, size: 22),
+            tooltip: context.localize('app.bar.search.tooltip'),
+          ),
+          Badge(
+            isLabelVisible: cartCount > 0,
+            label: Text('$cartCount'),
+            child: IconButton(
+              onPressed: onCart,
               color: Colors.white,
-              icon: const Icon(Icons.favorite_border, size: 21),
-              tooltip: context.localize('app.bar.saved.tooltip'),
+              icon: const Icon(Icons.shopping_bag_outlined, size: 21),
+              tooltip: context.localize('app.bar.cart.tooltip'),
             ),
-            IconButton(
-              onPressed: onSearch,
-              color: Colors.white,
-              icon: const Icon(Icons.search, size: 22),
-              tooltip: context.localize('app.bar.search.tooltip'),
-            ),
-            Badge(
-              isLabelVisible: cartCount > 0,
-              label: Text('$cartCount'),
-              child: IconButton(
-                onPressed: onCart,
-                color: Colors.white,
-                icon: const Icon(Icons.shopping_bag_outlined, size: 21),
-                tooltip: context.localize('app.bar.cart.tooltip'),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1181,117 +1178,121 @@ class _HomeScreenState extends State<HomeScreen> {
             .where((product) => product.category == 'loungewear')
             .take(8)
             .toList();
-        return RefreshIndicator(
-          onRefresh: () async {
-            final next = widget.catalog.loadProducts();
-            setState(() => productsFuture = next);
-            await next;
-          },
-          child: ListView(
-            padding: const EdgeInsets.only(bottom: 32),
-            children: [
-              Stack(
-                children: [
-                  HomeHero(
-                    products: heroProducts,
-                    loading: loading,
-                    autoPlay: widget.isActive,
-                    onCatalog: widget.onOpenCatalog,
-                    onSupport: widget.onOpenSupport,
-                    onOpenProduct: (product) => _openProduct(product, products),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    top: 0,
-                    child: _StorefrontHomeHeader(
-                      cartCount: widget.cart.count,
-                      onMenu: _openMenu,
-                      onSearch: widget.onOpenSearch,
-                      onSaved: widget.onOpenSaved,
-                      onCart: widget.onOpenCart,
+        return SafeArea(
+          bottom: false,
+          child: RefreshIndicator(
+            onRefresh: () async {
+              final next = widget.catalog.loadProducts();
+              setState(() => productsFuture = next);
+              await next;
+            },
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 32),
+              children: [
+                Stack(
+                  children: [
+                    HomeHero(
+                      products: heroProducts,
+                      loading: loading,
+                      autoPlay: widget.isActive,
+                      onCatalog: widget.onOpenCatalog,
+                      onSupport: widget.onOpenSupport,
+                      onOpenProduct: (product) =>
+                          _openProduct(product, products),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 0,
+                      child: _StorefrontHomeHeader(
+                        cartCount: widget.cart.count,
+                        onMenu: _openMenu,
+                        onSearch: widget.onOpenSearch,
+                        onSaved: widget.onOpenSaved,
+                        onCart: widget.onOpenCart,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                HomeStatStrip(totalProducts: products.length),
+                if (snap.hasError && products.isEmpty) ...[
+                  const SizedBox(height: 18),
+                  _EmptyState(
+                    icon: Icons.cloud_off_outlined,
+                    title: context.localize('catalog.error.title'),
+                    message: context.localize('catalog.error.message'),
+                    action: FilledButton(
+                      onPressed: () => setState(
+                        () => productsFuture = widget.catalog.loadProducts(),
+                      ),
+                      child: Text(context.localize('catalog.error.retry')),
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              HomeStatStrip(totalProducts: products.length),
-              if (snap.hasError && products.isEmpty) ...[
-                const SizedBox(height: 18),
-                _EmptyState(
-                  icon: Icons.cloud_off_outlined,
-                  title: context.localize('catalog.error.title'),
-                  message: context.localize('catalog.error.message'),
-                  action: FilledButton(
-                    onPressed: () => setState(
-                      () => productsFuture = widget.catalog.loadProducts(),
+                if (bestProducts.isNotEmpty) ...[
+                  const SizedBox(height: 42),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: SectionHeader(
+                      title: context.localize('home.banner.title.season'),
+                      trailing: '→',
                     ),
-                    child: Text(context.localize('catalog.error.retry')),
                   ),
-                ),
-              ],
-              if (bestProducts.isNotEmpty) ...[
+                  const SizedBox(height: 14),
+                  FeaturedProductsRail(
+                    products: bestProducts,
+                    badgeIcon: Icons.workspace_premium_outlined,
+                    badgeLabel: context.localize('home.banner.top'),
+                    onOpen: (product) => _openProduct(product, products),
+                    onAdd: _add,
+                  ),
+                ],
+                if (!snap.hasError || products.isNotEmpty) ...[
+                  const SizedBox(height: 48),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: SectionHeader(
+                      title: context.localize('home.section.women'),
+                      trailing: '',
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  HomeCategoryGrid(
+                    women: women.length,
+                    men: men.length,
+                    kids: kids.length,
+                    womenProduct: women.isEmpty ? null : women.first,
+                    menProduct: men.isEmpty ? null : men.first,
+                    kidsProduct: kids.isEmpty ? null : kids.first,
+                    onOpenGender: widget.onOpenGender,
+                  ),
+                ],
+                if (lounge.isNotEmpty) ...[
+                  const SizedBox(height: 48),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: SectionHeader(
+                      title: context.localize('home.section.homewear'),
+                      trailing: '→',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  FeaturedProductsRail(
+                    products: lounge,
+                    badgeIcon: Icons.layers_outlined,
+                    badgeLabel: context.localize('home.banner.set'),
+                    onOpen: (product) => _openProduct(product, products),
+                    onAdd: _add,
+                  ),
+                ],
                 const SizedBox(height: 42),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: SectionHeader(
-                    title: context.localize('home.banner.title.season'),
-                    trailing: '→',
-                  ),
-                ),
-                const SizedBox(height: 14),
-                FeaturedProductsRail(
-                  products: bestProducts,
-                  badgeIcon: Icons.workspace_premium_outlined,
-                  badgeLabel: context.localize('home.banner.top'),
-                  onOpen: (product) => _openProduct(product, products),
-                  onAdd: _add,
+                  child: HomeWholesaleBand(onSupport: widget.onOpenSupport),
                 ),
               ],
-              if (!snap.hasError || products.isNotEmpty) ...[
-                const SizedBox(height: 48),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: SectionHeader(
-                    title: context.localize('home.section.women'),
-                    trailing: '',
-                  ),
-                ),
-                const SizedBox(height: 18),
-                HomeCategoryGrid(
-                  women: women.length,
-                  men: men.length,
-                  kids: kids.length,
-                  womenProduct: women.isEmpty ? null : women.first,
-                  menProduct: men.isEmpty ? null : men.first,
-                  kidsProduct: kids.isEmpty ? null : kids.first,
-                  onOpenGender: widget.onOpenGender,
-                ),
-              ],
-              if (lounge.isNotEmpty) ...[
-                const SizedBox(height: 48),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: SectionHeader(
-                    title: context.localize('home.section.homewear'),
-                    trailing: '→',
-                  ),
-                ),
-                const SizedBox(height: 14),
-                FeaturedProductsRail(
-                  products: lounge,
-                  badgeIcon: Icons.layers_outlined,
-                  badgeLabel: context.localize('home.banner.set'),
-                  onOpen: (product) => _openProduct(product, products),
-                  onAdd: _add,
-                ),
-              ],
-              const SizedBox(height: 42),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: HomeWholesaleBand(onSupport: widget.onOpenSupport),
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -2031,9 +2032,12 @@ class HomeCategoryTile extends StatelessWidget {
         children: [
           AspectRatio(
             aspectRatio: .95,
-            child: product == null
-                ? const ProductImagePlaceholder()
-                : ProductImage(product: product!),
+            child: ColoredBox(
+              color: milanaSand,
+              child: product == null
+                  ? const ProductImagePlaceholder()
+                  : ProductImage(product: product!, fit: BoxFit.contain),
+            ),
           ),
           Container(
             width: double.infinity,
@@ -6087,6 +6091,7 @@ class _CartScreenState extends State<CartScreen> {
   final address = TextEditingController();
   final comment = TextEditingController();
   String payment = 'manager';
+  String? checkoutCountry;
   List<CheckoutManager> managers = const [];
   int? managerId;
   bool managersLoading = true;
@@ -6125,7 +6130,10 @@ class _CartScreenState extends State<CartScreen> {
       if (!mounted) return;
       setState(() {
         managers = rows;
-        if (!isCheckoutManagerSelected(managerId, rows)) {
+        if (!isCheckoutManagerSelected(
+          managerId,
+          checkoutManagersForCountry(rows, checkoutCountry),
+        )) {
           managerId = null;
         }
         managersError = rows.isEmpty
@@ -6155,6 +6163,10 @@ class _CartScreenState extends State<CartScreen> {
             : 16.0;
         final customer = widget.auth.customer;
         _bindCheckoutIdentity(customer);
+        final countryManagers = checkoutManagersForCountry(
+          managers,
+          checkoutCountry,
+        );
         final commerceBlocked =
             customer != null &&
             widget.auth.firebaseEnabled &&
@@ -6268,6 +6280,37 @@ class _CartScreenState extends State<CartScreen> {
                     ),
                   ),
                   const SizedBox(height: 10),
+                  DropdownButtonFormField<String>(
+                    key: ValueKey(
+                      'checkout-country-$_boundCustomerId-${checkoutCountry ?? 'none'}',
+                    ),
+                    initialValue: checkoutCountry,
+                    decoration: InputDecoration(
+                      labelText: context.localize('cart.field.country_prompt'),
+                    ),
+                    items: [
+                      DropdownMenuItem(
+                        value: uzbekistanCheckoutCountry,
+                        child: Text(
+                          context.localize('cart.country.uzbekistan'),
+                        ),
+                      ),
+                      DropdownMenuItem(
+                        value: otherCheckoutCountry,
+                        child: Text(context.localize('cart.country.other')),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        checkoutCountry = value;
+                        managerId = null;
+                      });
+                    },
+                    validator: (value) => value == null
+                        ? context.localize('cart.field.country_required')
+                        : null,
+                  ),
+                  const SizedBox(height: 10),
                   if (managersLoading)
                     InputDecorator(
                       decoration: InputDecoration(
@@ -6277,13 +6320,16 @@ class _CartScreenState extends State<CartScreen> {
                     )
                   else
                     DropdownButtonFormField<int>(
+                      key: ValueKey(
+                        'checkout-manager-${checkoutCountry ?? 'none'}-${managerId ?? 'none'}',
+                      ),
                       initialValue: managerId,
                       decoration: InputDecoration(
                         labelText: context.localize(
                           'cart.field.manager_prompt',
                         ),
                       ),
-                      items: managers
+                      items: countryManagers
                           .map(
                             (manager) => DropdownMenuItem(
                               value: manager.id,
@@ -6291,13 +6337,34 @@ class _CartScreenState extends State<CartScreen> {
                             ),
                           )
                           .toList(),
-                      onChanged: managers.isEmpty
+                      onChanged:
+                          checkoutCountry == null || countryManagers.isEmpty
                           ? null
                           : (value) => setState(() => managerId = value),
                       validator: (value) => value == null
                           ? context.localize('cart.field.manager_required')
                           : null,
                     ),
+                  if (!managersLoading &&
+                      managersError == null &&
+                      checkoutCountry == null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      context.localize('cart.manager.choose_country'),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ] else if (!managersLoading &&
+                      managersError == null &&
+                      checkoutCountry != null &&
+                      countryManagers.isEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      context.localize('cart.manager.unavailable'),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ],
                   if (managersError != null) ...[
                     const SizedBox(height: 6),
                     Row(
@@ -6453,6 +6520,9 @@ class _CartScreenState extends State<CartScreen> {
     phone.text = customer?.phone ?? '';
     city.text = customer?.city ?? '';
     address.text = customer?.address ?? '';
+    final profileCountry = checkoutCountryFromProfile(customer?.country ?? '');
+    checkoutCountry = profileCountry.isEmpty ? null : profileCountry;
+    managerId = null;
     comment.clear();
     payment = 'manager';
     pendingClientOrderId = null;
@@ -6495,12 +6565,19 @@ class _CartScreenState extends State<CartScreen> {
       return;
     }
     if (!formKey.currentState!.validate()) return;
+    final selectedCountry = checkoutCountry;
+    if (selectedCountry == null) return;
+    final availableManagers = checkoutManagersForCountry(
+      managers,
+      selectedCountry,
+    );
     final selectedManagerId = managerId;
     if (selectedManagerId == null ||
-        !isCheckoutManagerSelected(selectedManagerId, managers)) {
+        !isCheckoutManagerSelected(selectedManagerId, availableManagers)) {
       return;
     }
     setState(() => sending = true);
+    final languageCode = context.currentLanguageCode;
     final initiatingCustomerId = widget.auth.customer?.id;
     final checkoutItems = List<CartItem>.unmodifiable(widget.cart.items);
     unawaited(context.analytics?.logBeginCheckout(checkoutItems));
@@ -6518,12 +6595,17 @@ class _CartScreenState extends State<CartScreen> {
           phone: normalizePhoneNumber(phone.text),
           city: city.text.trim(),
           address: address.text.trim(),
+          country: selectedCountry == uzbekistanCheckoutCountry
+              ? 'Uzbekistan'
+              : 'Other country',
           comment: comment.text.trim(),
           paymentMethod: payment,
           managerId: selectedManagerId,
           customerEmail: customer?.email ?? '',
           customerId: customer?.id,
           clientOrderId: clientOrderId,
+          languageCode: languageCode,
+          marketType: checkoutMarketForCountry(selectedCountry),
           items: widget.cart.items,
         ),
       );

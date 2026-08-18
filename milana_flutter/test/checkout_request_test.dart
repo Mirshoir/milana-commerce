@@ -110,6 +110,7 @@ void main() {
       phone: '+998 90 123 45 67',
       city: 'Moscow',
       address: 'Delivery depot',
+      country: 'Other country',
       comment: '',
       paymentMethod: 'manager',
       managerId: 2,
@@ -120,6 +121,19 @@ void main() {
     expect(request.toBackendJson()['market_type'], 'export');
     expect(request.toFunctionJson()['market_type'], 'export');
     expect(request.toFirestore('MP-1')['market_type'], 'export');
+    expect(
+      (request.toBackendJson()['customer'] as Map<String, dynamic>)['country'],
+      'Other country',
+    );
+    expect(
+      (request.toFunctionJson()['customer'] as Map<String, dynamic>)['country'],
+      'Other country',
+    );
+    expect(
+      (request.toFirestore('MP-1')['customer']
+          as Map<String, dynamic>)['country'],
+      'Other country',
+    );
   });
 
   test('payment submission sends order payment proof to callable', () {

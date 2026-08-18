@@ -34,6 +34,40 @@ void main() {
     expect(isCheckoutManagerSelected(2, managers), isTrue);
   });
 
+  test('checkout managers are filtered by the selected country', () {
+    const managers = [
+      CheckoutManager(id: 31, name: 'Marjona', department: 'internal'),
+      CheckoutManager(id: 6, name: 'Shaxrizoda', department: 'internal'),
+      CheckoutManager(id: 3, name: 'Jasurbek', department: 'export'),
+      CheckoutManager(id: 2, name: 'Oybek', department: 'export'),
+      CheckoutManager(id: 4, name: 'Muhammadma’ruf', department: 'export'),
+      CheckoutManager(id: 1, name: 'General manager', department: 'export'),
+      CheckoutManager(id: 5, name: 'Abdulloh', department: 'internal'),
+    ];
+
+    expect(
+      checkoutManagersForCountry(
+        managers,
+        uzbekistanCheckoutCountry,
+      ).map((manager) => manager.name),
+      ['Marjona', 'Shaxrizoda'],
+    );
+    expect(
+      checkoutManagersForCountry(
+        managers,
+        otherCheckoutCountry,
+      ).map((manager) => manager.name),
+      ['Jasurbek', 'Oybek', 'Muhammadma’ruf'],
+    );
+    expect(checkoutMarketForCountry(uzbekistanCheckoutCountry), 'internal');
+    expect(checkoutMarketForCountry(otherCheckoutCountry), 'export');
+    expect(
+      checkoutCountryFromProfile('O‘zbekiston'),
+      uzbekistanCheckoutCountry,
+    );
+    expect(checkoutCountryFromProfile('Russia'), otherCheckoutCountry);
+  });
+
   test('loads valid checkout managers from the public API', () async {
     final repository = OrderRepository(
       firebaseEnabled: true,
@@ -45,7 +79,7 @@ void main() {
         return http.Response.bytes(
           utf8.encode(
             jsonEncode([
-              {'id': 1, 'name': 'General manager'},
+              {'id': 1, 'name': 'General manager', 'department': 'export'},
               {'id': '2', 'name': 'Muhammadma’ruf'},
               {'id': 0, 'name': 'Invalid'},
               {'id': 3, 'name': ''},
@@ -62,6 +96,7 @@ void main() {
     expect(managers, hasLength(2));
     expect(managers[0].id, 1);
     expect(managers[0].name, 'General manager');
+    expect(managers[0].department, 'export');
     expect(managers[1].id, 2);
     expect(managers[1].name, 'Muhammadma’ruf');
   });
