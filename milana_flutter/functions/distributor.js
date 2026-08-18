@@ -42,9 +42,12 @@ function normalizeDistributorApplication(data = {}) {
     country: requiredText(data.country, 80),
     city: text(data.city, 80),
     website,
-    expectedMonthlyVolume: requiredText(data.expected_monthly_volume, 40),
-    salesChannels: requiredText(data.sales_channels, 500),
-    requestedTerritories: requiredText(data.requested_territories, 500),
+    // These fields remain supported for website/legacy clients, but the
+    // streamlined mobile form no longer asks for them. Treat an omitted or
+    // empty value as optional so valid mobile applications are not rejected.
+    expectedMonthlyVolume: text(data.expected_monthly_volume, 40),
+    salesChannels: text(data.sales_channels, 500),
+    requestedTerritories: text(data.requested_territories, 500),
     message: text(data.message, 2000),
     lang: text(data.lang, 5, 'ru') || 'ru',
   };

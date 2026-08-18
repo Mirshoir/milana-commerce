@@ -61,6 +61,24 @@ test('distributor application normalization validates and limits lead data', () 
   );
 });
 
+test('streamlined mobile application accepts omitted legacy detail fields', () => {
+  const normalized = normalizeDistributorApplication({
+    client_application_id: 'flutter_123456789',
+    contact_name: 'Aziza Karimova',
+    company_name: 'Atlas Trade LLC',
+    phone: '+998 90 123 45 67',
+    email: 'sales@example.com',
+    country: 'Uzbekistan',
+    city: 'Tashkent',
+    legal_accepted: true,
+    lang: 'en',
+  });
+
+  assert.equal(normalized.expectedMonthlyVolume, '');
+  assert.equal(normalized.salesChannels, '');
+  assert.equal(normalized.requestedTerritories, '');
+});
+
 test('distributor application ids are deterministic and owner-scoped', () => {
   const first = distributorApplicationKey({
     customerId: 'customer-a',
