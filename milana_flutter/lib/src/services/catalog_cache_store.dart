@@ -8,7 +8,9 @@ class CatalogCacheStore {
   static const _key = 'milana_catalog_products';
   static const _timestampKey = 'milana_catalog_cached_at';
   static const _schemaKey = 'milana_catalog_schema';
-  static const _schemaVersion = 2;
+  // v3 persists the website's copy_manual flag so cached product detail
+  // headings use the same reviewed localized copy as the live storefront.
+  static const _schemaVersion = 3;
   static const _maxCachedItems = 2500;
 
   Future<List<Product>> load() async {

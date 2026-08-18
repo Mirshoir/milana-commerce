@@ -49,6 +49,48 @@ void main() {
     expect(product.nameFor('en'), 'Yellow set');
   });
 
+  test('uses administrator-reviewed website copy for detail title', () {
+    final product = Product.fromJson({
+      'id': 11,
+      'model_no': 'PM-7007',
+      'name_i18n': {
+        'uz': 'Katak yoqali erkaklar pijama kalta yeng',
+        'ru': 'Мужская пижама в клетку',
+        'en': "Plaid collared men's pajama set",
+      },
+      'desc': {
+        'uz': 'Erkaklar uchun katak naqshli va kalta yengli pijama.',
+        'ru': 'Мужская пижама в клетку с коротким рукавом.',
+        'en': "Men's plaid pajamas with short sleeves.",
+      },
+      'copy_manual': true,
+    });
+
+    expect(
+      product.detailTitleFor('uz'),
+      'Erkaklar uchun katak naqshli va kalta yengli pijama.',
+    );
+    expect(product.nameFor('uz'), 'Katak yoqali erkaklar pijama kalta yeng');
+  });
+
+  test('does not promote generated or oversized descriptions to titles', () {
+    final generated = Product.fromJson({
+      'id': 12,
+      'name_i18n': {'uz': 'Qora xalat'},
+      'desc': {'uz': 'Suratdagi mahsulot turi: xalat.'},
+      'copy_manual': false,
+    });
+    final oversized = Product.fromJson({
+      'id': 13,
+      'name_i18n': {'uz': 'Qora tunika'},
+      'desc': {'uz': List.filled(121, 'a').join()},
+      'copy_manual': true,
+    });
+
+    expect(generated.detailTitleFor('uz'), 'Qora xalat');
+    expect(oversized.detailTitleFor('uz'), 'Qora tunika');
+  });
+
   test('localized catalog fields survive cache serialization', () {
     final original = Product.fromJson({
       'id': 8,
@@ -70,6 +112,7 @@ void main() {
       'like_count': 14,
       'views': 210,
       'colors': ['Blue', 'White'],
+      'copy_manual': true,
     });
 
     final restored = Product.fromJson(original.toJson());
@@ -84,5 +127,6 @@ void main() {
     expect(restored.likeCount, 14);
     expect(restored.views, 210);
     expect(restored.colors, ['Blue', 'White']);
+    expect(restored.copyManual, isTrue);
   });
 }

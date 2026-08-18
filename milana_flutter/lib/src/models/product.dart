@@ -67,6 +67,7 @@ class Product {
     this.active = true,
     this.availableQop,
     this.preorder = false,
+    this.copyManual = false,
     this.inStock = true,
     this.canOrderWholesale = true,
     this.orderUnits = const <ProductOrderUnit>[],
@@ -108,6 +109,7 @@ class Product {
   final bool active;
   final double? availableQop;
   final bool preorder;
+  final bool copyManual;
   final bool inStock;
   final bool canOrderWholesale;
   final List<ProductOrderUnit> orderUnits;
@@ -140,6 +142,21 @@ class Product {
       return modelNo.isEmpty ? generated : '$generated · $modelNo';
     }
     return modelNo.isEmpty ? name : modelNo;
+  }
+
+  /// Uses the website's administrator-reviewed copy for a product detail
+  /// heading when it is concise enough. The shorter localized name remains
+  /// available for catalog navigation and search results.
+  String detailTitleFor(String languageCode) {
+    if (copyManual) {
+      final reviewed = descriptionFor(languageCode).trim();
+      if (reviewed.length >= 2 &&
+          reviewed.length <= 120 &&
+          !reviewed.contains('\n')) {
+        return reviewed;
+      }
+    }
+    return nameFor(languageCode);
   }
 
   String fabricFor(String languageCode) =>
@@ -257,6 +274,7 @@ class Product {
     final availableQop = _asDouble(json['available_qop']);
     final active = asBool(json['active'], fallback: true);
     final preorder = asBool(json['preorder'], fallback: false);
+    final copyManual = asBool(json['copy_manual'], fallback: false);
     final inStock = asBool(
       json['in_stock'],
       fallback: availableQop == null || availableQop > 0,
@@ -326,6 +344,7 @@ class Product {
       active: active,
       availableQop: availableQop,
       preorder: preorder,
+      copyManual: copyManual,
       inStock: inStock,
       canOrderWholesale: canOrderWholesale,
       orderUnits: orderUnits,
@@ -375,6 +394,7 @@ class Product {
       active: active ?? this.active,
       availableQop: availableQop ?? this.availableQop,
       preorder: preorder,
+      copyManual: copyManual,
       inStock: inStock,
       canOrderWholesale: canOrderWholesale,
       orderUnits: orderUnits,
@@ -427,6 +447,7 @@ class Product {
     'active': active,
     if (availableQop != null) 'available_qop': availableQop,
     'preorder': preorder,
+    'copy_manual': copyManual,
     'in_stock': inStock,
     'can_order_wholesale': canOrderWholesale,
     'order_units': orderUnits.map((unit) => unit.toJson()).toList(),

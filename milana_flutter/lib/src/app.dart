@@ -55,6 +55,9 @@ const milanaMuted = Color(0xff666666);
 String productName(BuildContext context, Product product) =>
     product.nameFor(context.currentLanguageCode);
 
+String productDetailTitle(BuildContext context, Product product) =>
+    product.detailTitleFor(context.currentLanguageCode);
+
 String resolveImageUrl(String image) {
   final trimmed = image.trim();
   if (trimmed.isEmpty) return '';
@@ -5118,7 +5121,7 @@ class _ProductSheetState extends State<ProductSheet> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              productName(context, product),
+                              productDetailTitle(context, product),
                               style: Theme.of(context).textTheme.headlineSmall
                                   ?.copyWith(fontWeight: FontWeight.w800),
                             ),
@@ -5214,8 +5217,10 @@ class _ProductSheetState extends State<ProductSheet> {
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   if (product
-                      .descriptionFor(context.currentLanguageCode)
-                      .isNotEmpty)
+                          .descriptionFor(context.currentLanguageCode)
+                          .isNotEmpty &&
+                      product.descriptionFor(context.currentLanguageCode) !=
+                          productDetailTitle(context, product))
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
