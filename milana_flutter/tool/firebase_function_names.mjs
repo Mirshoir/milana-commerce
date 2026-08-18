@@ -1,5 +1,10 @@
 export const defaultFirebaseFunctionNames = Object.freeze([
   'listCheckoutManagers',
+  'submitDistributorApplication',
+  'updateDistributorApplicationStatus',
+  'updateNotificationPreferences',
+  'registerNotificationDevice',
+  'markNotificationRead',
   'placeWebsiteOrder',
   'listWebsiteCustomerOrders',
   'listWebsiteCustomerSupport',

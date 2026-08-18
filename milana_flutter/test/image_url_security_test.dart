@@ -19,4 +19,11 @@ void main() {
       'http://127.0.0.1:4173/uploads/model.jpg',
     );
   });
+
+  test('relative catalog images resolve against the app base URI', () {
+    final resolved = resolveImageUrl('uploads/model.jpg');
+
+    expect(Uri.parse(resolved).isAbsolute, isTrue);
+    expect(resolved, contains('uploads/model.jpg'));
+  });
 }

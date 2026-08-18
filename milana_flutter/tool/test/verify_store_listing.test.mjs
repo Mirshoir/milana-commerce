@@ -111,7 +111,7 @@ test('candidate version and protected define URLs must match repository metadata
     () => verifyStoreListing({
       root,
       platform: 'android',
-      version: '1.0.1',
+      version: '9.9.9',
       buildNumber: '2',
       definesPath,
     }),

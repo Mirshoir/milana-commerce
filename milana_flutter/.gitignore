@@ -58,3 +58,12 @@ app.*.map.json
 /functions/.env*
 firebase-debug.log
 firestore-debug.log
+
+# Local release artifacts and Codex working files
+*.apk
+*.aab
+*.ipa
+*.icloud-placeholder
+/.codex-temp/
+/release/
+/store/google-play/closed-testers.csv

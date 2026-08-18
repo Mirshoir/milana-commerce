@@ -1,4 +1,5 @@
 import 'product.dart';
+import '../localization/app_localization.dart';
 
 const int bagSize = 60;
 const int sizeCount = 6;
@@ -14,11 +15,12 @@ String normalizeOrderUnitType(String value) {
   return bagUnitType;
 }
 
-String orderUnitLabel(String unitType) =>
-    normalizeOrderUnitType(unitType) == packUnitType ? 'Qadoq' : 'Qop';
-
-String orderUnitEnglishLabel(String unitType) =>
-    normalizeOrderUnitType(unitType) == packUnitType ? 'Pack' : 'Bag';
+String orderUnitLabel(
+  String unitType, {
+  String languageCode = defaultLanguageCode,
+}) => normalizeOrderUnitType(unitType) == packUnitType
+    ? localizedText('product.pack.label', languageCode: languageCode)
+    : localizedText('product.bag.label', languageCode: languageCode);
 
 class CartItem {
   const CartItem({
@@ -66,6 +68,13 @@ class CartItem {
         'material': json['material'],
         'composition': json['composition'],
         'description': json['description'],
+        'care_i18n': json['care_i18n'],
+        'size_chart': json['size_chart'],
+        'color': json['color'],
+        'country': json['country'],
+        'like_count': json['like_count'],
+        'views': json['views'],
+        'colors': json['colors'],
         'season': json['season'],
         'tag': json['tag'],
         'collection': json['collection'],
@@ -74,6 +83,13 @@ class CartItem {
         'in_stock': json['in_stock'],
         'can_order_wholesale': json['can_order_wholesale'],
         'order_units': json['order_units'],
+        'name_i18n': json['name_i18n'],
+        'fabric_i18n': json['fabric_i18n'],
+        'material_i18n': json['material_i18n'],
+        'composition_i18n': json['composition_i18n'],
+        'description_i18n': json['description_i18n'],
+        'season_i18n': json['season_i18n'],
+        'collection_i18n': json['collection_i18n'],
       }),
       quantity: qty.clamp(1, 20).toInt(),
       unitType: normalizeOrderUnitType('${json['unit_type'] ?? bagUnitType}'),
@@ -86,6 +102,7 @@ class CartItem {
 
   ProductOrderUnit get orderUnit => product.orderUnitFor(unitType);
   String get storageKey => '${product.id}:${orderUnit.unitType}';
+  int get minimumQuantity => orderUnit.minQty;
   int get piecesPerUnit => orderUnit.pieces;
   int get pieceCount => piecesPerUnit * quantity;
   double get packagePrice => product.price * piecesPerUnit;
@@ -104,7 +121,7 @@ class CartItem {
   List<String> get mixSizes {
     final defaults = product.gender == 'men'
         ? ['46', '48', '50', '52', '54', '56']
-        : product.gender == 'kids' || product.category == 'pajamas'
+        : product.gender == 'kids'
         ? ['28', '30', '32', '34', '36', '38']
         : ['44', '46', '48', '50', '52', '54'];
     final seen = <String>{};
@@ -163,5 +180,25 @@ class CartItem {
     'in_stock': product.inStock,
     'can_order_wholesale': product.canOrderWholesale,
     'order_units': product.orderUnits.map((unit) => unit.toJson()).toList(),
+    if (product.localizedNames.isNotEmpty) 'name_i18n': product.localizedNames,
+    if (product.localizedFabrics.isNotEmpty)
+      'fabric_i18n': product.localizedFabrics,
+    if (product.localizedMaterials.isNotEmpty)
+      'material_i18n': product.localizedMaterials,
+    if (product.localizedCompositions.isNotEmpty)
+      'composition_i18n': product.localizedCompositions,
+    if (product.localizedDescriptions.isNotEmpty)
+      'description_i18n': product.localizedDescriptions,
+    if (product.localizedCare.isNotEmpty) 'care_i18n': product.localizedCare,
+    if (product.sizeChart.isNotEmpty) 'size_chart': product.sizeChart,
+    if (product.color.isNotEmpty) 'color': product.color,
+    if (product.country.isNotEmpty) 'country': product.country,
+    if (product.likeCount > 0) 'like_count': product.likeCount,
+    if (product.views > 0) 'views': product.views,
+    if (product.colors.isNotEmpty) 'colors': product.colors,
+    if (product.localizedSeasons.isNotEmpty)
+      'season_i18n': product.localizedSeasons,
+    if (product.localizedCollections.isNotEmpty)
+      'collection_i18n': product.localizedCollections,
   };
 }

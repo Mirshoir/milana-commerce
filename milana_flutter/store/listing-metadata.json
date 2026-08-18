@@ -1,9 +1,9 @@
 {
   "schemaVersion": 2,
   "release": {
-    "versionName": "1.0.0",
-    "buildNumber": 1,
-    "interfaceLanguages": ["uz"]
+    "versionName": "1.0.1",
+    "buildNumber": 26,
+    "interfaceLanguages": ["uz", "ru", "en"]
   },
   "identity": {
     "name": "Milana Premium",

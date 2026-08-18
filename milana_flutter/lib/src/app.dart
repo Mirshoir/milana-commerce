@@ -3,15 +3,20 @@ import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 
+import 'localization/app_localization.dart';
+import 'features/distributor/distributor_screen.dart';
+import 'features/notifications/notification_center.dart';
 import 'models/cart_item.dart';
 import 'models/checkout_manager.dart';
 import 'models/order.dart';
 import 'models/product.dart';
 import 'models/support_ticket.dart';
 import 'services/assistant_service.dart';
+import 'services/analytics_service.dart';
 import 'services/auth_service.dart';
 import 'services/account_overview.dart';
 import 'services/auth_forms.dart';
@@ -20,17 +25,21 @@ import 'services/catalog_filter.dart';
 import 'services/catalog_paging.dart';
 import 'services/catalog_repository.dart';
 import 'services/checkout_recovery_store.dart';
+import 'services/distributor_repository.dart';
 import 'services/favorites_store.dart';
 import 'services/legal_links.dart';
 import 'services/order_repository.dart';
 import 'services/order_presentation.dart';
 import 'services/product_presentation.dart';
+import 'services/push_notification_service.dart';
 import 'services/recent_products_store.dart';
 import 'services/support_knowledge.dart';
 
 final money = NumberFormat.currency(locale: 'en_US', symbol: r'$');
-final shortDate = DateFormat('dd MMM yyyy', 'uz');
-final shortDateTime = DateFormat('dd MMM HH:mm', 'uz');
+String shortDate(BuildContext context, DateTime value) =>
+    DateFormat('dd MMM yyyy', context.currentLanguageCode).format(value);
+String shortDateTime(BuildContext context, DateTime value) =>
+    DateFormat('dd MMM HH:mm', context.currentLanguageCode).format(value);
 const firebaseAssetBaseUrl = String.fromEnvironment('FIREBASE_ASSET_BASE_URL');
 const salesPhone = '+998501551010';
 const milanaBurgundy = Color(0xff171717);
@@ -41,68 +50,125 @@ const milanaSand = Color(0xffeeeae5);
 const milanaMoss = Color(0xff566246);
 const milanaMuted = Color(0xff666666);
 
+String productName(BuildContext context, Product product) =>
+    product.nameFor(context.currentLanguageCode);
+
 String resolveImageUrl(String image) {
-  final absolute = Uri.tryParse(image);
+  final trimmed = image.trim();
+  if (trimmed.isEmpty) return '';
+  final absolute = Uri.tryParse(trimmed);
   if (absolute != null && absolute.hasScheme) {
     if (absolute.scheme == 'https') return absolute.toString();
-    if (!kReleaseMode &&
-        absolute.scheme == 'http' &&
-        (absolute.host == '127.0.0.1' || absolute.host == 'localhost')) {
+    final isLoopbackImage =
+        absolute.host == '127.0.0.1' || absolute.host == 'localhost';
+    final isLoopbackWebPreview =
+        kIsWeb &&
+        (Uri.base.host == '127.0.0.1' || Uri.base.host == 'localhost');
+    if (absolute.scheme == 'http' &&
+        isLoopbackImage &&
+        (!kReleaseMode || isLoopbackWebPreview)) {
       return absolute.toString();
     }
     return '';
   }
-  if (image.startsWith('/') && firebaseAssetBaseUrl.isNotEmpty) {
-    return firebaseAssetBaseUrl.replaceAll(RegExp(r'/+$'), '') + image;
+  if (trimmed.startsWith('/') && firebaseAssetBaseUrl.isNotEmpty) {
+    return firebaseAssetBaseUrl.replaceAll(RegExp(r'/+$'), '') + trimmed;
   }
-  if (image.startsWith('/')) return Uri.base.resolve(image).toString();
-  return image;
+  return Uri.base.resolve(trimmed).toString();
 }
 
 int packageUiLimit(Product product, {String unitType = bagUnitType}) {
   if (!product.active || !product.canOrderWholesale) return 0;
+  final minimum = product.orderUnitFor(unitType).minQty;
   final available = product.availableQop;
-  if (available == null) return 20;
+  if (available == null) return minimum > 20 ? minimum : 20;
   final pieces = product.orderUnitFor(unitType).pieces;
-  return (available * bagSize / pieces).floor().clamp(0, 20).toInt();
+  final availableUnits = (available * bagSize / pieces).floor();
+  if (availableUnits < minimum) return 0;
+  return availableUnits.clamp(0, minimum > 20 ? minimum : 20).toInt();
+}
+
+CartItem minimumCartItem(Product product, {String unitType = packUnitType}) {
+  final normalizedUnit = normalizeOrderUnitType(unitType);
+  return CartItem(
+    product: product,
+    quantity: product.orderUnitFor(normalizedUnit).minQty,
+    unitType: normalizedUnit,
+  );
 }
 
 int qopUiLimit(Product product) => packageUiLimit(product);
 
 bool isOutOfQop(Product product) => !product.canOrderWholesale;
 
-String qopAvailabilityLabel(Product product) {
-  if (product.preorder) return 'Oldindan buyurtma';
-  if (!product.canOrderWholesale) return 'Mavjud emas';
-  if (product.availableQop == null) return 'Menejer tasdiqlaydi';
+String qopAvailabilityLabel(
+  Product product, {
+  String languageCode = defaultLanguageCode,
+}) {
+  if (product.preorder) {
+    return localizedText(
+      'product.highlight.preorder',
+      languageCode: languageCode,
+    );
+  }
+  if (!product.canOrderWholesale) {
+    return localizedText(
+      'product.availability.out_of_stock',
+      languageCode: languageCode,
+    );
+  }
+  if (product.availableQop == null) {
+    return localizedText(
+      'product.availability.manager',
+      languageCode: languageCode,
+    );
+  }
   final stock = product.availableQop!;
   final label = stock == stock.roundToDouble()
       ? stock.toInt().toString()
       : stock.toStringAsFixed(1);
-  return '$label qop';
+  return '$label ${localizedText('product.unit.bag', languageCode: languageCode)}';
 }
 
-String productTagLabel(Product product) => switch (product.tag) {
-  'new' => 'Yangi',
-  'bestseller' => 'Bestseller',
-  'sale' => 'Chegirma',
+String productTagLabel(
+  Product product, {
+  String languageCode = defaultLanguageCode,
+}) => switch (product.tag) {
+  'new' => localizedText('product.tag.new', languageCode: languageCode),
+  'bestseller' => localizedText(
+    'product.tag.bestseller',
+    languageCode: languageCode,
+  ),
+  'sale' => localizedText('product.tag.sale', languageCode: languageCode),
   _ => '',
 };
 
-String paymentMethodLabel(String method) {
+String paymentMethodLabel(
+  String method, {
+  String languageCode = defaultLanguageCode,
+}) {
   switch (method) {
     case 'bank':
-      return 'Bank o‘tkazmasi';
+      return localizedText('checkout.payment_bank', languageCode: languageCode);
     case 'click':
-      return 'Click';
+      return localizedText(
+        'checkout.payment_click',
+        languageCode: languageCode,
+      );
     case 'payme':
-      return 'Payme';
+      return localizedText(
+        'checkout.payment_payme',
+        languageCode: languageCode,
+      );
     case 'card':
-      return 'Karta';
+      return localizedText('checkout.payment_card', languageCode: languageCode);
     case 'cash':
-      return 'Naqd / kelishuv';
+      return localizedText('checkout.payment_cash', languageCode: languageCode);
     default:
-      return 'Menejer orqali';
+      return localizedText(
+        'checkout.payment_manager',
+        languageCode: languageCode,
+      );
   }
 }
 
@@ -128,7 +194,13 @@ List<Product> relatedProductsFor(Product product, List<Product> products) {
 
   final ranked =
       products
-          .where((candidate) => candidate.id != product.id && candidate.active)
+          .where(
+            (candidate) =>
+                candidate.id != product.id &&
+                candidate.active &&
+                (product.modelNo.isEmpty ||
+                    candidate.modelNo != product.modelNo),
+          )
           .map((candidate) => (product: candidate, score: score(candidate)))
           .where((row) => row.score > 0)
           .toList()
@@ -141,58 +213,122 @@ List<Product> relatedProductsFor(Product product, List<Product> products) {
   return ranked.map((row) => row.product).take(8).toList();
 }
 
-String paymentInstructions(String method) {
+List<Product> productModelVariantsFor(Product product, List<Product> products) {
+  if (product.modelNo.trim().isEmpty) return const <Product>[];
+  return products
+      .where(
+        (candidate) =>
+            candidate.id != product.id &&
+            candidate.active &&
+            candidate.modelNo == product.modelNo,
+      )
+      .take(12)
+      .toList(growable: false);
+}
+
+String paymentInstructions(
+  String method, {
+  String languageCode = defaultLanguageCode,
+}) {
   switch (method) {
     case 'bank':
-      return 'Bank rekvizitlari menejer tomonidan yuboriladi. To‘lovdan oldin $salesPhone bilan tasdiqlang.';
+      return localizedText(
+        'checkout.instructions.bank',
+        languageCode: languageCode,
+        args: {'phone': salesPhone},
+      );
     case 'click':
-      return 'Click to‘lovi uchun hisob/link menejer tomonidan yuboriladi. To‘lovdan oldin $salesPhone bilan tasdiqlang.';
+      return localizedText(
+        'checkout.instructions.click',
+        languageCode: languageCode,
+        args: {'phone': salesPhone},
+      );
     case 'payme':
-      return 'Payme to‘lovi uchun hisob/link menejer tomonidan yuboriladi. To‘lovdan oldin $salesPhone bilan tasdiqlang.';
+      return localizedText(
+        'checkout.instructions.payme',
+        languageCode: languageCode,
+        args: {'phone': salesPhone},
+      );
     case 'card':
-      return 'Karta raqami menejer tomonidan yuboriladi. To‘lovdan oldin $salesPhone bilan tasdiqlang.';
+      return localizedText(
+        'checkout.instructions.card',
+        languageCode: languageCode,
+        args: {'phone': salesPhone},
+      );
     case 'cash':
-      return 'Naqd to‘lov yetkazib berish yoki olib ketish shartiga qarab $salesPhone bilan kelishiladi.';
+      return localizedText(
+        'checkout.instructions.cash',
+        languageCode: languageCode,
+        args: {'phone': salesPhone},
+      );
     default:
-      return 'Menejerimiz $salesPhone orqali narx, mavjudlik va to‘lovni tasdiqlaydi.';
+      return localizedText(
+        'checkout.instructions.default',
+        languageCode: languageCode,
+        args: {'phone': salesPhone},
+      );
   }
 }
 
-String paymentStatusLabel(String status) {
+String paymentStatusLabel(
+  String status, {
+  String languageCode = defaultLanguageCode,
+}) {
   switch (status) {
     case 'paid':
-      return 'to‘langan';
+      return localizedText('order.payment.paid', languageCode: languageCode);
     case 'submitted':
-      return 'tekshiruvda';
+      return localizedText(
+        'order.payment.submitted',
+        languageCode: languageCode,
+      );
     case 'waiting_for_customer':
-      return 'mijozdan kutilmoqda';
+      return localizedText('order.payment.waiting', languageCode: languageCode);
     case 'failed':
-      return 'muvaffaqiyatsiz';
+      return localizedText('order.payment.failed', languageCode: languageCode);
     case 'cancelled':
-      return 'bekor qilingan';
+      return localizedText(
+        'order.payment.cancelled',
+        languageCode: languageCode,
+      );
     case 'refunded':
-      return 'qaytarilgan';
+      return localizedText(
+        'order.payment.refunded',
+        languageCode: languageCode,
+      );
     default:
-      return 'kutilmoqda';
+      return localizedText('order.payment.pending', languageCode: languageCode);
   }
 }
 
-String orderStatusLabel(String status) {
+String orderStatusLabel(
+  String status, {
+  String languageCode = defaultLanguageCode,
+}) {
   switch (status) {
     case 'confirmed':
-      return 'tasdiqlandi';
+      return localizedText(
+        'order.status.confirmed',
+        languageCode: languageCode,
+      );
     case 'packed':
-      return 'tayyorlanmoqda';
+      return localizedText('order.status.packed', languageCode: languageCode);
     case 'shipped':
-      return 'yuborildi';
+      return localizedText('order.status.shipped', languageCode: languageCode);
     case 'delivered':
-      return 'yetkazildi';
+      return localizedText(
+        'order.status.delivered',
+        languageCode: languageCode,
+      );
     case 'failed':
-      return 'muvaffaqiyatsiz';
+      return localizedText('order.status.failed', languageCode: languageCode);
     case 'cancelled':
-      return 'bekor qilingan';
+      return localizedText(
+        'order.status.cancelled',
+        languageCode: languageCode,
+      );
     default:
-      return 'yangi';
+      return localizedText('order.status.new', languageCode: languageCode);
   }
 }
 
@@ -235,6 +371,9 @@ int tabIndexFromFragment(String fragment) {
     case 'support':
     case 'help':
     case 'yordam':
+    case 'partnership':
+    case 'distributor':
+    case 'hamkorlik':
       return 3;
     case 'account':
     case 'profile':
@@ -257,11 +396,13 @@ class MilanaApp extends StatefulWidget {
     required this.catalog,
     required this.orders,
     required this.auth,
+    required this.analytics,
   });
 
   final CatalogRepository catalog;
   final OrderRepository orders;
   final AuthService auth;
+  final AnalyticsService analytics;
 
   @override
   State<MilanaApp> createState() => _MilanaAppState();
@@ -269,21 +410,37 @@ class MilanaApp extends StatefulWidget {
 
 class _MilanaAppState extends State<MilanaApp> {
   late final CartController cart = CartController(auth: widget.auth);
+  late final LanguageController language = LanguageController();
 
   @override
   void dispose() {
     cart.dispose();
+    language.dispose();
     widget.catalog.close();
     widget.orders.close();
     widget.auth.dispose();
+    widget.analytics.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    return AnalyticsScope(
+      service: widget.analytics,
+      child: AppLanguageScope(
+        notifier: language,
+        child: Builder(builder: (context) => _buildApp(context)),
+      ),
+    );
+  }
+
+  Widget _buildApp(BuildContext context) {
     return MaterialApp(
       title: 'Milana Premium',
       debugShowCheckedModeBanner: false,
+      locale: AppLanguageScope.of(context).locale,
+      supportedLocales: supportedLanguageCodes.map(Locale.new).toList(),
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
@@ -356,7 +513,20 @@ class _MilanaAppState extends State<MilanaApp> {
           ),
         ),
       ),
+      onUnknownRoute: _buildFallbackShellRoute,
       home: AppShell(
+        catalog: widget.catalog,
+        orders: widget.orders,
+        auth: widget.auth,
+        cart: cart,
+      ),
+    );
+  }
+
+  Route<dynamic> _buildFallbackShellRoute(RouteSettings settings) {
+    return MaterialPageRoute<void>(
+      settings: settings,
+      builder: (_) => AppShell(
         catalog: widget.catalog,
         orders: widget.orders,
         auth: widget.auth,
@@ -387,6 +557,15 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late int index;
   late final AssistantService assistant = AssistantService();
+  late final DistributorRepository distributors = DistributorRepository(
+    firebaseEnabled: widget.auth.firebaseEnabled,
+  );
+  late final PushNotificationService pushNotifications =
+      PushNotificationService(
+        firebaseEnabled: widget.auth.firebaseEnabled,
+        distributors: distributors,
+      );
+  String? _lastPushCustomerId;
   int catalogRequestId = 0;
   CatalogLaunchMode catalogLaunchMode = CatalogLaunchMode.browse;
   String catalogRequestedGender = 'all';
@@ -398,12 +577,24 @@ class _AppShellState extends State<AppShell> {
     super.initState();
     index = tabIndexFromLaunchUri(Uri.base);
     visitedTabs.add(index);
+    _lastPushCustomerId = widget.auth.customer?.id;
+    widget.auth.addListener(_handleAuthChange);
   }
 
   @override
   void dispose() {
+    widget.auth.removeListener(_handleAuthChange);
+    pushNotifications.dispose();
     assistant.close();
     super.dispose();
+  }
+
+  void _handleAuthChange() {
+    final nextCustomerId = widget.auth.customer?.id;
+    if (_lastPushCustomerId != null && nextCustomerId == null) {
+      unawaited(pushNotifications.clearForSignedOutCustomer());
+    }
+    _lastPushCustomerId = nextCustomerId;
   }
 
   @override
@@ -440,13 +631,20 @@ class _AppShellState extends State<AppShell> {
             )
           : const SizedBox.shrink(),
       visitedTabs.contains(3)
-          ? SupportScreen(orders: widget.orders, auth: widget.auth)
+          ? DistributorScreen(
+              repository: distributors,
+              auth: widget.auth,
+              onOpenSupport: _openSupport,
+              onOpenNotifications: _openNotifications,
+            )
           : const SizedBox.shrink(),
       visitedTabs.contains(4)
           ? AccountScreen(
               auth: widget.auth,
               orders: widget.orders,
               cart: widget.cart,
+              distributors: distributors,
+              onOpenPartnership: () => _selectTab(3),
             )
           : const SizedBox.shrink(),
     ];
@@ -468,14 +666,19 @@ class _AppShellState extends State<AppShell> {
                     title: const _BrandLockup(),
                     actions: [
                       IconButton(
+                        onPressed: _openNotifications,
+                        icon: const Icon(Icons.notifications_outlined),
+                        tooltip: context.localize('notifications.title'),
+                      ),
+                      IconButton(
                         onPressed: () => _openCatalog(CatalogLaunchMode.search),
                         icon: const Icon(Icons.search),
-                        tooltip: 'Qidirish',
+                        tooltip: context.localize('app.bar.search.tooltip'),
                       ),
                       IconButton(
                         onPressed: () => _openCatalog(CatalogLaunchMode.saved),
                         icon: const Icon(Icons.favorite_border),
-                        tooltip: 'Saqlanganlar',
+                        tooltip: context.localize('app.bar.saved.tooltip'),
                       ),
                       Padding(
                         padding: const EdgeInsets.only(right: 6),
@@ -485,7 +688,7 @@ class _AppShellState extends State<AppShell> {
                           child: IconButton(
                             onPressed: () => _selectTab(2),
                             icon: const Icon(Icons.shopping_bag_outlined),
-                            tooltip: 'Savat',
+                            tooltip: context.localize('app.bar.cart.tooltip'),
                           ),
                         ),
                       ),
@@ -498,7 +701,7 @@ class _AppShellState extends State<AppShell> {
             body: IndexedStack(index: index, children: pages),
             floatingActionButton: FloatingActionButton.small(
               onPressed: _openAssistant,
-              tooltip: 'AI yordamchi',
+              tooltip: context.localize('app.bar.assistant.tooltip'),
               backgroundColor: milanaInk,
               foregroundColor: Colors.white,
               child: const Icon(Icons.auto_awesome),
@@ -511,15 +714,15 @@ class _AppShellState extends State<AppShell> {
                 _selectTab(value);
               },
               destinations: [
-                const NavigationDestination(
+                NavigationDestination(
                   icon: Icon(Icons.home_outlined),
                   selectedIcon: Icon(Icons.home),
-                  label: 'Asosiy',
+                  label: context.localize('home'),
                 ),
-                const NavigationDestination(
+                NavigationDestination(
                   icon: Icon(Icons.storefront_outlined),
                   selectedIcon: Icon(Icons.storefront),
-                  label: 'Katalog',
+                  label: context.localize('catalog'),
                 ),
                 NavigationDestination(
                   icon: Badge(
@@ -532,17 +735,17 @@ class _AppShellState extends State<AppShell> {
                     label: Text('${widget.cart.count}'),
                     child: const Icon(Icons.shopping_bag),
                   ),
-                  label: 'Savat',
+                  label: context.localize('cart'),
                 ),
-                const NavigationDestination(
-                  icon: Icon(Icons.support_agent_outlined),
-                  selectedIcon: Icon(Icons.support_agent),
-                  label: 'Yordam',
+                NavigationDestination(
+                  icon: Icon(Icons.business_center_outlined, size: 24),
+                  selectedIcon: Icon(Icons.business_center, size: 24),
+                  label: context.localize('partnership'),
                 ),
-                const NavigationDestination(
+                NavigationDestination(
                   icon: Icon(Icons.person_outline),
                   selectedIcon: Icon(Icons.person),
-                  label: 'Akkaunt',
+                  label: context.localize('account'),
                 ),
               ],
             ),
@@ -590,12 +793,72 @@ class _AppShellState extends State<AppShell> {
         assistant: assistant,
         onProduct: _openAssistantProduct,
         onAdd: _addAssistantProduct,
+        onContactSales: () => _selectTab(3),
+        onReport: _reportAssistantResponse,
+      ),
+    );
+  }
+
+  Future<String> _reportAssistantResponse({
+    required String response,
+    required String reasonCode,
+    required String comment,
+  }) {
+    final customer = widget.auth.customer;
+    final safeResponse = response.length > 1800
+        ? response.substring(0, 1800)
+        : response;
+    final safeComment = comment.length > 500
+        ? comment.substring(0, 500)
+        : comment;
+    return widget.orders.createSupportTicket(
+      SupportTicket(
+        name: customer?.name.trim().isNotEmpty == true
+            ? customer!.name.trim()
+            : 'AI assistant report',
+        phone: customer?.phone.trim().isNotEmpty == true
+            ? customer!.phone.trim()
+            : 'not-provided',
+        email: customer?.email.trim() ?? '',
+        topic: 'ai_content_report',
+        message:
+            'AI assistant response report\n'
+            'Reason: $reasonCode\n'
+            'Response: $safeResponse'
+            '${safeComment.isEmpty ? '' : '\nComment: $safeComment'}',
+        customerId: customer?.id,
+        languageCode: context.currentLanguageCode,
+      ),
+    );
+  }
+
+  void _openSupport() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: .96,
+        child: SupportScreen(orders: widget.orders, auth: widget.auth),
+      ),
+    );
+  }
+
+  void _openNotifications() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => NotificationCenterSheet(
+        repository: distributors,
+        pushNotifications: pushNotifications,
+        customerId: widget.auth.customer?.id,
       ),
     );
   }
 
   void _addAssistantProduct(Product product) {
-    _addAssistantItem(CartItem(product: product, unitType: packUnitType));
+    _addAssistantItem(minimumCartItem(product));
   }
 
   bool _addAssistantItem(CartItem item) {
@@ -605,18 +868,36 @@ class _AppShellState extends State<AppShell> {
       unitType: item.unitType,
     )) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${item.product.name} hozircha mavjud emas')),
+        SnackBar(
+          content: Text(
+            context.localize(
+              'cart.item_unavailable',
+              args: {'product': productName(context, item.product)},
+            ),
+          ),
+        ),
       );
       return false;
     }
     widget.cart.addItem(item);
+    unawaited(context.analytics?.logAddToCart(item));
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
           content: Text(
-            '${item.product.name} · ${item.quantity} ${orderUnitLabel(item.unitType).toLowerCase()} savatga qo‘shildi',
+            context.localize(
+              'cart.toast.added',
+              args: {
+                'product': productName(context, item.product),
+                'count': '${item.quantity}',
+                'unit': orderUnitLabel(
+                  item.unitType,
+                  languageCode: context.currentLanguageCode,
+                ).toLowerCase(),
+              },
+            ),
           ),
         ),
       );
@@ -624,6 +905,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _openAssistantProduct(Product product) {
+    unawaited(context.analytics?.logViewItem(product));
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -634,6 +916,7 @@ class _AppShellState extends State<AppShell> {
         onAdd: _addAssistantItem,
         onOpenRelated: _openAssistantProduct,
         onAddRelated: _addAssistantProduct,
+        catalog: widget.catalog,
       ),
     );
   }
@@ -651,8 +934,8 @@ class _WholesaleTicker extends StatelessWidget {
       height: 24,
       color: milanaInk,
       alignment: Alignment.center,
-      child: const Text(
-        'ULGURJI BUYURTMA · 1 QADOQ YOKI 1 QOPDAN',
+      child: Text(
+        context.localize('home.wholesale_ticker'),
         maxLines: 1,
         overflow: TextOverflow.fade,
         softWrap: false,
@@ -677,37 +960,67 @@ class _BrandLockup extends StatelessWidget {
       header: true,
       label: 'Milana Premium',
       child: ExcludeSemantics(
-        child: largeText
-            ? const Text(
-                'MILANA PREMIUM',
-                maxLines: 1,
-                overflow: TextOverflow.fade,
-                softWrap: false,
-                style: TextStyle(
-                  fontSize: 16,
-                  letterSpacing: 2.2,
-                  fontWeight: FontWeight.w600,
-                ),
-              )
-            : const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    'MILANA',
-                    style: TextStyle(
-                      fontSize: 20,
-                      letterSpacing: 3,
-                      fontWeight: FontWeight.w600,
+        child: _ScaleDownToFit(
+          alignment: Alignment.centerLeft,
+          child: largeText
+              ? const Text(
+                  'MILANA PREMIUM',
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    fontSize: 16,
+                    letterSpacing: 2.2,
+                    fontWeight: FontWeight.w600,
+                  ),
+                )
+              : const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'MILANA',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        fontSize: 20,
+                        letterSpacing: 3,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  Text(
-                    'PREMIUM',
-                    style: TextStyle(fontSize: 8, letterSpacing: 4),
-                  ),
-                ],
-              ),
+                    Text(
+                      'PREMIUM',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(fontSize: 8, letterSpacing: 4),
+                    ),
+                  ],
+                ),
+        ),
       ),
+    );
+  }
+}
+
+class _ScaleDownToFit extends StatelessWidget {
+  const _ScaleDownToFit({required this.child, required this.alignment});
+
+  final Widget child;
+  final Alignment alignment;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth) return child;
+        return SizedBox(
+          width: constraints.maxWidth,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: alignment,
+            child: child,
+          ),
+        );
+      },
     );
   }
 }
@@ -742,20 +1055,25 @@ class _StorefrontHomeHeader extends StatelessWidget {
                   onPressed: onMenu,
                   color: Colors.white,
                   icon: const Icon(Icons.menu),
-                  tooltip: 'Menyu',
+                  tooltip: context.localize('menu'),
                 ),
                 const Expanded(
-                  child: Text(
-                    'MILANA PREMIUM',
-                    maxLines: 1,
-                    overflow: TextOverflow.fade,
-                    softWrap: false,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      letterSpacing: 4,
-                      fontWeight: FontWeight.w500,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: _ScaleDownToFit(
+                      alignment: Alignment.center,
+                      child: Text(
+                        'MILANA PREMIUM',
+                        maxLines: 1,
+                        softWrap: false,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          letterSpacing: 4,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -763,13 +1081,13 @@ class _StorefrontHomeHeader extends StatelessWidget {
                   onPressed: onSaved,
                   color: Colors.white,
                   icon: const Icon(Icons.favorite_border, size: 21),
-                  tooltip: 'Saqlanganlar',
+                  tooltip: context.localize('app.bar.saved.tooltip'),
                 ),
                 IconButton(
                   onPressed: onSearch,
                   color: Colors.white,
                   icon: const Icon(Icons.search, size: 22),
-                  tooltip: 'Qidirish',
+                  tooltip: context.localize('app.bar.search.tooltip'),
                 ),
                 Badge(
                   isLabelVisible: cartCount > 0,
@@ -778,7 +1096,7 @@ class _StorefrontHomeHeader extends StatelessWidget {
                     onPressed: onCart,
                     color: Colors.white,
                     icon: const Icon(Icons.shopping_bag_outlined, size: 21),
-                    tooltip: 'Savat',
+                    tooltip: context.localize('app.bar.cart.tooltip'),
                   ),
                 ),
               ],
@@ -932,14 +1250,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 18),
                 _EmptyState(
                   icon: Icons.cloud_off_outlined,
-                  title: 'Katalog ochilmadi',
-                  message:
-                      'Internet aloqasini tekshirib, qayta urinib ko‘ring.',
+                  title: context.localize('catalog.error.title'),
+                  message: context.localize('catalog.error.message'),
                   action: FilledButton(
                     onPressed: () => setState(
                       () => productsFuture = widget.catalog.loadProducts(),
                     ),
-                    child: const Text('Qayta urinish'),
+                    child: Text(context.localize('catalog.error.retry')),
                   ),
                 ),
               ],
@@ -947,23 +1264,26 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 42),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: SectionHeader(title: 'BAHOR—YOZ 26', trailing: '→'),
+                  child: SectionHeader(
+                    title: context.localize('home.banner.title.season'),
+                    trailing: '→',
+                  ),
                 ),
                 const SizedBox(height: 14),
                 FeaturedProductsRail(
                   products: bestProducts,
                   badgeIcon: Icons.workspace_premium_outlined,
-                  badgeLabel: 'Top',
+                  badgeLabel: context.localize('home.banner.top'),
                   onOpen: (product) => _openProduct(product, products),
                   onAdd: _add,
                 ),
               ],
               if (!snap.hasError || products.isNotEmpty) ...[
                 const SizedBox(height: 48),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: SectionHeader(
-                    title: 'BUTUN OILA UCHUN KIYIM',
+                    title: context.localize('home.section.women'),
                     trailing: '',
                   ),
                 ),
@@ -980,10 +1300,10 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
               if (lounge.isNotEmpty) ...[
                 const SizedBox(height: 48),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: SectionHeader(
-                    title: 'UY UCHUN KOLLEKSIYA',
+                    title: context.localize('home.section.homewear'),
                     trailing: '→',
                   ),
                 ),
@@ -991,7 +1311,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 FeaturedProductsRail(
                   products: lounge,
                   badgeIcon: Icons.layers_outlined,
-                  badgeLabel: 'Set',
+                  badgeLabel: context.localize('home.banner.set'),
                   onOpen: (product) => _openProduct(product, products),
                   onAdd: _add,
                 ),
@@ -1018,14 +1338,19 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              'MILANA PREMIUM',
-              style: TextStyle(letterSpacing: 3, fontSize: 18),
+            const _ScaleDownToFit(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'MILANA PREMIUM',
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(letterSpacing: 3, fontSize: 18),
+              ),
             ),
             const SizedBox(height: 22),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('KATALOG'),
+              title: Text(context.localize('catalog')),
               trailing: const Icon(Icons.arrow_forward),
               onTap: () {
                 Navigator.pop(context);
@@ -1034,7 +1359,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('SAQLANGANLAR'),
+              title: Text(context.localize('saved')),
               trailing: const Icon(Icons.favorite_border),
               onTap: () {
                 Navigator.pop(context);
@@ -1043,13 +1368,65 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             ListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('YORDAM'),
+              title: Text(context.localize('support')),
               trailing: const Icon(Icons.support_agent_outlined),
               onTap: () {
                 Navigator.pop(context);
                 widget.onOpenSupport();
               },
             ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(context.localize('language.title')),
+              subtitle: Text(
+                context.localize(
+                  'language.name.${context.currentLanguageCode}',
+                ),
+              ),
+              trailing: const Icon(Icons.language),
+              onTap: () {
+                Navigator.pop(context);
+                _openLanguagePicker();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openLanguagePicker() {
+    final controller = AppLanguageScope.of(context);
+    showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+              child: Text(
+                context.localize('language.title'),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            for (final code in supportedLanguageCodes)
+              ListTile(
+                title: Text(context.localize('language.name.$code')),
+                trailing: controller.languageCode == code
+                    ? const Icon(Icons.check)
+                    : null,
+                onTap: () {
+                  controller.setLanguage(code);
+                  Navigator.pop(sheetContext);
+                },
+              ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
@@ -1060,7 +1437,7 @@ class _HomeScreenState extends State<HomeScreen> {
       products.where((product) => product.gender == gender).toList();
 
   void _add(Product product) {
-    _addItem(CartItem(product: product, unitType: packUnitType));
+    _addItem(minimumCartItem(product));
   }
 
   bool _addItem(CartItem item) {
@@ -1070,18 +1447,36 @@ class _HomeScreenState extends State<HomeScreen> {
       unitType: item.unitType,
     )) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${item.product.name} hozircha mavjud emas')),
+        SnackBar(
+          content: Text(
+            context.localize(
+              'cart.item_unavailable',
+              args: {'product': productName(context, item.product)},
+            ),
+          ),
+        ),
       );
       return false;
     }
     widget.cart.addItem(item);
+    unawaited(context.analytics?.logAddToCart(item));
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
           content: Text(
-            '${item.product.name} · ${item.quantity} ${orderUnitLabel(item.unitType).toLowerCase()} savatga qo‘shildi',
+            context.localize(
+              'cart.toast.added',
+              args: {
+                'product': productName(context, item.product),
+                'count': '${item.quantity}',
+                'unit': orderUnitLabel(
+                  item.unitType,
+                  languageCode: context.currentLanguageCode,
+                ).toLowerCase(),
+              },
+            ),
           ),
         ),
       );
@@ -1090,6 +1485,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openProduct(Product product, List<Product> products) {
     final related = relatedProductsFor(product, products);
+    final variants = productModelVariantsFor(product, products);
+    unawaited(context.analytics?.logViewItem(product));
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1101,6 +1498,8 @@ class _HomeScreenState extends State<HomeScreen> {
         onOpenRelated: (relatedProduct) =>
             _openProduct(relatedProduct, products),
         onAddRelated: _add,
+        catalog: widget.catalog,
+        modelVariants: variants,
       ),
     );
   }
@@ -1283,8 +1682,8 @@ class _HomeHeroState extends State<HomeHero> {
                 onPressed: _togglePlayback,
                 icon: Icon(userPaused ? Icons.play_arrow : Icons.pause),
                 tooltip: userPaused
-                    ? 'Slaydlarni davom ettirish'
-                    : 'Slaydlarni to‘xtatish',
+                    ? context.localize('home.hero.play_tooltip')
+                    : context.localize('home.hero.pause_tooltip'),
                 style: IconButton.styleFrom(
                   backgroundColor: Colors.white.withValues(alpha: .9),
                   foregroundColor: milanaInk,
@@ -1316,15 +1715,15 @@ class _HomeHeroCopy extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = product == null
-        ? 'YUMSHOQLIK,\nANIQ O‘LCHAMDA.'
-        : 'KUN BO‘YI\nQULAYLIK.';
+        ? context.localize('home.hero.title.empty')
+        : context.localize('home.hero.title.with_product');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           loading
-              ? 'KOLLEKSIYA YANGILANMOQDA'
-              : 'KIYIM-KECHAK FABRIKASI · O‘ZBEKISTON',
+              ? context.localize('home.hero.loading')
+              : context.localize('home.hero.tagline'),
           style: const TextStyle(
             color: Colors.white,
             fontSize: 10,
@@ -1357,7 +1756,9 @@ class _HomeHeroCopy extends StatelessWidget {
                   minimumSize: const Size(160, 48),
                 ),
                 child: Text(
-                  onOpenProduct == null ? 'Katalog' : 'Modelni ko‘rish',
+                  onOpenProduct == null
+                      ? context.localize('catalog')
+                      : context.localize('home.hero.view_model'),
                   style: const TextStyle(letterSpacing: 1.5, fontSize: 11),
                 ),
               ),
@@ -1366,7 +1767,7 @@ class _HomeHeroCopy extends StatelessWidget {
             IconButton.filledTonal(
               onPressed: onSupport,
               icon: const Icon(Icons.support_agent_outlined),
-              tooltip: 'Yordam',
+              tooltip: context.localize('home.hero.support_tooltip'),
               style: IconButton.styleFrom(
                 backgroundColor: Colors.white,
                 foregroundColor: milanaInk,
@@ -1391,17 +1792,20 @@ class HomeStatStrip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
         children: [
-          const HomeStatTile(
-            value: '1 QADOQ YOKI 1 QOPDAN',
-            label: 'Qadoq — 6 dona, qop — 60 dona',
-          ),
-          const HomeStatTile(
-            value: 'POCHTA YOKI CARGO',
-            label: 'Yetkazib berish xarajatini mijoz to‘laydi',
+          HomeStatTile(
+            value: context.localize('home.stat.pack_value'),
+            label: context.localize('home.stat.pack_label'),
           ),
           HomeStatTile(
-            value: 'MENEJER YORDAMI',
-            label: '$totalProducts model · narx va mavjudlik tasdiqlanadi',
+            value: context.localize('home.stat.delivery_value'),
+            label: context.localize('home.stat.delivery_label'),
+          ),
+          HomeStatTile(
+            value: context.localize('home.stat.manager_value'),
+            label: context.localize(
+              'home.stat.manager_label',
+              args: {'count': '$totalProducts'},
+            ),
           ),
         ],
       ),
@@ -1475,22 +1879,22 @@ class HomeCategoryGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final categories = [
       (
-        title: 'AYOLLARGA',
-        subtitle: 'Xalatlar va pijamalar',
+        title: context.localize('catalog.gender.women'),
+        subtitle: context.localize('home.category.women.subtitle'),
         count: women,
         product: womenProduct,
         gender: 'women',
       ),
       (
-        title: 'ERKAKLARGA',
-        subtitle: 'Erkaklar kolleksiyasi',
+        title: context.localize('catalog.gender.men'),
+        subtitle: context.localize('home.category.men.subtitle'),
         count: men,
         product: menProduct,
         gender: 'men',
       ),
       (
-        title: 'BOLALARGA',
-        subtitle: 'Bolalar kiyimlari',
+        title: context.localize('catalog.gender.kids'),
+        subtitle: context.localize('home.category.kids.subtitle'),
         count: kids,
         product: kidsProduct,
         gender: 'kids',
@@ -1578,7 +1982,10 @@ class HomeCategoryTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  'MODELLARNI KO‘RISH · $count',
+                  context.localize(
+                    'product.sheet.view_all',
+                    args: {'count': '$count'},
+                  ),
                   style: const TextStyle(
                     fontSize: 10,
                     letterSpacing: 1.6,
@@ -1612,40 +2019,40 @@ class HomeWholesaleBand extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Buyurtma qanday ishlaydi',
+            context.localize('home.wholesale_band.title'),
             style: Theme.of(
               context,
             ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 6),
           Text(
-            'Qadoqdan boshlang yoki to‘liq qop tanlang. Narx, qoldiq va jo‘natishni menejer yakuniy tasdiqlaydi.',
+            context.localize('product.highlight.pack'),
             style: TextStyle(color: milanaInk.withValues(alpha: .68)),
           ),
           const SizedBox(height: 16),
-          const HomeOrderStep(
+          HomeOrderStep(
             number: '01',
             icon: Icons.checkroom_outlined,
-            title: 'Model va format',
-            text: 'Qadoq yoki qopni tanlab savatga qo‘shing.',
+            title: context.localize('home.wholesale_band.step1.title'),
+            text: context.localize('product.highlight.bag_select'),
           ),
-          const HomeOrderStep(
+          HomeOrderStep(
             number: '02',
             icon: Icons.support_agent_outlined,
-            title: 'Menejer tasdig‘i',
-            text: 'Mavjudlik, rang va jami summa tekshiriladi.',
+            title: context.localize('product.highlight.manager'),
+            text: context.localize('home.wholesale_band.step2.text'),
           ),
-          const HomeOrderStep(
+          HomeOrderStep(
             number: '03',
             icon: Icons.local_shipping_outlined,
-            title: 'To‘lov va Cargo',
-            text: 'To‘lovdan so‘ng buyurtma jo‘natiladi.',
+            title: context.localize('product.highlight.payment'),
+            text: context.localize('home.wholesale_band.step3.text'),
           ),
           const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: onSupport,
             icon: const Icon(Icons.call_outlined, size: 18),
-            label: const Text('Menejer bilan bog‘lanish'),
+            label: Text(context.localize('home.wholesale_band.cta')),
           ),
         ],
       ),
@@ -1747,13 +2154,28 @@ class CatalogCategoryRail extends StatelessWidget {
     final railHeight = (90 + (scaledLabelSize * 1.35))
         .clamp(112.0, 160.0)
         .toDouble();
-    const selections = <CatalogCategorySelection>[
-      CatalogCategorySelection(label: 'Barchasi'),
-      CatalogCategorySelection(label: 'Pijamalar', category: 'pajamas'),
-      CatalogCategorySelection(label: 'Xalatlar', category: 'robes'),
-      CatalogCategorySelection(label: 'Ayollar', gender: 'women'),
-      CatalogCategorySelection(label: 'Erkaklar', gender: 'men'),
-      CatalogCategorySelection(label: 'Bolalar', gender: 'kids'),
+    final selections = <CatalogCategorySelection>[
+      CatalogCategorySelection(label: context.localize('catalog.sort.all')),
+      CatalogCategorySelection(
+        label: context.localize('catalog.sort.pajamas'),
+        category: 'pajamas',
+      ),
+      CatalogCategorySelection(
+        label: context.localize('catalog.sort.robes'),
+        category: 'robes',
+      ),
+      CatalogCategorySelection(
+        label: context.localize('catalog.gender.women'),
+        gender: 'women',
+      ),
+      CatalogCategorySelection(
+        label: context.localize('catalog.gender.men'),
+        gender: 'men',
+      ),
+      CatalogCategorySelection(
+        label: context.localize('catalog.gender.kids'),
+        gender: 'kids',
+      ),
     ];
 
     return SizedBox(
@@ -1799,7 +2221,16 @@ class CatalogCategoryRail extends StatelessWidget {
                                 color: milanaSand,
                                 child: Icon(Icons.grid_view_outlined),
                               )
-                            : ProductImage(product: product),
+                            : ColoredBox(
+                                color: Colors.white,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(5),
+                                  child: ProductImage(
+                                    product: product,
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                              ),
                       ),
                     ),
                     const SizedBox(height: 7),
@@ -1845,7 +2276,7 @@ class CatalogLoadingView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       liveRegion: true,
-      label: 'Katalog yuklanmoqda',
+      label: context.localize('catalog.loading'),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final columns = constraints.maxWidth > 1100
@@ -1987,6 +2418,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
   List<String> lastRemoteRecent = const <String>[];
   bool recentDirty = false;
   String? handledDeletedCustomerId;
+  Timer? searchDebounce;
+  List<Product>? smartSearchProducts;
+  bool smartSearchLoading = false;
+  int searchRevision = 0;
 
   @override
   void initState() {
@@ -2019,6 +2454,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
       if (!mounted) return;
       setState(() {
         searchController.clear();
+        searchDebounce?.cancel();
+        searchRevision += 1;
+        smartSearchProducts = null;
+        smartSearchLoading = false;
         query = '';
         gender = widget.requestedGender;
         category = widget.requestedCategory;
@@ -2043,6 +2482,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   void dispose() {
     widget.auth.removeListener(_handleAuthChange);
     searchController.dispose();
+    searchDebounce?.cancel();
     searchFocusNode.dispose();
     scrollController.dispose();
     super.dispose();
@@ -2059,11 +2499,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
         if (snap.hasError) {
           return _EmptyState(
             icon: Icons.cloud_off_outlined,
-            title: 'Katalog ochilmadi',
-            message: 'Internet aloqasini tekshirib, qayta urinib ko‘ring.',
+            title: context.localize('catalog.error.title'),
+            message: context.localize('catalog.error.message'),
             action: FilledButton(
               onPressed: _reloadCatalog,
-              child: const Text('Qayta urinish'),
+              child: Text(context.localize('catalog.error.retry')),
             ),
           );
         }
@@ -2127,8 +2567,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
               TextField(
                 controller: searchController,
                 focusNode: searchFocusNode,
-                decoration: const InputDecoration(
-                  hintText: 'Barcha mahsulotlardan qidirish…',
+                decoration: InputDecoration(
+                  hintText: context.localize('catalog.search_placeholder'),
                   prefixIcon: Icon(Icons.search, size: 20),
                   filled: false,
                   enabledBorder: UnderlineInputBorder(),
@@ -2136,11 +2576,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     borderSide: BorderSide(color: milanaInk, width: 1.5),
                   ),
                 ),
-                onChanged: (value) => setState(() {
-                  query = value.trim().toLowerCase();
-                  _resetCatalogWindow();
-                }),
+                onChanged: _onSearchChanged,
               ),
+              if (smartSearchLoading)
+                const LinearProgressIndicator(minHeight: 2),
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
@@ -2150,10 +2589,13 @@ class _CatalogScreenState extends State<CatalogScreen> {
                   icon: const Icon(Icons.filter_list, size: 18),
                   label: Text(
                     filtersExpanded
-                        ? 'FILTERLARNI YOPISH'
+                        ? context.localize('catalog.filters.close')
                         : _activeFilterCount == 0
-                        ? 'FILTERLAR'
-                        : 'FILTERLAR · $_activeFilterCount',
+                        ? context.localize('catalog.filters.open')
+                        : context.localize(
+                            'catalog.filters.active',
+                            args: {'count': '$_activeFilterCount'},
+                          ),
                   ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: milanaInk,
@@ -2233,8 +2675,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
               const SizedBox(height: 18),
               if (showRecent) ...[
                 SectionHeader(
-                  title: 'YAQINDA KO‘RILGANLAR',
-                  trailing: '${recentProducts.length} model',
+                  title: context.localize('home.section.recent'),
+                  trailing: context.localize(
+                    'catalog.models_count',
+                    args: {'count': '${recentProducts.length}'},
+                  ),
                 ),
                 const SizedBox(height: 10),
                 RecentlyViewedRail(
@@ -2249,10 +2694,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
                 const SizedBox(height: 18),
               ],
               SectionHeader(
-                title: 'BARCHA MAHSULOTLAR',
+                title: context.localize('home.section.all'),
                 trailing: products.length == visibleProducts.length
-                    ? '${products.length} model'
-                    : '${visibleProducts.length}/${products.length} model',
+                    ? context.localize(
+                        'catalog.models_count',
+                        args: {'count': '${products.length}'},
+                      )
+                    : context.localize(
+                        'catalog.models_count_ratio',
+                        args: {
+                          'visible': '${visibleProducts.length}',
+                          'total': '${products.length}',
+                        },
+                      ),
               ),
               const SizedBox(height: 10),
               LayoutBuilder(
@@ -2305,15 +2759,19 @@ class _CatalogScreenState extends State<CatalogScreen> {
                     icon: savedOnly
                         ? Icons.favorite_border
                         : Icons.search_off_outlined,
-                    title: savedOnly ? 'Saqlanganlar bo‘sh' : 'Model topilmadi',
+                    title: savedOnly
+                        ? context.localize('catalog.empty.saved.title')
+                        : context.localize('catalog.empty.search.title'),
                     message: savedOnly
-                        ? 'Yoqtirgan modellaringizni yurakcha bilan saqlang.'
-                        : 'Qidiruv yoki filterlarni o‘zgartirib ko‘ring.',
+                        ? context.localize('catalog.empty.saved.message')
+                        : context.localize('catalog.empty.search.message'),
                     action: query.isNotEmpty || _activeFilterCount > 0
                         ? OutlinedButton.icon(
                             onPressed: _clearFilters,
                             icon: const Icon(Icons.restart_alt),
-                            label: const Text('Filterlarni tozalash'),
+                            label: Text(
+                              context.localize('catalog.clear_filters'),
+                            ),
                           )
                         : null,
                   ),
@@ -2326,10 +2784,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   List<Product> _filtered(List<Product> rows) {
+    final serverRows = query.isNotEmpty ? smartSearchProducts : null;
     return filterCatalog(
-      rows,
+      serverRows ?? rows,
       CatalogFilterOptions(
-        query: query,
+        query: serverRows == null ? query : '',
         gender: gender,
         category: category,
         size: size,
@@ -2339,14 +2798,61 @@ class _CatalogScreenState extends State<CatalogScreen> {
         savedOnly: savedOnly,
         savedProductIds: favorites,
         sort: catalogSortFromString(sort),
+        languageCode: context.currentLanguageCode,
+        preserveInputOrder:
+            serverRows != null &&
+            catalogSortFromString(sort) == CatalogSort.featured,
       ),
     );
   }
 
+  void _onSearchChanged(String value) {
+    final nextQuery = value.trim().toLowerCase();
+    searchDebounce?.cancel();
+    searchRevision += 1;
+    setState(() {
+      query = nextQuery;
+      smartSearchProducts = null;
+      smartSearchLoading = nextQuery.length >= 2;
+      _resetCatalogWindow();
+    });
+    if (nextQuery.length < 2) return;
+    final revision = searchRevision;
+    searchDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _runSmartSearch(nextQuery, revision),
+    );
+  }
+
+  Future<void> _runSmartSearch(String term, int revision) async {
+    try {
+      final results = await widget.catalog.searchProducts(term);
+      if (!mounted || revision != searchRevision || query != term) return;
+      setState(() {
+        smartSearchProducts = results;
+        smartSearchLoading = false;
+        _resetCatalogWindow();
+      });
+      unawaited(
+        context.analytics?.logSearch(term, resultCount: results.length),
+      );
+    } catch (_) {
+      if (!mounted || revision != searchRevision || query != term) return;
+      // Keep the existing local catalog search as the offline fallback.
+      setState(() {
+        smartSearchProducts = null;
+        smartSearchLoading = false;
+      });
+      unawaited(context.analytics?.logSearch(term, resultCount: 0));
+    }
+  }
+
   void _toggleFavorite(Product product) {
+    final added = !favorites.contains(product.id);
     setState(() {
       if (!favorites.add(product.id)) favorites.remove(product.id);
     });
+    if (added) unawaited(context.analytics?.logAddToWishlist(product));
     favoritesDirty = widget.auth.signedIn;
     unawaited(favoritesStore.save(favorites, scope: localProductScope));
     if (widget.auth.signedIn) {
@@ -2550,6 +3056,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
   void _clearFilters() {
     setState(() {
       searchController.clear();
+      searchDebounce?.cancel();
+      searchRevision += 1;
+      smartSearchProducts = null;
+      smartSearchLoading = false;
       query = '';
       gender = 'all';
       category = 'all';
@@ -2563,7 +3073,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   void _add(Product product) {
-    _addItem(CartItem(product: product, unitType: packUnitType));
+    _addItem(minimumCartItem(product));
   }
 
   bool _addItem(CartItem item) {
@@ -2575,23 +3085,48 @@ class _CatalogScreenState extends State<CatalogScreen> {
     )) {
       final limit = widget.cart.quantityLimit(product, unitType: item.unitType);
       final current = widget.cart.quantityOf(product, unitType: item.unitType);
-      final unitLabel = orderUnitLabel(item.unitType).toLowerCase();
+      final unitLabel = orderUnitLabel(
+        item.unitType,
+        languageCode: context.currentLanguageCode,
+      );
       final message = limit < 1
-          ? '${product.name} hozircha mavjud emas'
-          : '${product.name} uchun maksimal $limit $unitLabel. Savatda $current $unitLabel bor.';
+          ? context.localize(
+              'cart.item_unavailable',
+              args: {'product': productName(context, product)},
+            )
+          : context.localize(
+              'catalog.add.limit_exceeded',
+              args: {
+                'product': productName(context, product),
+                'limit': '$limit',
+                'unit': unitLabel.toLowerCase(),
+                'current': '$current',
+              },
+            );
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
       return false;
     }
     widget.cart.addItem(item);
+    unawaited(context.analytics?.logAddToCart(item));
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
           content: Text(
-            '${product.name} · ${item.quantity} ${orderUnitLabel(item.unitType).toLowerCase()} savatga qo‘shildi',
+            context.localize(
+              'cart.toast.added',
+              args: {
+                'product': productName(context, product),
+                'count': '${item.quantity}',
+                'unit': orderUnitLabel(
+                  item.unitType,
+                  languageCode: context.currentLanguageCode,
+                ),
+              },
+            ),
           ),
         ),
       );
@@ -2601,6 +3136,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
   void _openProduct(Product product, [List<Product> allProducts = const []]) {
     _trackRecent(product);
     final related = relatedProductsFor(product, allProducts);
+    final variants = productModelVariantsFor(product, allProducts);
+    unawaited(context.analytics?.logViewItem(product));
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -2612,6 +3149,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
         onOpenRelated: (relatedProduct) =>
             _openProduct(relatedProduct, allProducts),
         onAddRelated: _add,
+        catalog: widget.catalog,
+        modelVariants: variants,
       ),
     );
   }
@@ -2640,7 +3179,7 @@ class PremiumCatalogHeader extends StatelessWidget {
                   constraints.maxWidth < 420 ||
                   MediaQuery.textScalerOf(context).scale(1) > 1.3;
               final breadcrumb = Text(
-                'BOSH SAHIFA  /  BARCHA MAHSULOTLAR',
+                context.localize('catalog.breadcrumb'),
                 style: const TextStyle(
                   color: milanaMuted,
                   fontSize: 10,
@@ -2662,7 +3201,7 @@ class PremiumCatalogHeader extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Text(
-            'KATALOG',
+            context.localize('catalog'),
             style: Theme.of(context).textTheme.displaySmall?.copyWith(
               fontFamily: 'MilanaDisplay',
               fontWeight: FontWeight.w300,
@@ -2671,7 +3210,7 @@ class PremiumCatalogHeader extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'Ayollar, erkaklar va bolalar uchun uy hamda kundalik kiyimlar.',
+            context.localize('catalog.header.subtitle'),
             style: TextStyle(
               color: milanaInk.withValues(alpha: .58),
               height: 1.45,
@@ -2697,8 +3236,11 @@ class CatalogCacheNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     final cachedAt = info.cachedAt;
     final timestamp = cachedAt == null
-        ? 'Oxirgi saqlangan katalog'
-        : '${shortDateTime.format(cachedAt.toLocal())} dagi katalog';
+        ? context.localize('catalog.cache.empty')
+        : context.localize(
+            'catalog.cache.timestamp',
+            args: {'time': shortDateTime(context, cachedAt.toLocal())},
+          );
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
@@ -2713,7 +3255,10 @@ class CatalogCacheNotice extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'OFFLINE KATALOG · $timestamp',
+              context.localize(
+                'catalog.cache.title',
+                args: {'timestamp': timestamp},
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -2726,7 +3271,7 @@ class CatalogCacheNotice extends StatelessWidget {
           IconButton(
             onPressed: onRefresh,
             icon: const Icon(Icons.refresh, size: 18),
-            tooltip: 'Yangilash',
+            tooltip: context.localize('catalog.refresh'),
           ),
         ],
       ),
@@ -2777,17 +3322,19 @@ class FeaturedProductsRail extends StatelessWidget {
     required this.onOpen,
     required this.onAdd,
     this.badgeIcon = Icons.bolt,
-    this.badgeLabel = 'Yangi',
+    this.badgeLabel,
   });
 
   final List<Product> products;
   final ValueChanged<Product> onOpen;
   final ValueChanged<Product> onAdd;
   final IconData badgeIcon;
-  final String badgeLabel;
+  final String? badgeLabel;
 
   @override
   Widget build(BuildContext context) {
+    final visibleBadgeLabel =
+        badgeLabel ?? context.localize('catalog.badge.new');
     return SizedBox(
       height: 330,
       child: ListView.separated(
@@ -2798,7 +3345,7 @@ class FeaturedProductsRail extends StatelessWidget {
         itemBuilder: (context, index) => FeaturedProductTile(
           product: products[index],
           badgeIcon: badgeIcon,
-          badgeLabel: badgeLabel,
+          badgeLabel: visibleBadgeLabel,
           onOpen: () => onOpen(products[index]),
           onAdd: isOutOfQop(products[index])
               ? null
@@ -2847,7 +3394,7 @@ class FeaturedProductTile extends StatelessWidget {
                         child: IconButton.filled(
                           onPressed: onAdd,
                           icon: const Icon(Icons.add_shopping_cart, size: 18),
-                          tooltip: 'Savatga qo‘shish',
+                          tooltip: context.localize('catalog.add'),
                           style: IconButton.styleFrom(
                             backgroundColor: Colors.white,
                             foregroundColor: milanaInk,
@@ -2860,7 +3407,7 @@ class FeaturedProductTile extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 10, bottom: 3),
                 child: Text(
-                  product.name.toUpperCase(),
+                  productName(context, product).toUpperCase(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelMedium?.copyWith(
@@ -2870,7 +3417,7 @@ class FeaturedProductTile extends StatelessWidget {
                 ),
               ),
               Text(
-                '${money.format(product.price)} / dona',
+                '${money.format(product.price)} / ${context.localize('product.card.price_unit', args: {'count': '1'})}',
                 style: Theme.of(context).textTheme.labelLarge,
               ),
             ],
@@ -2921,7 +3468,7 @@ class DiscoveryFilterPanel extends StatelessWidget {
           runSpacing: 4,
           children: [
             Text(
-              'Tez filterlar',
+              context.localize('catalog.filters.quick'),
               style: Theme.of(
                 context,
               ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
@@ -2930,39 +3477,51 @@ class DiscoveryFilterPanel extends StatelessWidget {
               TextButton.icon(
                 onPressed: onClear,
                 icon: const Icon(Icons.close, size: 16),
-                label: const Text('Tozalash'),
+                label: Text(context.localize('catalog.clear_filters')),
               ),
           ],
         ),
         const SizedBox(height: 6),
         _EnumChips<AvailabilityFilter>(
           value: availability,
-          values: const {
-            AvailabilityFilter.all: 'Barcha holat',
-            AvailabilityFilter.inStock: 'Omborda',
-            AvailabilityFilter.preorder: 'Preorder',
+          values: {
+            AvailabilityFilter.all: context.localize(
+              'catalog.availability.all',
+            ),
+            AvailabilityFilter.inStock: context.localize(
+              'catalog.availability.in_stock',
+            ),
+            AvailabilityFilter.preorder: context.localize(
+              'catalog.availability.preorder',
+            ),
           },
           onChanged: onAvailability,
         ),
         const SizedBox(height: 8),
         _EnumChips<CurationFilter>(
           value: curation,
-          values: const {
-            CurationFilter.all: 'Barcha kolleksiya',
-            CurationFilter.newArrival: 'Yangi',
-            CurationFilter.bestseller: 'Bestseller',
-            CurationFilter.sale: 'Chegirma',
+          values: {
+            CurationFilter.all: context.localize('catalog.curation.all'),
+            CurationFilter.newArrival: context.localize(
+              'catalog.curation.new_arrival',
+            ),
+            CurationFilter.bestseller: context.localize(
+              'catalog.curation.bestseller',
+            ),
+            CurationFilter.sale: context.localize('catalog.curation.sale'),
           },
           onChanged: onCuration,
         ),
         const SizedBox(height: 8),
         _EnumChips<PriceBand>(
           value: priceBand,
-          values: const {
-            PriceBand.all: 'Barcha narx',
-            PriceBand.under5: r'< $5',
-            PriceBand.from5To7: r'$5-$7',
-            PriceBand.over7: r'$7+',
+          values: {
+            PriceBand.all: context.localize('catalog.price_band.all'),
+            PriceBand.under5: context.localize('catalog.price_band.under5'),
+            PriceBand.from5To7: context.localize(
+              'catalog.price_band.from5_to7',
+            ),
+            PriceBand.over7: context.localize('catalog.price_band.over7'),
           },
           onChanged: onPriceBand,
         ),
@@ -2971,7 +3530,7 @@ class DiscoveryFilterPanel extends StatelessWidget {
           _Chips(
             value: size,
             values: {
-              'all': 'Barcha o‘lcham',
+              'all': context.localize('catalog.size.all'),
               for (final availableSize in sizes) availableSize: availableSize,
             },
             onChanged: onSize,
@@ -3012,18 +3571,35 @@ class CatalogActionBar extends StatelessWidget {
             savedOnly ? Icons.favorite : Icons.favorite_border,
             size: 18,
           ),
-          label: Text('Saqlanganlar $savedCount'),
+          label: Text(
+            context.localize(
+              'catalog.saved_count',
+              args: {'count': '$savedCount'},
+            ),
+          ),
           onSelected: onSavedOnly,
         ),
         PopupMenuButton<String>(
           initialValue: sort,
-          tooltip: 'Saralash',
+          tooltip: context.localize('catalog.sort'),
           onSelected: onSort,
-          itemBuilder: (context) => const [
-            PopupMenuItem(value: 'featured', child: Text('Avval yangilari')),
-            PopupMenuItem(value: 'price_low', child: Text('Narx: pastdan')),
-            PopupMenuItem(value: 'price_high', child: Text('Narx: yuqoridan')),
-            PopupMenuItem(value: 'name', child: Text('Model nomi')),
+          itemBuilder: (context) => [
+            PopupMenuItem(
+              value: 'featured',
+              child: Text(context.localize('catalog.sort.featured')),
+            ),
+            PopupMenuItem(
+              value: 'price_low',
+              child: Text(context.localize('catalog.sort.price_low')),
+            ),
+            PopupMenuItem(
+              value: 'price_high',
+              child: Text(context.localize('catalog.sort.price_high')),
+            ),
+            PopupMenuItem(
+              value: 'name',
+              child: Text(context.localize('catalog.sort.name')),
+            ),
           ],
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -3036,9 +3612,13 @@ class CatalogActionBar extends StatelessWidget {
               children: [
                 const Icon(Icons.tune, size: 18),
                 const SizedBox(width: 8),
-                Text(
-                  _sortLabel(sort),
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+                Flexible(
+                  child: Text(
+                    _sortLabel(sort, context.currentLanguageCode),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
                 ),
               ],
             ),
@@ -3048,12 +3628,18 @@ class CatalogActionBar extends StatelessWidget {
     );
   }
 
-  String _sortLabel(String value) {
+  String _sortLabel(String value, String languageCode) {
     return switch (value) {
-      'price_low' => 'Past narx',
-      'price_high' => 'Yuqori narx',
-      'name' => 'Model',
-      _ => 'Yangi',
+      'price_low' => localizedText(
+        'catalog.sort.price_low',
+        languageCode: languageCode,
+      ),
+      'price_high' => localizedText(
+        'catalog.sort.price_high',
+        languageCode: languageCode,
+      ),
+      'name' => localizedText('catalog.sort.name', languageCode: languageCode),
+      _ => localizedText('catalog.sort.featured', languageCode: languageCode),
     };
   }
 }
@@ -3110,23 +3696,23 @@ class _Filters extends StatelessWidget {
       children: [
         _Chips(
           value: gender,
-          values: const {
-            'all': 'Hammasi',
-            'women': 'Ayollar',
-            'men': 'Erkaklar',
-            'kids': 'Bolalar',
+          values: {
+            'all': context.localize('catalog.gender.all'),
+            'women': context.localize('catalog.gender.women'),
+            'men': context.localize('catalog.gender.men'),
+            'kids': context.localize('catalog.gender.kids'),
           },
           onChanged: onGender,
         ),
         const SizedBox(height: 8),
         _Chips(
           value: category,
-          values: const {
-            'all': 'Barchasi',
-            'pajamas': 'Pijama',
-            'robes': 'Xalat',
-            'homewear': 'Uy kiyimi',
-            'loungewear': 'Lounge',
+          values: {
+            'all': context.localize('catalog.category.default'),
+            'pajamas': context.localize('catalog.category.pajamas'),
+            'robes': context.localize('catalog.category.robes'),
+            'homewear': context.localize('catalog.category.homewear'),
+            'loungewear': context.localize('catalog.category.loungewear'),
           },
           onChanged: onCategory,
         ),
@@ -3228,7 +3814,12 @@ class LoadMoreCatalogButton extends StatelessWidget {
         child: FilledButton.tonalIcon(
           onPressed: onPressed,
           icon: const Icon(Icons.keyboard_arrow_down),
-          label: Text('Ko‘proq ko‘rsatish · $visible/$total'),
+          label: Text(
+            context.localize(
+              'catalog.load_more',
+              args: {'visible': '$visible', 'total': '$total'},
+            ),
+          ),
         ),
       ),
     );
@@ -3256,7 +3847,7 @@ class ProductCard extends StatelessWidget {
     return Semantics(
       button: true,
       label:
-          '${product.name}. ${money.format(product.price)}. Tafsilotlarni ochish',
+          '${productName(context, product)}. ${money.format(product.price)}. ${context.localize('product.card.open_details')}',
       child: InkWell(
         onTap: onOpen,
         child: Column(
@@ -3266,7 +3857,10 @@ class ProductCard extends StatelessWidget {
               child: Stack(
                 children: [
                   Positioned.fill(child: ProductImage(product: product)),
-                  if (productTagLabel(product).isNotEmpty)
+                  if (productTagLabel(
+                    product,
+                    languageCode: context.currentLanguageCode,
+                  ).isNotEmpty)
                     Positioned(
                       left: 8,
                       top: 8,
@@ -3277,7 +3871,10 @@ class ProductCard extends StatelessWidget {
                         ),
                         color: Colors.white,
                         child: Text(
-                          productTagLabel(product).toUpperCase(),
+                          productTagLabel(
+                            product,
+                            languageCode: context.currentLanguageCode,
+                          ).toUpperCase(),
                           style: const TextStyle(
                             fontSize: 9,
                             letterSpacing: 1,
@@ -3293,8 +3890,8 @@ class ProductCard extends StatelessWidget {
                       button: true,
                       toggled: isFavorite,
                       label: isFavorite
-                          ? 'Saqlanganlardan olib tashlash'
-                          : 'Saqlash',
+                          ? context.localize('product.card.saved_remove')
+                          : context.localize('product.card.saved_add'),
                       child: IconButton(
                         onPressed: onFavorite,
                         icon: Icon(
@@ -3302,8 +3899,8 @@ class ProductCard extends StatelessWidget {
                           size: 20,
                         ),
                         tooltip: isFavorite
-                            ? 'Saqlanganlardan olib tashlash'
-                            : 'Saqlash',
+                            ? context.localize('product.card.saved_remove')
+                            : context.localize('product.card.saved_add'),
                         style: IconButton.styleFrom(
                           backgroundColor: Colors.white.withValues(alpha: .88),
                           foregroundColor: milanaInk,
@@ -3318,11 +3915,25 @@ class ProductCard extends StatelessWidget {
                       bottom: 8,
                       child: Semantics(
                         button: true,
-                        label: '${product.name}, 1 qadoq savatga qo‘shish',
+                        label:
+                            '${productName(context, product)}. ${context.localize('catalog.add_to_cart_count', args: {
+                              'count': '${product.orderUnitFor(packUnitType).minQty}',
+                              'unit': orderUnitLabel(packUnitType, languageCode: context.currentLanguageCode).toLowerCase(),
+                            })}',
                         child: IconButton.filled(
                           onPressed: onAdd,
                           icon: const Icon(Icons.add_shopping_cart, size: 19),
-                          tooltip: '1 qadoq savatga',
+                          tooltip: context.localize(
+                            'catalog.add_to_cart_count',
+                            args: {
+                              'count':
+                                  '${product.orderUnitFor(packUnitType).minQty}',
+                              'unit': orderUnitLabel(
+                                packUnitType,
+                                languageCode: context.currentLanguageCode,
+                              ).toLowerCase(),
+                            },
+                          ),
                           style: IconButton.styleFrom(
                             backgroundColor: milanaInk,
                             foregroundColor: Colors.white,
@@ -3336,7 +3947,7 @@ class ProductCard extends StatelessWidget {
             ),
             const SizedBox(height: 9),
             Text(
-              product.name.toUpperCase(),
+              productName(context, product).toUpperCase(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -3352,9 +3963,16 @@ class ProductCard extends StatelessWidget {
             ),
             const SizedBox(height: 3),
             Text(
-              product.fabric.isEmpty
-                  ? qopAvailabilityLabel(product)
-                  : product.fabric,
+              context.localize(
+                'product.moq',
+                args: {
+                  'quantity': '${product.orderUnitFor(packUnitType).minQty}',
+                  'unit': orderUnitLabel(
+                    packUnitType,
+                    languageCode: context.currentLanguageCode,
+                  ).toLowerCase(),
+                },
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(color: milanaMuted, fontSize: 10),
@@ -3388,7 +4006,7 @@ class RecentlyViewedRail extends StatelessWidget {
     final cardWidth = compact ? 196.0 : 224.0;
     return Semantics(
       container: true,
-      label: 'Yaqinda ko‘rilgan mahsulotlar',
+      label: context.localize('home.section.recent'),
       child: SizedBox(
         height: compact ? 330 : 375,
         child: ListView.separated(
@@ -3441,7 +4059,11 @@ class ProductImage extends StatelessWidget {
     }
     return Semantics(
       image: true,
-      label: '${product.name} mahsulot rasmi',
+      label: localizedText(
+        'product.image.label',
+        languageCode: context.currentLanguageCode,
+        args: {'product': productName(context, product)},
+      ),
       child: CachedNetworkImage(
         imageUrl: imageUrl,
         width: double.infinity,
@@ -3452,14 +4074,88 @@ class ProductImage extends StatelessWidget {
         maxWidthDiskCache: 1200,
         placeholder: (context, url) => const ProductImagePlaceholder(),
         errorWidget: (context, url, error) => const ProductImageFallback(),
-        imageBuilder: (context, provider) => DecoratedBox(
-          decoration: BoxDecoration(
-            image: DecorationImage(image: provider, fit: fit),
+        imageBuilder: (context, provider) => SizedBox.expand(
+          child: Image(
+            image: provider,
+            fit: fit,
+            alignment: Alignment.center,
+            gaplessPlayback: true,
           ),
         ),
       ),
     );
   }
+}
+
+class _ProductDetailImage extends StatefulWidget {
+  const _ProductDetailImage({
+    required this.product,
+    required this.image,
+    required this.onAspectRatio,
+  });
+
+  final Product product;
+  final String? image;
+  final ValueChanged<double> onAspectRatio;
+
+  @override
+  State<_ProductDetailImage> createState() => _ProductDetailImageState();
+}
+
+class _ProductDetailImageState extends State<_ProductDetailImage> {
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _subscribeToDimensions();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProductDetailImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.image != widget.image) _subscribeToDimensions();
+  }
+
+  void _subscribeToDimensions() {
+    if (_stream != null && _listener != null) {
+      _stream!.removeListener(_listener!);
+    }
+    final source = widget.image?.trim() ?? '';
+    final url = source.isEmpty ? '' : resolveImageUrl(source);
+    if (url.isEmpty) return;
+    final stream = CachedNetworkImageProvider(
+      url,
+      maxWidth: 1200,
+    ).resolve(createLocalImageConfiguration(context));
+    final listener = ImageStreamListener((image, synchronousCall) {
+      final height = image.image.height;
+      if (height <= 0) return;
+      final ratio = image.image.width / height;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onAspectRatio(ratio);
+      });
+    });
+    _stream = stream;
+    _listener = listener;
+    stream.addListener(listener);
+  }
+
+  @override
+  void dispose() {
+    if (_stream != null && _listener != null) {
+      _stream!.removeListener(_listener!);
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ProductImage(
+    product: widget.product,
+    image: widget.image,
+    fit: BoxFit.contain,
+  );
 }
 
 class ProductImagePlaceholder extends StatelessWidget {
@@ -3543,11 +4239,20 @@ class AssistantSheet extends StatefulWidget {
     required this.assistant,
     required this.onProduct,
     required this.onAdd,
+    required this.onContactSales,
+    required this.onReport,
   });
 
   final AssistantService assistant;
   final ValueChanged<Product> onProduct;
   final ValueChanged<Product> onAdd;
+  final VoidCallback onContactSales;
+  final Future<String> Function({
+    required String response,
+    required String reasonCode,
+    required String comment,
+  })
+  onReport;
 
   @override
   State<AssistantSheet> createState() => _AssistantSheetState();
@@ -3555,13 +4260,7 @@ class AssistantSheet extends StatefulWidget {
 
 class _AssistantSheetState extends State<AssistantSheet> {
   final controller = TextEditingController();
-  final messages = <_AssistantMessage>[
-    const _AssistantMessage(
-      text:
-          'Salom. Model, narx, qop qoidasi yoki yetkazib berish bo‘yicha so‘rashingiz mumkin.',
-      fromUser: false,
-    ),
-  ];
+  final messages = <_AssistantMessage>[];
   List<Product> products = const <Product>[];
   int? sessionId;
   bool sending = false;
@@ -3574,6 +4273,15 @@ class _AssistantSheetState extends State<AssistantSheet> {
 
   @override
   Widget build(BuildContext context) {
+    if (messages.isEmpty) {
+      messages.add(
+        _AssistantMessage(
+          text: context.localize('assistant.placeholder'),
+          fromUser: false,
+        ),
+      );
+    }
+
     final inset = MediaQuery.viewInsetsOf(context).bottom;
     return AnimatedPadding(
       duration: const Duration(milliseconds: 180),
@@ -3603,7 +4311,7 @@ class _AssistantSheetState extends State<AssistantSheet> {
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
                       icon: const Icon(Icons.close),
-                      tooltip: 'Yopish',
+                      tooltip: context.localize('common.close'),
                     ),
                   ],
                 ),
@@ -3633,12 +4341,12 @@ class _AssistantSheetState extends State<AssistantSheet> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Milana AI yordamchi',
+                                context.localize('assistant.title'),
                                 style: Theme.of(context).textTheme.titleLarge
                                     ?.copyWith(fontWeight: FontWeight.w900),
                               ),
                               Text(
-                                'Katalog va ulgurji savollar uchun tez javob.',
+                                context.localize('assistant.subtitle'),
                                 style: TextStyle(
                                   color: milanaInk.withValues(alpha: .6),
                                 ),
@@ -3654,21 +4362,53 @@ class _AssistantSheetState extends State<AssistantSheet> {
                       runSpacing: 8,
                       children: [
                         _AssistantQuickChip(
-                          label: 'Qop qoidasi',
-                          onTap: () => _send('Qop qoidasi qanday?'),
+                          label: context.localize('assistant.quick.bag'),
+                          onTap: () => _send(
+                            context.localize('assistant.quick.bag_prompt'),
+                          ),
                         ),
                         _AssistantQuickChip(
-                          label: 'Yetkazish',
-                          onTap: () => _send('Yetkazib berish qancha vaqt?'),
+                          label: context.localize('assistant.quick.delivery'),
+                          onTap: () => _send(
+                            context.localize('assistant.quick.delivery_prompt'),
+                          ),
                         ),
                         _AssistantQuickChip(
-                          label: 'Erkaklar modeli',
-                          onTap: () => _send('Erkaklar uchun paxta model top'),
+                          label: context.localize(
+                            'assistant.quick.partnership',
+                          ),
+                          onTap: () => _send(
+                            context.localize(
+                              'assistant.quick.partnership_prompt',
+                            ),
+                          ),
+                        ),
+                        _AssistantQuickChip(
+                          label: context.localize('assistant.quick.mens_model'),
+                          onTap: () => _send(
+                            context.localize(
+                              'assistant.quick.mens_model_prompt',
+                            ),
+                          ),
+                        ),
+                        _AssistantQuickChip(
+                          label: context.localize('assistant.quick.sales'),
+                          onTap: () {
+                            Navigator.of(context).pop();
+                            widget.onContactSales();
+                          },
                         ),
                       ],
                     ),
                     const SizedBox(height: 14),
-                    ...messages.map((message) => _AssistantBubble(message)),
+                    ...messages.map(
+                      (message) => _AssistantBubble(
+                        message,
+                        onReport: message.fromUser
+                            ? null
+                            : () => _report(message.text),
+                      ),
+                    ),
                     if (sending)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 10),
@@ -3677,8 +4417,13 @@ class _AssistantSheetState extends State<AssistantSheet> {
                     if (products.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       SectionHeader(
-                        title: 'Tavsiya qilingan modellar',
-                        trailing: '${products.length} model',
+                        title: context.localize(
+                          'product.sheet.recommended_models',
+                        ),
+                        trailing: context.localize(
+                          'catalog.models_count',
+                          args: {'count': products.length.toString()},
+                        ),
                       ),
                       const SizedBox(height: 10),
                       ...products
@@ -3710,21 +4455,21 @@ class _AssistantSheetState extends State<AssistantSheet> {
                           maxLines: 3,
                           textInputAction: TextInputAction.send,
                           onSubmitted: _send,
-                          decoration: const InputDecoration(
-                            hintText: 'Savolingizni yozing...',
+                          decoration: InputDecoration(
+                            hintText: context.localize('assistant.input_hint'),
                           ),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Semantics(
                         button: true,
-                        label: 'Xabarni yuborish',
+                        label: context.localize('assistant.send'),
                         child: IconButton.filled(
                           onPressed: sending
                               ? null
                               : () => _send(controller.text),
                           icon: const Icon(Icons.send_outlined),
-                          tooltip: 'Xabarni yuborish',
+                          tooltip: context.localize('assistant.send'),
                         ),
                       ),
                     ],
@@ -3742,6 +4487,7 @@ class _AssistantSheetState extends State<AssistantSheet> {
     final message = text.trim();
     if (message.length < 2 || sending) return;
     controller.clear();
+    unawaited(context.analytics?.logAssistantEngagement());
     setState(() {
       sending = true;
       messages.add(_AssistantMessage(text: message, fromUser: true));
@@ -3750,7 +4496,7 @@ class _AssistantSheetState extends State<AssistantSheet> {
       final reply = await widget.assistant.send(
         message: message,
         sessionId: sessionId,
-        lang: 'uz',
+        lang: context.currentLanguageCode,
       );
       if (!mounted) return;
       setState(() {
@@ -3762,15 +4508,125 @@ class _AssistantSheetState extends State<AssistantSheet> {
       if (!mounted) return;
       setState(() {
         messages.add(
-          const _AssistantMessage(
-            text:
-                'Hozir AI javob bera olmadi. Menejerga yozing yoki birozdan keyin qayta urinib ko‘ring.',
+          _AssistantMessage(
+            text: context.localize('assistant.failure'),
             fromUser: false,
           ),
         );
       });
     } finally {
       if (mounted) setState(() => sending = false);
+    }
+  }
+
+  Future<void> _report(String response) async {
+    var comment = '';
+    var reasonCode = 'offensive_or_unsafe';
+    var submitting = false;
+    final submitted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: Text(context.localize('assistant.report.title')),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(context.localize('assistant.report.description')),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<String>(
+                  initialValue: reasonCode,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: context.localize('assistant.report.reason'),
+                  ),
+                  items: [
+                    for (final code in const [
+                      'offensive_or_unsafe',
+                      'inaccurate_or_misleading',
+                      'other',
+                    ])
+                      DropdownMenuItem(
+                        value: code,
+                        child: Text(
+                          context.localize('assistant.report.reason.$code'),
+                        ),
+                      ),
+                  ],
+                  onChanged: submitting
+                      ? null
+                      : (value) => setDialogState(
+                          () => reasonCode = value ?? reasonCode,
+                        ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  enabled: !submitting,
+                  minLines: 2,
+                  maxLines: 4,
+                  maxLength: 500,
+                  onChanged: (value) => comment = value,
+                  decoration: InputDecoration(
+                    labelText: context.localize('assistant.report.comment'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: submitting
+                  ? null
+                  : () => Navigator.pop(dialogContext, false),
+              child: Text(context.localize('delete.cancel')),
+            ),
+            FilledButton.icon(
+              onPressed: submitting
+                  ? null
+                  : () async {
+                      setDialogState(() => submitting = true);
+                      try {
+                        await widget.onReport(
+                          response: response,
+                          reasonCode: reasonCode,
+                          comment: comment.trim(),
+                        );
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext, true);
+                        }
+                      } catch (_) {
+                        if (dialogContext.mounted) {
+                          ScaffoldMessenger.of(dialogContext).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                dialogContext.localize(
+                                  'assistant.report.failed',
+                                ),
+                              ),
+                            ),
+                          );
+                          setDialogState(() => submitting = false);
+                        }
+                      }
+                    },
+              icon: submitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.flag_outlined),
+              label: Text(context.localize('assistant.report.submit')),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (submitted == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.localize('assistant.report.success'))),
+      );
     }
   }
 }
@@ -3783,9 +4639,10 @@ class _AssistantMessage {
 }
 
 class _AssistantBubble extends StatelessWidget {
-  const _AssistantBubble(this.message);
+  const _AssistantBubble(this.message, {this.onReport});
 
   final _AssistantMessage message;
+  final VoidCallback? onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -3806,12 +4663,30 @@ class _AssistantBubble extends StatelessWidget {
               ? null
               : Border.all(color: milanaInk.withValues(alpha: .08)),
         ),
-        child: Text(
-          message.text,
-          style: TextStyle(
-            color: message.fromUser ? Colors.white : milanaInk,
-            height: 1.35,
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              message.text,
+              style: TextStyle(
+                color: message.fromUser ? Colors.white : milanaInk,
+                height: 1.35,
+              ),
+            ),
+            if (onReport != null) ...[
+              const SizedBox(height: 6),
+              TextButton.icon(
+                onPressed: onReport,
+                icon: const Icon(Icons.flag_outlined, size: 17),
+                label: Text(context.localize('assistant.report.action')),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -3871,14 +4746,15 @@ class AssistantProductResult extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      product.name,
+                      productName(context, product),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${genderLabel(product.gender)} · ${categoryLabel(product.category)}',
+                      '${genderLabel(product.gender, languageCode: context.currentLanguageCode)} · '
+                      '${categoryLabel(product.category, languageCode: context.currentLanguageCode)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(color: milanaInk.withValues(alpha: .6)),
@@ -3897,7 +4773,7 @@ class AssistantProductResult extends StatelessWidget {
               IconButton.filledTonal(
                 onPressed: isOutOfQop(product) ? null : onAdd,
                 icon: const Icon(Icons.add_shopping_cart_outlined),
-                tooltip: 'Savatga',
+                tooltip: context.localize('catalog.add'),
               ),
             ],
           ),
@@ -3915,6 +4791,8 @@ class ProductSheet extends StatefulWidget {
     required this.onAdd,
     required this.onOpenRelated,
     required this.onAddRelated,
+    this.catalog,
+    this.modelVariants = const <Product>[],
   });
 
   final Product product;
@@ -3922,6 +4800,8 @@ class ProductSheet extends StatefulWidget {
   final bool Function(CartItem) onAdd;
   final ValueChanged<Product> onOpenRelated;
   final ValueChanged<Product> onAddRelated;
+  final CatalogRepository? catalog;
+  final List<Product> modelVariants;
 
   @override
   State<ProductSheet> createState() => _ProductSheetState();
@@ -3933,11 +4813,28 @@ class _ProductSheetState extends State<ProductSheet> {
   String unitType = packUnitType;
   bool addedRecently = false;
   late final PageController imageController;
+  final Map<int, double> imageAspectRatios = <int, double>{};
+  late Product product;
+  late List<Product> relatedProducts;
+  late List<Product> modelVariants;
+  bool garmentMeasurementsEnabled = false;
+  bool backendDetailLoading = false;
+
+  void _rememberImageAspectRatio(int index, double ratio) {
+    final safeRatio = ratio.clamp(.55, 1.6).toDouble();
+    if ((imageAspectRatios[index] ?? 0) == safeRatio) return;
+    setState(() => imageAspectRatios[index] = safeRatio);
+  }
 
   @override
   void initState() {
     super.initState();
+    product = widget.product;
+    relatedProducts = widget.relatedProducts;
+    modelVariants = widget.modelVariants;
+    packageCount = product.orderUnitFor(unitType).minQty;
     imageController = PageController();
+    unawaited(_loadBackendDetail());
   }
 
   @override
@@ -3948,10 +4845,13 @@ class _ProductSheetState extends State<ProductSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final product = widget.product;
     final maxPackages = packageUiLimit(product, unitType: unitType);
+    final minimumPackages = product.orderUnitFor(unitType).minQty;
     final selectedPackages = packageCount
-        .clamp(1, maxPackages < 1 ? 1 : maxPackages)
+        .clamp(
+          minimumPackages,
+          maxPackages < minimumPackages ? minimumPackages : maxPackages,
+        )
         .toInt();
     final item = CartItem(
       product: product,
@@ -3962,8 +4862,15 @@ class _ProductSheetState extends State<ProductSheet> {
     final mix = item.sizeMix
         .map((row) => '${row['size']} × ${row['qty']}')
         .join(', ');
-    final specs = productSpecs(product, item);
-    final highlights = productHighlights(product);
+    final specs = productSpecs(
+      product,
+      item,
+      languageCode: context.currentLanguageCode,
+    );
+    final highlights = productHighlights(
+      product,
+      languageCode: context.currentLanguageCode,
+    );
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: .94,
@@ -3986,90 +4893,115 @@ class _ProductSheetState extends State<ProductSheet> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  AspectRatio(
-                    aspectRatio: 4 / 5,
-                    child: Stack(
-                      children: [
-                        Positioned.fill(
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: PageView.builder(
-                              controller: imageController,
-                              itemCount: images.isEmpty ? 1 : images.length,
-                              onPageChanged: (index) =>
-                                  setState(() => imageIndex = index),
-                              itemBuilder: (context, index) => GestureDetector(
-                                onTap: images.isEmpty
-                                    ? null
-                                    : () => _openFullScreenGallery(images),
-                                child: ProductImage(
-                                  product: product,
-                                  image: images.isEmpty ? null : images[index],
-                                  fit: BoxFit.contain,
+                  if (backendDetailLoading)
+                    const LinearProgressIndicator(minHeight: 2),
+                  if (backendDetailLoading) const SizedBox(height: 10),
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 180),
+                    curve: Curves.easeOut,
+                    child: AspectRatio(
+                      aspectRatio: imageAspectRatios[imageIndex] ?? 3 / 4,
+                      child: Stack(
+                        children: [
+                          Positioned.fill(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: PageView.builder(
+                                controller: imageController,
+                                itemCount: images.isEmpty ? 1 : images.length,
+                                onPageChanged: (index) =>
+                                    setState(() => imageIndex = index),
+                                itemBuilder: (context, index) =>
+                                    GestureDetector(
+                                      onTap: images.isEmpty
+                                          ? null
+                                          : () =>
+                                                _openFullScreenGallery(images),
+                                      child: _ProductDetailImage(
+                                        product: product,
+                                        image: images.isEmpty
+                                            ? null
+                                            : images[index],
+                                        onAspectRatio: (ratio) =>
+                                            _rememberImageAspectRatio(
+                                              index,
+                                              ratio,
+                                            ),
+                                      ),
+                                    ),
+                              ),
+                            ),
+                          ),
+                          if (images.length > 1) ...[
+                            Positioned(
+                              left: 10,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: IconButton.filledTonal(
+                                  onPressed: imageIndex == 0
+                                      ? null
+                                      : () => _showImage(imageIndex - 1),
+                                  icon: const Icon(Icons.chevron_left),
+                                  tooltip: context.localize(
+                                    'product.gallery.previous',
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                        if (images.length > 1) ...[
-                          Positioned(
-                            left: 10,
-                            top: 0,
-                            bottom: 0,
-                            child: Center(
-                              child: IconButton.filledTonal(
-                                onPressed: imageIndex == 0
-                                    ? null
-                                    : () => _showImage(imageIndex - 1),
-                                icon: const Icon(Icons.chevron_left),
-                                tooltip: 'Oldingi rasm',
+                            Positioned(
+                              right: 10,
+                              top: 0,
+                              bottom: 0,
+                              child: Center(
+                                child: IconButton.filledTonal(
+                                  onPressed: imageIndex == images.length - 1
+                                      ? null
+                                      : () => _showImage(imageIndex + 1),
+                                  icon: const Icon(Icons.chevron_right),
+                                  tooltip: context.localize(
+                                    'product.gallery.next',
+                                  ),
+                                ),
                               ),
                             ),
-                          ),
-                          Positioned(
-                            right: 10,
-                            top: 0,
-                            bottom: 0,
-                            child: Center(
-                              child: IconButton.filledTonal(
-                                onPressed: imageIndex == images.length - 1
-                                    ? null
-                                    : () => _showImage(imageIndex + 1),
-                                icon: const Icon(Icons.chevron_right),
-                                tooltip: 'Keyingi rasm',
+                            Positioned(
+                              right: 12,
+                              bottom: 12,
+                              child: _SoftBadge(
+                                icon: Icons.photo_library_outlined,
+                                label: '${imageIndex + 1}/${images.length}',
                               ),
+                            ),
+                          ],
+                          Positioned(
+                            left: 12,
+                            top: 12,
+                            child: _SoftBadge(
+                              icon: product.availableQop == null
+                                  ? Icons.verified_outlined
+                                  : Icons.inventory_2_outlined,
+                              label: product.availableQop == null
+                                  ? context.localize('product.premium')
+                                  : qopAvailabilityLabel(
+                                      product,
+                                      languageCode: context.currentLanguageCode,
+                                    ),
                             ),
                           ),
                           Positioned(
                             right: 12,
-                            bottom: 12,
+                            top: 12,
                             child: _SoftBadge(
-                              icon: Icons.photo_library_outlined,
-                              label: '${imageIndex + 1}/${images.length}',
+                              icon: Icons.attach_money,
+                              label: context.localize(
+                                'product.unit',
+                                args: {'count': money.format(product.price)},
+                              ),
                             ),
                           ),
                         ],
-                        Positioned(
-                          left: 12,
-                          top: 12,
-                          child: _SoftBadge(
-                            icon: product.availableQop == null
-                                ? Icons.verified_outlined
-                                : Icons.inventory_2_outlined,
-                            label: product.availableQop == null
-                                ? 'Premium'
-                                : qopAvailabilityLabel(product),
-                          ),
-                        ),
-                        Positioned(
-                          right: 12,
-                          top: 12,
-                          child: _SoftBadge(
-                            icon: Icons.attach_money,
-                            label: '${money.format(product.price)} dona',
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                   if (images.length > 1) ...[
@@ -4117,13 +5049,14 @@ class _ProductSheetState extends State<ProductSheet> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              product.name,
+                              productName(context, product),
                               style: Theme.of(context).textTheme.headlineSmall
                                   ?.copyWith(fontWeight: FontWeight.w800),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              '${genderLabel(product.gender)} · ${categoryLabel(product.category)}',
+                              '${genderLabel(product.gender, languageCode: context.currentLanguageCode)} · '
+                              '${categoryLabel(product.category, languageCode: context.currentLanguageCode)}',
                               style: TextStyle(
                                 color: milanaInk.withValues(alpha: .58),
                                 fontWeight: FontWeight.w600,
@@ -4145,7 +5078,7 @@ class _ProductSheetState extends State<ProductSheet> {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    'Buyurtma formatini tanlang',
+                    context.localize('product.order_type.prompt'),
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       fontWeight: FontWeight.w800,
                     ),
@@ -4156,7 +5089,7 @@ class _ProductSheetState extends State<ProductSheet> {
                     value: unitType,
                     onChanged: (value) => setState(() {
                       unitType = value;
-                      packageCount = 1;
+                      packageCount = product.orderUnitFor(value).minQty;
                     }),
                   ),
                   const SizedBox(height: 10),
@@ -4166,44 +5099,126 @@ class _ProductSheetState extends State<ProductSheet> {
                     onPressed: () {
                       Clipboard.setData(
                         ClipboardData(
-                          text: productInquiryShareText(product, item: item),
+                          text: productInquiryShareText(
+                            product,
+                            item: item,
+                            languageCode: context.currentLanguageCode,
+                          ),
                         ),
                       );
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Model ma’lumoti nusxalandi'),
+                        SnackBar(
+                          content: Text(
+                            context.localize('product.copy.info_done'),
+                          ),
                         ),
                       );
                     },
                     icon: const Icon(Icons.copy_all_outlined),
-                    label: const Text('Model ma’lumotini nusxalash'),
+                    label: Text(context.localize('product.copy.info')),
                   ),
                   const SizedBox(height: 14),
                   ProductSpecGrid(specs: specs),
+                  if (product.likeCount > 0 || product.views > 0) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (product.likeCount > 0)
+                          _SoftBadge(
+                            icon: Icons.favorite_outline,
+                            label: '${product.likeCount}',
+                          ),
+                        if (product.views > 0)
+                          _SoftBadge(
+                            icon: Icons.visibility_outlined,
+                            label: '${product.views}',
+                          ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 14),
-                  if (product.fabric.isNotEmpty)
+                  if (product.fabricFor(context.currentLanguageCode).isNotEmpty)
                     Text(
-                      product.fabric,
+                      product.fabricFor(context.currentLanguageCode),
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
-                  if (product.description.isNotEmpty)
+                  if (product
+                      .descriptionFor(context.currentLanguageCode)
+                      .isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: Text(product.description),
+                      child: Text(
+                        product.descriptionFor(context.currentLanguageCode),
+                      ),
+                    ),
+                  if (product.careFor(context.currentLanguageCode).isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: _ProductTextSection(
+                        title: context.localize('product.care.title'),
+                        body: product.careFor(context.currentLanguageCode),
+                      ),
+                    ),
+                  if (garmentMeasurementsEnabled &&
+                      product.sizeChart.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: _GarmentMeasurementSection(
+                        sizeChart: product.sizeChart,
+                      ),
                     ),
                   const SizedBox(height: 14),
                   ProductHighlightList(highlights: highlights),
-                  if (widget.relatedProducts.isNotEmpty) ...[
+                  if (modelVariants.isNotEmpty) ...[
                     const SizedBox(height: 22),
                     SectionHeader(
-                      title: 'Mos modellar',
-                      trailing: '${widget.relatedProducts.length} model',
+                      title: context.localize('product.variants.title'),
+                      trailing: context.localize(
+                        'catalog.models_count',
+                        args: {'count': modelVariants.length.toString()},
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: modelVariants
+                          .map(
+                            (variant) => ActionChip(
+                              avatar: const Icon(
+                                Icons.style_outlined,
+                                size: 18,
+                              ),
+                              label: Text(
+                                variant.variant.isEmpty
+                                    ? variant.modelNo
+                                    : variant.variant,
+                              ),
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                widget.onOpenRelated(variant);
+                              },
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                  ],
+                  if (relatedProducts.isNotEmpty) ...[
+                    const SizedBox(height: 22),
+                    SectionHeader(
+                      title: context.localize('product.related.title'),
+                      trailing: context.localize(
+                        'catalog.models_count',
+                        args: {'count': relatedProducts.length.toString()},
+                      ),
                     ),
                     const SizedBox(height: 10),
                     FeaturedProductsRail(
-                      products: widget.relatedProducts,
+                      products: relatedProducts,
                       badgeIcon: Icons.style_outlined,
-                      badgeLabel: 'Mos',
+                      badgeLabel: context.localize('product.related.badge'),
                       onOpen: (related) {
                         Navigator.of(context).pop();
                         widget.onOpenRelated(related);
@@ -4218,6 +5233,7 @@ class _ProductSheetState extends State<ProductSheet> {
               item: item,
               value: selectedPackages,
               max: maxPackages,
+              min: minimumPackages,
               added: addedRecently,
               onChanged: (value) => setState(() => packageCount = value),
               onAdd: () => _addToCart(item),
@@ -4238,6 +5254,74 @@ class _ProductSheetState extends State<ProductSheet> {
     );
   }
 
+  Future<void> _loadBackendDetail() async {
+    final catalog = widget.catalog;
+    if (catalog == null || product.slug.isEmpty) return;
+    setState(() => backendDetailLoading = true);
+    final slug = product.slug;
+    await Future.wait<void>([
+      _loadAuthoritativeProduct(catalog, slug),
+      _loadAuthoritativeRecommendations(catalog, slug),
+      _loadGarmentMeasurementConfig(catalog, slug),
+    ]);
+    if (mounted && product.slug == slug) {
+      setState(() => backendDetailLoading = false);
+    }
+  }
+
+  Future<void> _loadAuthoritativeProduct(
+    CatalogRepository catalog,
+    String slug,
+  ) async {
+    try {
+      final detail = await catalog.loadProductDetails(slug);
+      if (!mounted || product.slug != slug) return;
+      setState(() {
+        product = detail;
+        if (imageIndex >= product.images.length) imageIndex = 0;
+        packageCount = product.orderUnitFor(unitType).minQty;
+      });
+    } catch (_) {
+      // The catalog snapshot remains a complete offline fallback.
+    }
+  }
+
+  Future<void> _loadAuthoritativeRecommendations(
+    CatalogRepository catalog,
+    String slug,
+  ) async {
+    try {
+      final recommendations = await catalog.loadRecommendations(slug);
+      if (mounted && product.slug == slug && recommendations.isNotEmpty) {
+        setState(
+          () => relatedProducts = recommendations
+              .where(
+                (candidate) =>
+                    candidate.id != product.id &&
+                    candidate.modelNo != product.modelNo,
+              )
+              .toList(growable: false),
+        );
+      }
+    } catch (_) {
+      // Keep locally ranked recommendations when the endpoint is unavailable.
+    }
+  }
+
+  Future<void> _loadGarmentMeasurementConfig(
+    CatalogRepository catalog,
+    String slug,
+  ) async {
+    try {
+      final config = await catalog.loadPublicConfig();
+      if (mounted && product.slug == slug) {
+        setState(() => garmentMeasurementsEnabled = config.garmentMeasurements);
+      }
+    } catch (_) {
+      // A missing public setting must not expose constructor-only details.
+    }
+  }
+
   void _showImage(int index) {
     if (!imageController.hasClients) return;
     imageController.animateToPage(
@@ -4252,7 +5336,7 @@ class _ProductSheetState extends State<ProductSheet> {
       context: context,
       barrierColor: Colors.black,
       builder: (context) => ProductGalleryDialog(
-        product: widget.product,
+        product: product,
         images: images,
         initialIndex: imageIndex,
       ),
@@ -4261,11 +5345,93 @@ class _ProductSheetState extends State<ProductSheet> {
   }
 }
 
+class _ProductTextSection extends StatelessWidget {
+  const _ProductTextSection({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: milanaBlush,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Text(body),
+        ],
+      ),
+    );
+  }
+}
+
+class _GarmentMeasurementSection extends StatelessWidget {
+  const _GarmentMeasurementSection({required this.sizeChart});
+
+  final String sizeChart;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = sizeChart.trim();
+    final isImage = RegExp(
+      r'\.(?:png|jpe?g|webp|gif)(?:\?.*)?$',
+      caseSensitive: false,
+    ).hasMatch(trimmed);
+    final imageUrl = trimmed.startsWith('/') ? '$apiBaseUrl$trimmed' : trimmed;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: milanaBlush,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: milanaInk.withValues(alpha: .1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.straighten_outlined, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  context.localize('product.measurements.title'),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (isImage)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.contain,
+                errorWidget: (_, _, _) => Text(trimmed),
+              ),
+            )
+          else
+            SelectableText(trimmed),
+        ],
+      ),
+    );
+  }
+}
+
 class _ProductPurchaseBar extends StatelessWidget {
   const _ProductPurchaseBar({
     required this.item,
     required this.value,
     required this.max,
+    required this.min,
     required this.added,
     required this.onChanged,
     required this.onAdd,
@@ -4274,6 +5440,7 @@ class _ProductPurchaseBar extends StatelessWidget {
   final CartItem item;
   final int value;
   final int max;
+  final int min;
   final bool added;
   final ValueChanged<int> onChanged;
   final VoidCallback onAdd;
@@ -4291,24 +5458,30 @@ class _ProductPurchaseBar extends StatelessWidget {
           children: [
             QuantityStepper(
               value: value,
-              max: max < 1 ? 1 : max,
+              min: min,
+              max: max < min ? min : max,
               onChanged: onChanged,
             ),
             const SizedBox(width: 12),
             Expanded(
               child: FilledButton.icon(
-                onPressed: max < 1 ? null : onAdd,
+                onPressed: max < min ? null : onAdd,
                 icon: Icon(
                   added
                       ? Icons.check_circle_outline
                       : Icons.shopping_bag_outlined,
                 ),
                 label: Text(
-                  max < 1
-                      ? 'Mavjud emas'
+                  max < min
+                      ? context.localize('product.availability.out_of_stock')
                       : added
-                      ? 'Savatga qo‘shildi'
-                      : '${money.format(item.lineTotal)} · savatga',
+                      ? context.localize('cart.added')
+                      : context.localize(
+                          'product.add_to_cart',
+                          args: {'amount': money.format(item.lineTotal)},
+                        ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ),
@@ -4368,7 +5541,9 @@ class _OrderUnitOption extends StatelessWidget {
       button: true,
       selected: selected,
       label:
-          '${orderUnitLabel(unit.unitType)}, ${unit.pieces} dona, har o‘lchamdan ${unit.perSize} tadan',
+          '${orderUnitLabel(unit.unitType, languageCode: context.currentLanguageCode)}, '
+          '${context.localize('product.unit', args: {'count': unit.pieces.toString()})}, '
+          '${context.localize('product.size_per', args: {'count': unit.perSize.toString()})}',
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(8),
@@ -4387,7 +5562,10 @@ class _OrderUnitOption extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                orderUnitLabel(unit.unitType),
+                orderUnitLabel(
+                  unit.unitType,
+                  languageCode: context.currentLanguageCode,
+                ),
                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: selected ? Colors.white : milanaInk,
                   fontWeight: FontWeight.w900,
@@ -4395,7 +5573,10 @@ class _OrderUnitOption extends StatelessWidget {
               ),
               const SizedBox(height: 3),
               Text(
-                '${unit.pieces} dona',
+                context.localize(
+                  'product.unit',
+                  args: {'count': unit.pieces.toString()},
+                ),
                 style: TextStyle(
                   color: selected
                       ? Colors.white.withValues(alpha: .76)
@@ -4404,7 +5585,10 @@ class _OrderUnitOption extends StatelessWidget {
                 ),
               ),
               Text(
-                'Har o‘lchamdan ${unit.perSize} tadan',
+                context.localize(
+                  'product.size_per',
+                  args: {'count': unit.perSize.toString()},
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -4492,7 +5676,7 @@ class _ProductGalleryDialogState extends State<ProductGalleryDialog> {
                     IconButton.filledTonal(
                       onPressed: () => Navigator.of(context).pop(index),
                       icon: const Icon(Icons.close),
-                      tooltip: 'Yopish',
+                      tooltip: context.localize('common.close'),
                     ),
                     const Spacer(),
                     _SoftBadge(
@@ -4536,7 +5720,15 @@ class WholesaleDetailPanel extends StatelessWidget {
               const Icon(Icons.inventory_2_outlined, color: milanaBurgundy),
               const SizedBox(width: 8),
               Text(
-                '${orderUnitLabel(item.unitType)} hisobi',
+                context.localize(
+                  'product.wholesale.title',
+                  args: {
+                    'unit': orderUnitLabel(
+                      item.unitType,
+                      languageCode: context.currentLanguageCode,
+                    ),
+                  },
+                ),
                 style: Theme.of(
                   context,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
@@ -4545,13 +5737,50 @@ class WholesaleDetailPanel extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            '1 ${orderUnitLabel(item.unitType).toLowerCase()}: ${item.piecesPerUnit} ta kiyim · har o‘lchamdan ${item.orderUnit.perSize} tadan',
+            context.localize(
+              'product.wholesale.item_summary',
+              args: {
+                'unit': orderUnitLabel(
+                  item.unitType,
+                  languageCode: context.currentLanguageCode,
+                ),
+                'pieces': item.piecesPerUnit.toString(),
+                'size': item.orderUnit.perSize.toString(),
+              },
+            ),
           ),
-          Text('Tarkib: $mix'),
+          Text('${context.localize('order.share.contents')}: $mix'),
+          Text(
+            context.localize(
+              'product.moq',
+              args: {
+                'quantity': '${item.minimumQuantity}',
+                'unit': orderUnitLabel(
+                  item.unitType,
+                  languageCode: context.currentLanguageCode,
+                ).toLowerCase(),
+              },
+            ),
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
           const Divider(height: 22),
           Row(
             children: [
-              Expanded(child: Text('1 ${orderUnitLabel(item.unitType)} narxi')),
+              Expanded(
+                child: Text(
+                  context.localize(
+                    'product.wholesale.unit_price',
+                    args: {
+                      'unit': orderUnitLabel(
+                        item.unitType,
+                        languageCode: context.currentLanguageCode,
+                      ),
+                    },
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               Text(
                 money.format(item.packagePrice),
                 style: const TextStyle(fontWeight: FontWeight.w800),
@@ -4702,11 +5931,13 @@ class QuantityStepper extends StatelessWidget {
     super.key,
     required this.value,
     required this.onChanged,
+    this.min = 1,
     this.max = 20,
   });
 
   final int value;
   final ValueChanged<int> onChanged;
+  final int min;
   final int max;
 
   @override
@@ -4721,9 +5952,9 @@ class QuantityStepper extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           IconButton(
-            onPressed: value <= 1 ? null : () => onChanged(value - 1),
+            onPressed: value <= min ? null : () => onChanged(value - 1),
             icon: const Icon(Icons.remove),
-            tooltip: 'Kamaytirish',
+            tooltip: context.localize('quantity.decrease'),
           ),
           SizedBox(
             width: 32,
@@ -4736,7 +5967,7 @@ class QuantityStepper extends StatelessWidget {
           IconButton(
             onPressed: value >= max ? null : () => onChanged(value + 1),
             icon: const Icon(Icons.add),
-            tooltip: 'Ko‘paytirish',
+            tooltip: context.localize('quantity.increase'),
           ),
         ],
       ),
@@ -4811,14 +6042,16 @@ class _CartScreenState extends State<CartScreen> {
         if (!isCheckoutManagerSelected(managerId, rows)) {
           managerId = null;
         }
-        managersError = rows.isEmpty ? 'Hozircha faol menejer yo‘q.' : null;
+        managersError = rows.isEmpty
+            ? context.localize('cart.manager.unavailable')
+            : null;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         managers = const [];
         managerId = null;
-        managersError = 'Menejerlar ro‘yxati ochilmadi.';
+        managersError = context.localize('cart.manager.list_error');
       });
     } finally {
       if (mounted) setState(() => managersLoading = false);
@@ -4847,7 +6080,7 @@ class _CartScreenState extends State<CartScreen> {
           return Center(
             child: Semantics(
               liveRegion: true,
-              label: 'Savat yuklanmoqda',
+              label: context.localize('cart.loading'),
               child: const CircularProgressIndicator(),
             ),
           );
@@ -4855,21 +6088,22 @@ class _CartScreenState extends State<CartScreen> {
         if (widget.cart.items.isEmpty) {
           return _EmptyState(
             icon: Icons.shopping_bag_outlined,
-            title: 'Savat bo‘sh',
-            message: 'Katalogdan qadoq yoki qop tanlab qo‘shing.',
+            title: context.localize('cart.empty.title'),
+            message: context.localize('cart.empty.message'),
             action: FilledButton.icon(
               onPressed: widget.onOpenCatalog,
               icon: const Icon(Icons.storefront_outlined),
-              label: const Text('Katalogga o‘tish'),
+              label: Text(context.localize('cart.empty.open_catalog')),
             ),
           );
         }
         if (!widget.auth.firebaseEnabled && !widget.auth.localDemoEnabled) {
-          return const _EmptyState(
+          return _EmptyState(
             icon: Icons.person_off_outlined,
-            title: 'Akkaunt xizmati sozlanmoqda',
-            message:
-                'Katalog va savatdan akkauntsiz foydalanishingiz mumkin. Akkaunt xizmati tez orada ishga tushadi.',
+            title: context.localize('cart.account_service.unavailable.title'),
+            message: context.localize(
+              'cart.account_service.unavailable.message',
+            ),
           );
         }
         return ListView(
@@ -4908,43 +6142,60 @@ class _CartScreenState extends State<CartScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Buyurtma ma’lumotlari',
+                    context.localize('order.title'),
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: name,
-                    decoration: const InputDecoration(labelText: 'Ismingiz'),
-                    validator: _required,
+                    decoration: InputDecoration(
+                      labelText: context.localize('cart.field.name'),
+                    ),
+                    validator: (value) => (value ?? '').trim().length < 2
+                        ? context.localize('form.required')
+                        : null,
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: phone,
-                    decoration: const InputDecoration(labelText: 'Telefon'),
+                    decoration: InputDecoration(
+                      labelText: context.localize('cart.field.phone'),
+                    ),
                     keyboardType: TextInputType.phone,
-                    validator: validatePhone,
+                    validator: (value) => validatePhone(
+                      value,
+                      languageCode: context.currentLanguageCode,
+                    ),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: city,
-                    decoration: const InputDecoration(labelText: 'Shahar'),
+                    decoration: InputDecoration(
+                      labelText: context.localize('cart.field.city'),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   TextFormField(
                     controller: address,
-                    decoration: const InputDecoration(labelText: 'Manzil'),
+                    decoration: InputDecoration(
+                      labelText: context.localize('cart.field.address'),
+                    ),
                   ),
                   const SizedBox(height: 10),
                   if (managersLoading)
-                    const InputDecorator(
-                      decoration: InputDecoration(labelText: 'Menejer'),
-                      child: LinearProgressIndicator(),
+                    InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: context.localize('cart.field.manager'),
+                      ),
+                      child: const LinearProgressIndicator(),
                     )
                   else
                     DropdownButtonFormField<int>(
                       initialValue: managerId,
-                      decoration: const InputDecoration(
-                        labelText: 'Menejerni tanlang',
+                      decoration: InputDecoration(
+                        labelText: context.localize(
+                          'cart.field.manager_prompt',
+                        ),
                       ),
                       items: managers
                           .map(
@@ -4957,8 +6208,9 @@ class _CartScreenState extends State<CartScreen> {
                       onChanged: managers.isEmpty
                           ? null
                           : (value) => setState(() => managerId = value),
-                      validator: (value) =>
-                          value == null ? 'Menejerni tanlang' : null,
+                      validator: (value) => value == null
+                          ? context.localize('cart.field.manager_required')
+                          : null,
                     ),
                   if (managersError != null) ...[
                     const SizedBox(height: 6),
@@ -4974,7 +6226,7 @@ class _CartScreenState extends State<CartScreen> {
                         ),
                         TextButton(
                           onPressed: managersLoading ? null : _loadManagers,
-                          child: const Text('Qayta urinish'),
+                          child: Text(context.localize('catalog.error.retry')),
                         ),
                       ],
                     ),
@@ -4982,33 +6234,63 @@ class _CartScreenState extends State<CartScreen> {
                   const SizedBox(height: 10),
                   DropdownButtonFormField<String>(
                     initialValue: payment,
-                    decoration: const InputDecoration(
-                      labelText: 'To‘lov usuli',
+                    decoration: InputDecoration(
+                      labelText: context.localize('cart.field.payment_method'),
                     ),
                     items: [
                       DropdownMenuItem(
                         value: 'manager',
-                        child: Text(paymentMethodLabel('manager')),
+                        child: Text(
+                          paymentMethodLabel(
+                            'manager',
+                            languageCode: context.currentLanguageCode,
+                          ),
+                        ),
                       ),
                       DropdownMenuItem(
                         value: 'bank',
-                        child: Text(paymentMethodLabel('bank')),
+                        child: Text(
+                          paymentMethodLabel(
+                            'bank',
+                            languageCode: context.currentLanguageCode,
+                          ),
+                        ),
                       ),
                       DropdownMenuItem(
                         value: 'click',
-                        child: Text(paymentMethodLabel('click')),
+                        child: Text(
+                          paymentMethodLabel(
+                            'click',
+                            languageCode: context.currentLanguageCode,
+                          ),
+                        ),
                       ),
                       DropdownMenuItem(
                         value: 'payme',
-                        child: Text(paymentMethodLabel('payme')),
+                        child: Text(
+                          paymentMethodLabel(
+                            'payme',
+                            languageCode: context.currentLanguageCode,
+                          ),
+                        ),
                       ),
                       DropdownMenuItem(
                         value: 'card',
-                        child: Text(paymentMethodLabel('card')),
+                        child: Text(
+                          paymentMethodLabel(
+                            'card',
+                            languageCode: context.currentLanguageCode,
+                          ),
+                        ),
                       ),
                       DropdownMenuItem(
                         value: 'cash',
-                        child: Text(paymentMethodLabel('cash')),
+                        child: Text(
+                          paymentMethodLabel(
+                            'cash',
+                            languageCode: context.currentLanguageCode,
+                          ),
+                        ),
                       ),
                     ],
                     onChanged: (value) =>
@@ -5019,26 +6301,34 @@ class _CartScreenState extends State<CartScreen> {
                     controller: comment,
                     minLines: 2,
                     maxLines: 4,
-                    decoration: const InputDecoration(labelText: 'Izoh'),
+                    decoration: InputDecoration(
+                      labelText: context.localize('cart.field.comment'),
+                    ),
                   ),
                   const SizedBox(height: 12),
                   PaymentNotice(
-                    title: paymentMethodLabel(payment),
-                    message: paymentInstructions(payment),
+                    title: paymentMethodLabel(
+                      payment,
+                      languageCode: context.currentLanguageCode,
+                    ),
+                    message: paymentInstructions(
+                      payment,
+                      languageCode: context.currentLanguageCode,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       Text(
-                        'Buyurtmani yuborishda aloqa va yetkazib berish ma’lumotlari Milana Premium’ga uzatiladi.',
+                        context.localize('cart.submit.note'),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: milanaInk.withValues(alpha: .64),
                         ),
                       ),
                       TextButton(
                         onPressed: _openCheckoutPrivacy,
-                        child: const Text('Maxfiylik'),
+                        child: Text(context.localize('legal.link.privacy')),
                       ),
                     ],
                   ),
@@ -5058,7 +6348,7 @@ class _CartScreenState extends State<CartScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.check),
-                    label: const Text('Buyurtmani yuborish'),
+                    label: Text(context.localize('cart.submit.action')),
                   ),
                 ],
               ),
@@ -5068,9 +6358,6 @@ class _CartScreenState extends State<CartScreen> {
       },
     );
   }
-
-  String? _required(String? value) =>
-      (value ?? '').trim().length < 2 ? 'Majburiy' : null;
 
   void _bindCheckoutIdentity(Customer? customer) {
     final nextId = customer?.id ?? '';
@@ -5109,11 +6396,7 @@ class _CartScreenState extends State<CartScreen> {
     } catch (_) {
       if (!mounted || _boundCustomerId != scope) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Chek qurilmadan o‘chirilmadi. Keyinroq qayta urinib ko‘ring.',
-          ),
-        ),
+        SnackBar(content: Text(context.localize('cart.receipt.clear_failed'))),
       );
     }
   }
@@ -5133,6 +6416,8 @@ class _CartScreenState extends State<CartScreen> {
     }
     setState(() => sending = true);
     final initiatingCustomerId = widget.auth.customer?.id;
+    final checkoutItems = List<CartItem>.unmodifiable(widget.cart.items);
+    unawaited(context.analytics?.logBeginCheckout(checkoutItems));
     try {
       final customer = widget.auth.customer;
       final clientOrderId = pendingClientOrderId ?? createClientOrderId();
@@ -5158,6 +6443,12 @@ class _CartScreenState extends State<CartScreen> {
       );
       if (!mounted || widget.auth.customer?.id != initiatingCustomerId) return;
       widget.cart.clear();
+      unawaited(
+        context.analytics?.logWholesaleOrderSubmitted(
+          orderNumber: result.number,
+          items: checkoutItems,
+        ),
+      );
       pendingClientOrderId = null;
       setState(() => receipt = result);
       try {
@@ -5165,19 +6456,23 @@ class _CartScreenState extends State<CartScreen> {
       } catch (_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                'Buyurtma yaratildi, lekin chek qurilmada saqlanmadi.',
+                context.localize('cart.submit.receipt_save_failed'),
               ),
             ),
           );
         }
       }
-    } catch (e) {
+    } catch (error, stackTrace) {
+      if (kDebugMode) {
+        debugPrint('Checkout submission failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      }
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Buyurtma yuborilmadi: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.localize('cart.submit.failed_safe'))),
+        );
       }
     } finally {
       if (mounted) setState(() => sending = false);
@@ -5196,9 +6491,9 @@ class _CartScreenState extends State<CartScreen> {
       }
       if (mounted && !widget.auth.commerceAccountReady) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
+          SnackBar(
             content: Text(
-              'Emailni tasdiqlang, so‘ng “Tekshirish” tugmasini bosing.',
+              context.localize('cart.commerce.email_verification_hint'),
             ),
           ),
         );
@@ -5220,7 +6515,7 @@ class _CartScreenState extends State<CartScreen> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Maxfiylik hujjati hozircha ochilmadi.')),
+        SnackBar(content: Text(context.localize('cart.privacy.open_failed'))),
       );
     }
   }
@@ -5263,15 +6558,15 @@ class CommerceCheckoutNotice extends StatelessWidget {
               children: [
                 Text(
                   verifying
-                      ? 'Email tasdiqlanishi kerak'
-                      : 'Akkaunt buyurtmalar bilan bog‘lanmoqda',
+                      ? context.localize('cart.commerce.notice.verify_title')
+                      : context.localize('cart.commerce.notice.sync_title'),
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   verifying
-                      ? 'Tasdiqlangan email buyurtmani profilingizda ko‘rsatadi va uni xavfsiz boshqarish imkonini beradi.'
-                      : 'Buyurtma anonim bo‘lib qolmasligi uchun bog‘lanish yakunlanishini kuting.',
+                      ? context.localize('cart.commerce.notice.verify_message')
+                      : context.localize('cart.commerce.notice.sync_message'),
                 ),
                 const SizedBox(height: 8),
                 TextButton.icon(
@@ -5284,7 +6579,9 @@ class CommerceCheckoutNotice extends StatelessWidget {
                         )
                       : const Icon(Icons.refresh, size: 18),
                   label: Text(
-                    verifying ? 'Tasdiqlashni tekshirish' : 'Qayta ulash',
+                    verifying
+                        ? context.localize('cart.commerce.notice.verify_button')
+                        : context.localize('cart.commerce.notice.sync_button'),
                   ),
                 ),
               ],
@@ -5324,11 +6621,22 @@ class CartLine extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item.product.name,
+                    productName(context, item.product),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   Text(
-                    'Dona: ${money.format(item.product.price)} · 1 ${orderUnitLabel(item.unitType).toLowerCase()}: ${money.format(item.packagePrice)}',
+                    context.localize(
+                      'cart.line.unit_price',
+                      args: {
+                        'price': money.format(item.product.price),
+                        'quantity': '1',
+                        'unit': orderUnitLabel(
+                          item.unitType,
+                          languageCode: context.currentLanguageCode,
+                        ).toLowerCase(),
+                        'package_price': money.format(item.packagePrice),
+                      },
+                    ),
                   ),
                   Text(
                     item.sizeMix
@@ -5341,6 +6649,7 @@ class CartLine extends StatelessWidget {
                     children: [
                       QuantityStepper(
                         value: item.quantity,
+                        min: item.minimumQuantity,
                         max: cart.quantityLimit(
                           item.product,
                           unitType: item.unitType,
@@ -5356,11 +6665,21 @@ class CartLine extends StatelessWidget {
                             ..hideCurrentSnackBar()
                             ..showSnackBar(
                               SnackBar(
+                                duration: const Duration(seconds: 4),
+                                persist: false,
                                 content: Text(
-                                  '${item.product.name} o‘chirildi',
+                                  context.localize(
+                                    'cart.item.removed',
+                                    args: {
+                                      'product': productName(
+                                        context,
+                                        item.product,
+                                      ),
+                                    },
+                                  ),
                                 ),
                                 action: SnackBarAction(
-                                  label: 'QAYTARISH',
+                                  label: context.localize('cart.action.undo'),
                                   textColor: Colors.white,
                                   onPressed: () {
                                     if (cart.canAdd(
@@ -5377,14 +6696,24 @@ class CartLine extends StatelessWidget {
                         },
                         icon: const Icon(Icons.delete_outline),
                         color: milanaInk.withValues(alpha: .62),
-                        tooltip: 'O‘chirish',
+                        tooltip: context.localize('cart.action.delete'),
                       ),
                     ],
                   ),
                   Row(
                     children: [
                       Text(
-                        '${item.quantity} ${orderUnitLabel(item.unitType).toLowerCase()} · ${item.pieceCount} ta kiyim',
+                        context.localize(
+                          'cart.item.summary',
+                          args: {
+                            'quantity': '${item.quantity}',
+                            'unit': orderUnitLabel(
+                              item.unitType,
+                              languageCode: context.currentLanguageCode,
+                            ).toLowerCase(),
+                            'pieces': '${item.pieceCount}',
+                          },
+                        ),
                         style: TextStyle(
                           color: milanaInk.withValues(alpha: .6),
                           fontWeight: FontWeight.w600,
@@ -5446,7 +6775,7 @@ class CartSummaryPanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Buyurtma savati',
+                  context.localize('cart.summary.title'),
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     color: Colors.white,
                     fontWeight: FontWeight.w800,
@@ -5454,7 +6783,16 @@ class CartSummaryPanel extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$modelCount model · $packageCount birlik · $pieceCount dona\n$packCount qadoq · $bagCount qop',
+                  context.localize(
+                    'cart.summary.stats',
+                    args: {
+                      'models': '$modelCount',
+                      'packages': '$packageCount',
+                      'pieces': '$pieceCount',
+                      'packs': '$packCount',
+                      'bags': '$bagCount',
+                    },
+                  ),
                   style: TextStyle(color: Colors.white.withValues(alpha: .72)),
                 ),
               ],
@@ -5497,7 +6835,7 @@ class _TotalPanel extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Expanded(child: Text('Jami mahsulot narxi')),
+              Expanded(child: Text(context.localize('cart.total.label'))),
               Text(
                 money.format(total),
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -5508,7 +6846,10 @@ class _TotalPanel extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '$packageCount buyurtma birligi · $pieceCount dona kiyim. Yetkazib berish Cargo bilan kelishiladi.',
+            context.localize(
+              'cart.total.note',
+              args: {'packages': '$packageCount', 'pieces': '$pieceCount'},
+            ),
             style: TextStyle(color: milanaInk.withValues(alpha: .68)),
           ),
         ],
@@ -5577,7 +6918,7 @@ class _ReceiptView extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Buyurtma qabul qilindi',
+                  context.localize('cart.receipt.title'),
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
@@ -5603,20 +6944,25 @@ class _ReceiptView extends StatelessWidget {
                     OutlinedButton.icon(
                       onPressed: () {
                         Clipboard.setData(
-                          ClipboardData(text: orderReceiptShareText(receipt)),
+                          ClipboardData(
+                            text: orderReceiptShareText(
+                              receipt,
+                              languageCode: context.currentLanguageCode,
+                            ),
+                          ),
                         );
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Buyurtma cheki nusxalandi'),
+                          SnackBar(
+                            content: Text(context.localize('copy.toast.order')),
                           ),
                         );
                       },
                       icon: const Icon(Icons.copy_all_outlined),
-                      label: const Text('Chekni nusxalash'),
+                      label: Text(context.localize('cart.receipt.copy_action')),
                     ),
                     FilledButton(
                       onPressed: onContinue,
-                      child: const Text('Davom etish'),
+                      child: Text(context.localize('action.continue')),
                     ),
                   ],
                 ),
@@ -5653,16 +6999,25 @@ class ReceiptSummaryCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          ReceiptSummaryRow(label: 'Raqam', value: receipt.number),
-          const Divider(height: 18),
-          ReceiptSummaryRow(label: 'Jami', value: money.format(receipt.total)),
+          ReceiptSummaryRow(
+            label: context.localize('order.share.number'),
+            value: receipt.number,
+          ),
           const Divider(height: 18),
           ReceiptSummaryRow(
-            label: 'To‘lov holati',
+            label: context.localize('order.share.total'),
+            value: money.format(receipt.total),
+          ),
+          const Divider(height: 18),
+          ReceiptSummaryRow(
+            label: context.localize('order.share.payment_status'),
             value: paymentStatusLabel(receipt.paymentStatus),
           ),
           const Divider(height: 18),
-          ReceiptSummaryRow(label: 'Menejer', value: receipt.supportPhone),
+          ReceiptSummaryRow(
+            label: context.localize('checkout.payment_manager'),
+            value: receipt.supportPhone,
+          ),
         ],
       ),
     );
@@ -5713,8 +7068,11 @@ class PaymentReferencePanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final expiresAt = receipt.paymentExpiresAt;
     final expiresText = expiresAt == null
-        ? 'Menejer tasdiqlaguncha faol'
-        : '${shortDateTime.format(expiresAt.toLocal())} gacha faol';
+        ? context.localize('cart.receipt.reference_active')
+        : context.localize(
+            'cart.receipt.reference_expires',
+            args: {'datetime': shortDateTime(context, expiresAt.toLocal())},
+          );
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -5727,7 +7085,7 @@ class PaymentReferencePanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'To‘lov reference',
+            context.localize('order.share.payment_reference'),
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
               color: milanaInk.withValues(alpha: .62),
               fontWeight: FontWeight.w800,
@@ -5752,11 +7110,13 @@ class PaymentReferencePanel extends StatelessWidget {
                     ClipboardData(text: receipt.paymentReference),
                   );
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Reference nusxalandi')),
+                    SnackBar(
+                      content: Text(context.localize('copy.toast.reference')),
+                    ),
                   );
                 },
                 icon: const Icon(Icons.copy, size: 18),
-                tooltip: 'Nusxalash',
+                tooltip: context.localize('action.copy'),
               ),
             ],
           ),
@@ -5841,13 +7201,11 @@ class _SupportScreenState extends State<SupportScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         Text(
-          'Mijozlar qo‘llab-quvvatlovi',
+          context.localize('support.title'),
           style: Theme.of(context).textTheme.headlineSmall,
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Narx, mavjudlik, Cargo, to‘lov yoki brak bo‘yicha savolingizni yuboring. Menejer: +998 50 155 10 10',
-        ),
+        Text(context.localize('support.help_hint')),
         const SizedBox(height: 16),
         SupportKnowledgePanel(
           query: faqQuery,
@@ -5869,36 +7227,60 @@ class _SupportScreenState extends State<SupportScreen> {
             children: [
               TextFormField(
                 controller: name,
-                decoration: const InputDecoration(labelText: 'Ism'),
-                validator: (v) =>
-                    (v ?? '').trim().length < 2 ? 'Majburiy' : null,
+                decoration: InputDecoration(
+                  labelText: context.localize('support.field.name'),
+                ),
+                validator: (v) => (v ?? '').trim().length < 2
+                    ? context.localize('form.required')
+                    : null,
               ),
               const SizedBox(height: 10),
               TextFormField(
                 controller: phone,
-                decoration: const InputDecoration(labelText: 'Telefon'),
+                decoration: InputDecoration(
+                  labelText: context.localize('support.field.phone'),
+                ),
                 keyboardType: TextInputType.phone,
                 validator: validatePhone,
               ),
               const SizedBox(height: 10),
               TextFormField(
                 controller: email,
-                decoration: const InputDecoration(labelText: 'Email'),
+                decoration: InputDecoration(
+                  labelText: context.localize('support.field.email'),
+                ),
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
                 initialValue: topic,
-                decoration: const InputDecoration(labelText: 'Mavzu'),
-                items: const [
-                  DropdownMenuItem(value: 'general', child: Text('Umumiy')),
-                  DropdownMenuItem(value: 'catalog', child: Text('Katalog')),
-                  DropdownMenuItem(value: 'price', child: Text('Narx')),
+                decoration: InputDecoration(
+                  labelText: context.localize('support.field.topic'),
+                ),
+                items: [
+                  DropdownMenuItem(
+                    value: 'general',
+                    child: Text(context.localize('support.topic.general')),
+                  ),
+                  DropdownMenuItem(
+                    value: 'catalog',
+                    child: Text(context.localize('support.faq.topic.products')),
+                  ),
+                  DropdownMenuItem(
+                    value: 'price',
+                    child: Text(context.localize('support.faq.topic.price')),
+                  ),
                   DropdownMenuItem(
                     value: 'delivery',
-                    child: Text('Yetkazib berish'),
+                    child: Text(context.localize('support.faq.topic.delivery')),
                   ),
-                  DropdownMenuItem(value: 'payment', child: Text('To‘lov')),
-                  DropdownMenuItem(value: 'defect', child: Text('Brak')),
+                  DropdownMenuItem(
+                    value: 'payment',
+                    child: Text(context.localize('support.faq.topic.payment')),
+                  ),
+                  DropdownMenuItem(
+                    value: 'defect',
+                    child: Text(context.localize('support.faq.topic.defect')),
+                  ),
                 ],
                 onChanged: (value) =>
                     setState(() => topic = value ?? 'general'),
@@ -5908,16 +7290,19 @@ class _SupportScreenState extends State<SupportScreen> {
                 controller: message,
                 minLines: 4,
                 maxLines: 8,
-                decoration: const InputDecoration(labelText: 'Xabar'),
-                validator: (v) =>
-                    (v ?? '').trim().length < 8 ? 'Xabarni yozing' : null,
+                decoration: InputDecoration(
+                  labelText: context.localize('support.field.message'),
+                ),
+                validator: (v) => (v ?? '').trim().length < 8
+                    ? context.localize('support.validation.message')
+                    : null,
               ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
                 child: FilledButton(
                   onPressed: sending || commerceBlocked ? null : _send,
-                  child: const Text('Yuborish'),
+                  child: Text(context.localize('support.action.send')),
                 ),
               ),
             ],
@@ -5952,14 +7337,25 @@ class _SupportScreenState extends State<SupportScreen> {
       message.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Murojaat qabul qilindi: $number')),
+          SnackBar(
+            content: Text(
+              context.localize(
+                'support.ticket.created',
+                args: {'number': number},
+              ),
+            ),
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Yuborilmadi: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              context.localize('support.ticket.failed', args: {'error': '$e'}),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => sending = false);
@@ -6027,7 +7423,7 @@ class SupportKnowledgePanel extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Tez javoblar',
+                  context.localize('support.quick.title'),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w900,
                   ),
@@ -6039,18 +7435,20 @@ class SupportKnowledgePanel extends StatelessWidget {
                     const ClipboardData(text: milanaSupportPhoneCompact),
                   );
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Telefon nusxalandi')),
+                    SnackBar(
+                      content: Text(context.localize('copy.toast.manager')),
+                    ),
                   );
                 },
                 icon: const Icon(Icons.phone_outlined, size: 18),
-                label: const Text('Menejer'),
+                label: Text(context.localize('cart.field.manager')),
               ),
             ],
           ),
           const SizedBox(height: 12),
           SearchBar(
             controller: controller,
-            hintText: 'Savol qidirish',
+            hintText: context.localize('support.quick.search_hint'),
             leading: const Icon(Icons.search),
             trailing: [
               if (query.trim().isNotEmpty)
@@ -6060,16 +7458,16 @@ class SupportKnowledgePanel extends StatelessWidget {
                     onQueryChanged('');
                   },
                   icon: const Icon(Icons.close),
-                  tooltip: 'Tozalash',
+                  tooltip: context.localize('action.clear'),
                 ),
             ],
             onChanged: onQueryChanged,
           ),
           const SizedBox(height: 10),
           if (faqs.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 10),
-              child: Text('Bu savol bo‘yicha menejerga murojaat yuboring.'),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Text(context.localize('support.quick.empty')),
             )
           else
             ...faqs.map((faq) => SupportFaqTile(faq: faq)),
@@ -6137,11 +7535,15 @@ class AccountScreen extends StatefulWidget {
     required this.auth,
     required this.orders,
     required this.cart,
+    this.distributors,
+    this.onOpenPartnership,
   });
 
   final AuthService auth;
   final OrderRepository orders;
   final CartController cart;
+  final DistributorRepository? distributors;
+  final VoidCallback? onOpenPartnership;
 
   @override
   State<AccountScreen> createState() => _AccountScreenState();
@@ -6192,8 +7594,15 @@ class _AccountScreenState extends State<AccountScreen> {
                 customer: customer,
                 onEdit: () => _editProfile(customer),
                 onSignOut: widget.auth.signOut,
-                onDelete: _confirmAccountDeletion,
               ),
+              if (widget.distributors case final distributors?) ...[
+                const SizedBox(height: 12),
+                DistributorStatusPanel(
+                  repository: distributors,
+                  customerId: customer.id,
+                  onApply: widget.onOpenPartnership ?? () {},
+                ),
+              ],
               if (widget.auth.firebaseEnabled) ...[
                 const SizedBox(height: 12),
                 CommerceAccountPanel(
@@ -6203,7 +7612,9 @@ class _AccountScreenState extends State<AccountScreen> {
                       _runCommerceAction(widget.auth.refreshEmailVerification),
                   onResend: () => _runCommerceAction(
                     widget.auth.resendEmailVerification,
-                    successMessage: 'Tasdiqlash xati qayta yuborildi.',
+                    successMessage: context.localize(
+                      'account.commerce.resent_success',
+                    ),
                   ),
                   onRetry: () =>
                       _runCommerceAction(widget.auth.retryCommerceAccount),
@@ -6219,6 +7630,8 @@ class _AccountScreenState extends State<AccountScreen> {
                 cart: widget.cart,
                 onRefresh: _refreshAccountActivity,
               ),
+              const SizedBox(height: 16),
+              AccountSecurityPanel(onDelete: _confirmAccountDeletion),
             ],
           );
         }
@@ -6244,12 +7657,18 @@ class _AccountScreenState extends State<AccountScreen> {
               onLegalAccepted: (value) => setState(() => legalAccepted = value),
               onOpenLegal: _openLegalUrl,
               onResetPassword: signUp ? null : _resetPassword,
+              onGoogleSignIn: widget.auth.firebaseEnabled
+                  ? _signInWithGoogle
+                  : null,
+              onAppleSignIn: widget.auth.firebaseEnabled
+                  ? _signInWithApple
+                  : null,
             ),
             const SizedBox(height: 12),
             LegalLinksPanel(onOpen: _openLegalUrl),
             if (widget.auth.localDemoEnabled) ...[
               const SizedBox(height: 12),
-              const Text('Dasturchi ko‘rigi uchun lokal demo rejimi yoqilgan.'),
+              Text(context.localize('catalog.demo_enabled_note')),
             ],
           ],
         );
@@ -6259,6 +7678,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> _submit() async {
     if (!formKey.currentState!.validate()) return;
+    final analytics = context.analytics;
     setState(() => busy = true);
     try {
       if (signUp) {
@@ -6271,17 +7691,19 @@ class _AccountScreenState extends State<AccountScreen> {
           password: password.text,
           legalAccepted: legalAccepted,
         );
+        unawaited(analytics?.logSignUp('email'));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Text(
-                'Akkaunt yaratildi. Email tasdiqlash xati yuborildi.',
+                context.localize('account.signup_success_with_verification'),
               ),
             ),
           );
         }
       } else {
         await widget.auth.signIn(normalizeEmail(email.text), password.text);
+        unawaited(analytics?.logLogin('email'));
       }
       password.clear();
     } catch (e) {
@@ -6289,6 +7711,44 @@ class _AccountScreenState extends State<AccountScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(authErrorMessage(e))));
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    if (busy) return;
+    final analytics = context.analytics;
+    setState(() => busy = true);
+    try {
+      await widget.auth.signInWithGoogle();
+      unawaited(analytics?.logLogin('google'));
+      password.clear();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(authErrorMessage(error))));
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
+  Future<void> _signInWithApple() async {
+    if (busy) return;
+    final analytics = context.analytics;
+    setState(() => busy = true);
+    try {
+      await widget.auth.signInWithApple();
+      unawaited(analytics?.logLogin('apple'));
+      password.clear();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(authErrorMessage(error))));
       }
     } finally {
       if (mounted) setState(() => busy = false);
@@ -6337,7 +7797,7 @@ class _AccountScreenState extends State<AccountScreen> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Hujjat havolasi hozircha ochilmadi.')),
+        SnackBar(content: Text(context.localize('cart.privacy.open_failed'))),
       );
     }
   }
@@ -6368,6 +7828,8 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> _confirmAccountDeletion() async {
     final confirmation = TextEditingController();
+    final reasonDetail = TextEditingController();
+    String? reasonCode;
     var deleting = false;
     await showDialog<void>(
       context: context,
@@ -6378,27 +7840,65 @@ class _AccountScreenState extends State<AccountScreen> {
             Icons.warning_amber_rounded,
             color: Theme.of(context).colorScheme.error,
           ),
-          title: const Text('Akkauntni o‘chirish'),
+          title: Text(context.localize('delete.title')),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  'Profil, saqlangan modellar va sinxronlangan savat o‘chiriladi. Buyurtma va to‘lov yozuvlarini o‘chirish yoki shaxssizlantirish talabi ommaviy o‘chirish sahifasida ko‘rsatilgan tartibda ko‘rib chiqiladi. Qonun talab qilgan tranzaksiya yozuvlari belgilangan muddat saqlanishi mumkin.',
+                Text(context.localize('account.delete_warning')),
+                const SizedBox(height: 12),
+                Text(
+                  context.localize('delete.reason_help'),
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: reasonCode,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    labelText: context.localize('delete.reason_label'),
+                  ),
+                  items: [
+                    for (final code in accountDeletionReasonCodes)
+                      DropdownMenuItem(
+                        value: code,
+                        child: Text(
+                          context.localize('delete.reason.$code'),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: deleting
+                      ? null
+                      : (value) => setDialogState(() => reasonCode = value),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: reasonDetail,
+                  enabled: !deleting,
+                  minLines: 2,
+                  maxLines: 4,
+                  maxLength: 500,
+                  decoration: InputDecoration(
+                    labelText: context.localize('delete.reason_detail'),
+                    helperText: context.localize('delete.reason_detail_help'),
+                  ),
+                  onChanged: (_) => setDialogState(() {}),
+                ),
+                const SizedBox(height: 4),
                 TextButton.icon(
                   onPressed: deleting
                       ? null
                       : () => _openLegalUrl(accountDeletionUrl),
                   icon: const Icon(Icons.open_in_new, size: 18),
-                  label: const Text('O‘chirish qoidalarini ko‘rish'),
+                  label: Text(context.localize('delete.rules')),
                 ),
                 TextButton.icon(
                   onPressed: deleting ? null : () => _openLegalUrl(supportUrl),
                   icon: const Icon(Icons.support_agent_outlined, size: 18),
-                  label: const Text('Yordam bilan bog‘lanish'),
+                  label: Text(context.localize('delete.support')),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -6406,8 +7906,8 @@ class _AccountScreenState extends State<AccountScreen> {
                   enabled: !deleting,
                   autocorrect: false,
                   textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(
-                    labelText: 'Tasdiqlash uchun DELETE deb yozing',
+                  decoration: InputDecoration(
+                    labelText: context.localize('delete.confirm_instruction'),
                   ),
                   onChanged: (_) => setDialogState(() {}),
                 ),
@@ -6417,17 +7917,24 @@ class _AccountScreenState extends State<AccountScreen> {
           actions: [
             TextButton(
               onPressed: deleting ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Bekor qilish'),
+              child: Text(context.localize('delete.cancel')),
             ),
             FilledButton.icon(
               onPressed:
-                  deleting || confirmation.text.trim().toUpperCase() != 'DELETE'
+                  deleting ||
+                      reasonCode == null ||
+                      (reasonCode == 'other' &&
+                          reasonDetail.text.trim().length < 3) ||
+                      confirmation.text.trim().toUpperCase() != 'DELETE'
                   ? null
                   : () async {
                       setDialogState(() => deleting = true);
                       try {
                         await widget.auth.deleteAccount(
                           confirmation: confirmation.text,
+                          reasonCode: reasonCode!,
+                          reasonDetail: reasonDetail.text,
+                          languageCode: context.currentLanguageCode,
                         );
                         widget.cart.clear();
                         if (dialogContext.mounted) {
@@ -6435,8 +7942,8 @@ class _AccountScreenState extends State<AccountScreen> {
                         }
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Akkaunt o‘chirildi.'),
+                            SnackBar(
+                              content: Text(context.localize('delete.success')),
                             ),
                           );
                         }
@@ -6459,7 +7966,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.delete_forever_outlined),
-              label: const Text('Butunlay o‘chirish'),
+              label: Text(context.localize('delete.button')),
               style: FilledButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.error,
               ),
@@ -6469,6 +7976,7 @@ class _AccountScreenState extends State<AccountScreen> {
       ),
     );
     confirmation.dispose();
+    reasonDetail.dispose();
   }
 
   Future<void> _resetPassword() async {
@@ -6479,17 +7987,17 @@ class _AccountScreenState extends State<AccountScreen> {
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
           scrollable: true,
-          title: const Text('Parolni tiklash'),
+          title: Text(context.localize('password_reset.title')),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Email manzilingizga parolni tiklash havolasi yuboriladi.',
-              ),
+              Text(context.localize('password_reset.description')),
               const SizedBox(height: 12),
               TextFormField(
                 controller: resetEmail,
-                decoration: const InputDecoration(labelText: 'Email'),
+                decoration: InputDecoration(
+                  labelText: context.localize('cart.field.email'),
+                ),
                 keyboardType: TextInputType.emailAddress,
                 validator: validateEmail,
                 autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -6499,7 +8007,7 @@ class _AccountScreenState extends State<AccountScreen> {
           actions: [
             TextButton(
               onPressed: sending ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Bekor qilish'),
+              child: Text(context.localize('password_reset.cancel')),
             ),
             FilledButton.icon(
               onPressed: sending
@@ -6520,8 +8028,10 @@ class _AccountScreenState extends State<AccountScreen> {
                         }
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Parolni tiklash xati yuborildi.'),
+                            SnackBar(
+                              content: Text(
+                                context.localize('password_reset.sent'),
+                              ),
                             ),
                           );
                         }
@@ -6544,7 +8054,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.mail_outline),
-              label: const Text('Yuborish'),
+              label: Text(context.localize('password_reset.button')),
             ),
           ],
         ),
@@ -6558,35 +8068,59 @@ class _AccountScreenState extends State<AccountScreen> {
     final editPhone = TextEditingController(text: customer.phone);
     final editCity = TextEditingController(text: customer.city);
     final editAddress = TextEditingController(text: customer.address);
+    final editCompanyName = TextEditingController(text: customer.companyName);
+    final editCountry = TextEditingController(text: customer.country);
     var saving = false;
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
           scrollable: true,
-          title: const Text('Profil'),
+          title: Text(context.localize('account.action.edit_profile')),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
                 controller: editName,
-                decoration: const InputDecoration(labelText: 'Ism'),
+                decoration: InputDecoration(
+                  labelText: context.localize('cart.field.name'),
+                ),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: editPhone,
-                decoration: const InputDecoration(labelText: 'Telefon'),
+                decoration: InputDecoration(
+                  labelText: context.localize('cart.field.phone'),
+                ),
                 keyboardType: TextInputType.phone,
               ),
               const SizedBox(height: 10),
               TextField(
+                controller: editCompanyName,
+                decoration: InputDecoration(
+                  labelText: context.localize('account.field.company_name'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: editCountry,
+                decoration: InputDecoration(
+                  labelText: context.localize('account.field.country'),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextField(
                 controller: editCity,
-                decoration: const InputDecoration(labelText: 'Shahar'),
+                decoration: InputDecoration(
+                  labelText: context.localize('cart.field.city'),
+                ),
               ),
               const SizedBox(height: 10),
               TextField(
                 controller: editAddress,
-                decoration: const InputDecoration(labelText: 'Manzil'),
+                decoration: InputDecoration(
+                  labelText: context.localize('cart.field.address'),
+                ),
                 minLines: 2,
                 maxLines: 3,
               ),
@@ -6595,7 +8129,7 @@ class _AccountScreenState extends State<AccountScreen> {
           actions: [
             TextButton(
               onPressed: saving ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Bekor qilish'),
+              child: Text(context.localize('delete.cancel')),
             ),
             FilledButton(
               onPressed: saving
@@ -6605,7 +8139,7 @@ class _AccountScreenState extends State<AccountScreen> {
                       try {
                         final nameValidation = validateRequiredText(
                           editName.text,
-                          'Ism',
+                          context.localize('cart.field.name'),
                         );
                         final phoneValidation = validatePhone(editPhone.text);
                         if (nameValidation != null || phoneValidation != null) {
@@ -6621,6 +8155,8 @@ class _AccountScreenState extends State<AccountScreen> {
                           phone: normalizePhoneNumber(editPhone.text),
                           city: editCity.text,
                           address: editAddress.text,
+                          companyName: editCompanyName.text,
+                          country: editCountry.text,
                         );
                         if (dialogContext.mounted) {
                           Navigator.pop(dialogContext);
@@ -6628,7 +8164,14 @@ class _AccountScreenState extends State<AccountScreen> {
                       } catch (e) {
                         if (dialogContext.mounted) {
                           ScaffoldMessenger.of(dialogContext).showSnackBar(
-                            SnackBar(content: Text('Profil saqlanmadi: $e')),
+                            SnackBar(
+                              content: Text(
+                                dialogContext.localize(
+                                  'account.edit_profile_error',
+                                  args: {'error': '$e'},
+                                ),
+                              ),
+                            ),
                           );
                         }
                       } finally {
@@ -6637,7 +8180,7 @@ class _AccountScreenState extends State<AccountScreen> {
                         }
                       }
                     },
-              child: const Text('Saqlash'),
+              child: Text(context.localize('account.action.edit_profile')),
             ),
           ],
         ),
@@ -6647,6 +8190,8 @@ class _AccountScreenState extends State<AccountScreen> {
     editPhone.dispose();
     editCity.dispose();
     editAddress.dispose();
+    editCompanyName.dispose();
+    editCountry.dispose();
   }
 }
 
@@ -6673,19 +8218,19 @@ class CommerceAccountPanel extends StatelessWidget {
         state == CommerceAccountState.emailVerificationRequired;
     final syncing = state == CommerceAccountState.syncing;
     final title = ready
-        ? 'Akkaunt va buyurtmalar bog‘langan'
+        ? context.localize('account.commerce.state_connected_title')
         : verification
-        ? 'Emailni tasdiqlang'
+        ? context.localize('account.commerce.state_verify_title')
         : syncing
-        ? 'Buyurtmalar ulanmoqda'
-        : 'Buyurtmalarni qayta ulang';
+        ? context.localize('account.commerce.state_syncing_title')
+        : context.localize('account.commerce.state_retry_title');
     final message = ready
-        ? 'Yangi buyurtmalar, to‘lov va yetkazib berish holati shu profilda ko‘rinadi.'
+        ? context.localize('account.commerce.state_connected_message')
         : verification
-        ? 'Emaildagi havolani oching. Keyin tasdiqlash holatini tekshiring.'
+        ? context.localize('account.commerce.state_verify_message')
         : syncing
-        ? 'Xavfsiz savdo profilingiz tayyorlanmoqda.'
-        : 'Internet aloqasini tekshirib, savdo profiliga qayta ulaning.';
+        ? context.localize('account.commerce.state_syncing_message')
+        : context.localize('account.commerce.state_retry_message');
     final color = ready ? const Color(0xff2f7d55) : milanaBurgundy;
     return Semantics(
       liveRegion: syncing,
@@ -6731,11 +8276,19 @@ class CommerceAccountPanel extends StatelessWidget {
                         children: [
                           TextButton(
                             onPressed: busy ? null : onRefresh,
-                            child: const Text('Tekshirish'),
+                            child: Text(
+                              context.localize(
+                                'cart.commerce.notice.verify_button',
+                              ),
+                            ),
                           ),
                           TextButton(
                             onPressed: busy ? null : onResend,
-                            child: const Text('Xatni qayta yuborish'),
+                            child: Text(
+                              context.localize(
+                                'account.commerce.resend_verification',
+                              ),
+                            ),
                           ),
                         ],
                       )
@@ -6751,7 +8304,9 @@ class CommerceAccountPanel extends StatelessWidget {
                                 ),
                               )
                             : const Icon(Icons.refresh, size: 18),
-                        label: const Text('Qayta ulash'),
+                        label: Text(
+                          context.localize('cart.commerce.notice.sync_button'),
+                        ),
                       ),
                   ],
                 ],
@@ -6782,6 +8337,8 @@ class AccountAuthForm extends StatelessWidget {
     required this.onLegalAccepted,
     required this.onOpenLegal,
     required this.onResetPassword,
+    required this.onGoogleSignIn,
+    required this.onAppleSignIn,
   });
 
   final GlobalKey<FormState> formKey;
@@ -6799,6 +8356,8 @@ class AccountAuthForm extends StatelessWidget {
   final ValueChanged<bool> onLegalAccepted;
   final ValueChanged<String> onOpenLegal;
   final VoidCallback? onResetPassword;
+  final VoidCallback? onGoogleSignIn;
+  final VoidCallback? onAppleSignIn;
 
   @override
   Widget build(BuildContext context) {
@@ -6840,7 +8399,9 @@ class AccountAuthForm extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    signUp ? 'Ro‘yxatdan o‘tish' : 'Kirish',
+                    signUp
+                        ? context.localize('auth.sign_up')
+                        : context.localize('auth.sign_in'),
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w900,
                     ),
@@ -6852,14 +8413,21 @@ class AccountAuthForm extends StatelessWidget {
             if (signUp) ...[
               TextFormField(
                 controller: name,
-                decoration: const InputDecoration(labelText: 'Ism'),
+                decoration: InputDecoration(
+                  labelText: context.localize('cart.field.name'),
+                ),
                 textInputAction: TextInputAction.next,
-                validator: (value) => validateRequiredText(value, 'Ism'),
+                validator: (value) => validateRequiredText(
+                  value,
+                  context.localize('cart.field.name'),
+                ),
               ),
               const SizedBox(height: 10),
               TextFormField(
                 controller: phone,
-                decoration: const InputDecoration(labelText: 'Telefon'),
+                decoration: InputDecoration(
+                  labelText: context.localize('cart.field.phone'),
+                ),
                 keyboardType: TextInputType.phone,
                 textInputAction: TextInputAction.next,
                 validator: validatePhone,
@@ -6867,11 +8435,17 @@ class AccountAuthForm extends StatelessWidget {
               const SizedBox(height: 10),
               TextFormField(
                 controller: city,
-                decoration: const InputDecoration(labelText: 'Shahar'),
+                decoration: InputDecoration(
+                  labelText: context.localize('cart.field.city'),
+                ),
                 textInputAction: TextInputAction.next,
                 validator: (value) {
                   try {
-                    normalizeProfileText(value ?? '', max: 80, label: 'Shahar');
+                    normalizeProfileText(
+                      value ?? '',
+                      max: 80,
+                      label: context.localize('cart.field.city'),
+                    );
                     return null;
                   } on ArgumentError catch (error) {
                     return '${error.message}';
@@ -6881,7 +8455,9 @@ class AccountAuthForm extends StatelessWidget {
               const SizedBox(height: 10),
               TextFormField(
                 controller: address,
-                decoration: const InputDecoration(labelText: 'Manzil'),
+                decoration: InputDecoration(
+                  labelText: context.localize('cart.field.address'),
+                ),
                 minLines: 2,
                 maxLines: 3,
                 textInputAction: TextInputAction.next,
@@ -6890,7 +8466,7 @@ class AccountAuthForm extends StatelessWidget {
                     normalizeProfileText(
                       value ?? '',
                       max: 200,
-                      label: 'Manzil',
+                      label: context.localize('cart.field.address'),
                     );
                     return null;
                   } on ArgumentError catch (error) {
@@ -6902,7 +8478,9 @@ class AccountAuthForm extends StatelessWidget {
             ],
             TextFormField(
               controller: email,
-              decoration: const InputDecoration(labelText: 'Email'),
+              decoration: InputDecoration(
+                labelText: context.localize('auth.email'),
+              ),
               keyboardType: TextInputType.emailAddress,
               autofillHints: const [AutofillHints.email],
               textInputAction: TextInputAction.next,
@@ -6911,7 +8489,9 @@ class AccountAuthForm extends StatelessWidget {
             const SizedBox(height: 10),
             TextFormField(
               controller: password,
-              decoration: const InputDecoration(labelText: 'Parol'),
+              decoration: InputDecoration(
+                labelText: context.localize('auth.password'),
+              ),
               obscureText: true,
               autofillHints: signUp
                   ? const [AutofillHints.newPassword]
@@ -6931,9 +8511,7 @@ class AccountAuthForm extends StatelessWidget {
                     : (value) => onLegalAccepted(value ?? false),
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
-                title: const Text(
-                  'Maxfiylik siyosati va foydalanish shartlariga roziman',
-                ),
+                title: Text(context.localize('auth.privacy_checkbox')),
               ),
               Wrap(
                 spacing: 4,
@@ -6941,12 +8519,12 @@ class AccountAuthForm extends StatelessWidget {
                   TextButton.icon(
                     onPressed: () => onOpenLegal(privacyPolicyUrl),
                     icon: const Icon(Icons.privacy_tip_outlined, size: 17),
-                    label: const Text('Maxfiylik siyosati'),
+                    label: Text(context.localize('auth.privacy_policy')),
                   ),
                   TextButton.icon(
                     onPressed: () => onOpenLegal(termsOfServiceUrl),
                     icon: const Icon(Icons.description_outlined, size: 17),
-                    label: const Text('Foydalanish shartlari'),
+                    label: Text(context.localize('auth.terms')),
                   ),
                 ],
               ),
@@ -6961,8 +8539,63 @@ class AccountAuthForm extends StatelessWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : Icon(signUp ? Icons.person_add_alt : Icons.login),
-              label: Text(signUp ? 'Akkaunt yaratish' : 'Kirish'),
+              label: Text(
+                signUp
+                    ? context.localize('auth.create_account')
+                    : context.localize('auth.sign_in'),
+              ),
             ),
+            const SizedBox(height: 8),
+            if (!signUp &&
+                (onGoogleSignIn != null || onAppleSignIn != null)) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Divider(color: milanaInk.withValues(alpha: .14)),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      context.localize('auth.or'),
+                      style: TextStyle(
+                        color: milanaInk.withValues(alpha: .55),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Divider(color: milanaInk.withValues(alpha: .14)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (onGoogleSignIn != null)
+                OutlinedButton.icon(
+                  onPressed: busy ? null : onGoogleSignIn,
+                  icon: const Icon(Icons.g_mobiledata_rounded, size: 28),
+                  label: Text(context.localize('auth.google')),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: milanaInk,
+                    backgroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                    side: BorderSide(color: milanaInk.withValues(alpha: .18)),
+                  ),
+                ),
+              if (onGoogleSignIn != null && onAppleSignIn != null)
+                const SizedBox(height: 8),
+              if (onAppleSignIn != null)
+                FilledButton.icon(
+                  onPressed: busy ? null : onAppleSignIn,
+                  icon: const Icon(Icons.apple, size: 22),
+                  label: Text(context.localize('auth.apple')),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(48),
+                  ),
+                ),
+            ],
             const SizedBox(height: 8),
             Wrap(
               alignment: WrapAlignment.center,
@@ -6972,14 +8605,16 @@ class AccountAuthForm extends StatelessWidget {
                 TextButton(
                   onPressed: busy ? null : onToggleMode,
                   child: Text(
-                    signUp ? 'Menda akkaunt bor' : 'Yangi akkaunt yaratish',
+                    signUp
+                        ? context.localize('auth.has_account')
+                        : context.localize('auth.create_account'),
                   ),
                 ),
                 if (onResetPassword != null)
                   TextButton.icon(
                     onPressed: busy ? null : onResetPassword,
                     icon: const Icon(Icons.help_outline, size: 18),
-                    label: const Text('Parolni unutdingizmi?'),
+                    label: Text(context.localize('auth.forgot_password')),
                   ),
               ],
             ),
@@ -6996,17 +8631,29 @@ class AccountDashboardCard extends StatelessWidget {
     required this.customer,
     required this.onEdit,
     required this.onSignOut,
-    required this.onDelete,
   });
 
   final Customer customer;
   final VoidCallback onEdit;
   final VoidCallback onSignOut;
-  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
     final displayName = customer.name.isEmpty ? customer.email : customer.name;
+    final profileFields = [
+      customer.name,
+      customer.email,
+      customer.phone,
+      customer.companyName,
+      customer.country,
+      customer.city,
+      customer.address,
+    ];
+    final completedFields = profileFields
+        .where((value) => value.isNotEmpty)
+        .length;
+    final profileCompletion = (completedFields * 100 / profileFields.length)
+        .round();
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -7057,6 +8704,13 @@ class AccountDashboardCard extends StatelessWidget {
                           color: Colors.white.withValues(alpha: .72),
                         ),
                       ),
+                    if (customer.companyName.isNotEmpty)
+                      Text(
+                        customer.companyName,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: .72),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -7068,13 +8722,13 @@ class AccountDashboardCard extends StatelessWidget {
               AccountMetric(
                 icon: Icons.favorite,
                 value: '${customer.savedProductIds.length}',
-                label: 'saqlangan',
+                label: context.localize('account.metric.saved'),
               ),
               const SizedBox(width: 10),
-              const AccountMetric(
-                icon: Icons.verified_user_outlined,
-                value: 'B2B',
-                label: 'optom akkaunt',
+              AccountMetric(
+                icon: Icons.manage_accounts_outlined,
+                value: '$profileCompletion%',
+                label: context.localize('account.metric.profile'),
               ),
             ],
           ),
@@ -7086,7 +8740,7 @@ class AccountDashboardCard extends StatelessWidget {
               OutlinedButton.icon(
                 onPressed: onEdit,
                 icon: const Icon(Icons.edit_outlined),
-                label: const Text('Profil'),
+                label: Text(context.localize('account.action.edit_profile')),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.white,
                   side: BorderSide(color: Colors.white.withValues(alpha: .32)),
@@ -7095,21 +8749,70 @@ class AccountDashboardCard extends StatelessWidget {
               FilledButton.icon(
                 onPressed: onSignOut,
                 icon: const Icon(Icons.logout),
-                label: const Text('Chiqish'),
+                label: Text(context.localize('account.action.sign_out')),
                 style: FilledButton.styleFrom(
                   backgroundColor: Colors.white,
                   foregroundColor: milanaInk,
                 ),
               ),
-              TextButton.icon(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline, size: 19),
-                label: const Text('Akkauntni o‘chirish'),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFFFFC6C6),
-                ),
-              ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AccountSecurityPanel extends StatelessWidget {
+  const AccountSecurityPanel({super.key, required this.onDelete});
+
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final errorColor = Theme.of(context).colorScheme.error;
+    return Container(
+      decoration: BoxDecoration(
+        color: milanaBlush,
+        border: Border.all(color: milanaInk.withValues(alpha: .1)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ExpansionTile(
+        initiallyExpanded: false,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        leading: const Icon(Icons.admin_panel_settings_outlined),
+        title: Text(
+          context.localize('account.security.title'),
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        subtitle: Text(context.localize('account.security.subtitle')),
+        shape: const RoundedRectangleBorder(),
+        collapsedShape: const RoundedRectangleBorder(),
+        children: [
+          const Divider(),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              context.localize('account.security.delete_description'),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: milanaInk.withValues(alpha: .7),
+                height: 1.4,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(
+              onPressed: onDelete,
+              icon: const Icon(Icons.delete_forever_outlined),
+              label: Text(context.localize('account.action.delete')),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: errorColor,
+                side: BorderSide(color: errorColor.withValues(alpha: .55)),
+              ),
+            ),
           ),
         ],
       ),
@@ -7152,7 +8855,7 @@ class LegalLinksPanel extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'Huquqiy ma’lumotlar',
+                  context.localize('legal.title'),
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
@@ -7162,7 +8865,7 @@ class LegalLinksPanel extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Ma’lumotlaringiz qanday ishlatilishi, xizmat shartlari va akkauntni o‘chirish tartibi.',
+            context.localize('legal.body'),
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: milanaInk.withValues(alpha: .66),
               height: 1.45,
@@ -7176,25 +8879,39 @@ class LegalLinksPanel extends StatelessWidget {
               TextButton.icon(
                 onPressed: () => onOpen(privacyPolicyUrl),
                 icon: const Icon(Icons.privacy_tip_outlined, size: 18),
-                label: const Text('Maxfiylik'),
+                label: Text(context.localize('legal.link.privacy')),
               ),
               TextButton.icon(
                 onPressed: () => onOpen(termsOfServiceUrl),
                 icon: const Icon(Icons.description_outlined, size: 18),
-                label: const Text('Shartlar'),
+                label: Text(context.localize('legal.link.terms')),
               ),
               TextButton.icon(
                 onPressed: () => onOpen(accountDeletionUrl),
                 icon: const Icon(Icons.person_remove_outlined, size: 18),
-                label: const Text('Akkauntni o‘chirish'),
+                label: Text(context.localize('legal.link.delete')),
               ),
               TextButton.icon(
                 onPressed: () => onOpen(supportUrl),
                 icon: const Icon(Icons.support_agent_outlined, size: 18),
-                label: const Text('Yordam'),
+                label: Text(context.localize('legal.link.support')),
               ),
             ],
           ),
+          if (context.analytics case final analytics?) ...[
+            const Divider(),
+            AnimatedBuilder(
+              animation: analytics,
+              builder: (context, _) => SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: analytics.consentGranted,
+                onChanged: analytics.ready ? analytics.setConsent : null,
+                secondary: const Icon(Icons.analytics_outlined),
+                title: Text(context.localize('analytics.consent.title')),
+                subtitle: Text(context.localize('analytics.consent.body')),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -7307,14 +9024,13 @@ class AccountActivitySection extends StatelessWidget {
                 if (orderSnap.hasError || supportSnap.hasError) ...[
                   const SizedBox(height: 10),
                   AccountOverviewError(
-                    message:
-                        'Ayrim akkaunt ma’lumotlari yangilanmadi. Qayta urinib ko‘ring.',
+                    message: context.localize('account.loading_failed'),
                     onRetry: onRefresh,
                   ),
                 ],
                 const SizedBox(height: 24),
                 Text(
-                  'Buyurtmalarim',
+                  context.localize('account.section.orders'),
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),
@@ -7328,7 +9044,7 @@ class AccountActivitySection extends StatelessWidget {
                 ),
                 const SizedBox(height: 24),
                 Text(
-                  'Murojaatlarim',
+                  context.localize('account.section.tickets'),
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 8),
@@ -7389,7 +9105,10 @@ class AccountOverviewError extends StatelessWidget {
           const Icon(Icons.error_outline, color: milanaBurgundy),
           const SizedBox(width: 10),
           Expanded(child: Text(message)),
-          TextButton(onPressed: onRetry, child: const Text('Qayta urinish')),
+          TextButton(
+            onPressed: onRetry,
+            child: Text(context.localize('catalog.error.retry')),
+          ),
         ],
       ),
     );
@@ -7404,8 +9123,8 @@ class AccountOverviewCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final latest = overview.latestOrderAt == null
-        ? 'hali yo‘q'
-        : shortDate.format(overview.latestOrderAt!.toLocal());
+        ? context.localize('account.overview.none')
+        : shortDate(context, overview.latestOrderAt!.toLocal());
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -7444,15 +9163,18 @@ class AccountOverviewCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Akkaunt holati',
+                      context.localize('account.overview.title'),
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.w900,
                       ),
                     ),
                     Text(
                       overview.hasActivity
-                          ? 'Oxirgi buyurtma: $latest'
-                          : 'Buyurtma va murojaatlar shu yerda ko‘rinadi',
+                          ? context.localize(
+                              'account.overview.last_order',
+                              args: {'latest': latest},
+                            )
+                          : context.localize('account.overview.no_activity'),
                       style: TextStyle(color: milanaInk.withValues(alpha: .58)),
                     ),
                   ],
@@ -7475,9 +9197,15 @@ class AccountOverviewCard extends StatelessWidget {
                     width: itemWidth,
                     child: AccountOverviewTile(
                       icon: Icons.inventory_2_outlined,
-                      value: '${overview.activePackages} paket',
-                      label: 'aktiv buyurtma',
-                      detail: '${overview.activePieces} ta kiyim',
+                      value:
+                          '${overview.activePackages} ${context.localize('product.pack.label')}',
+                      label: context.localize(
+                        'account.overview.active_packages_label',
+                      ),
+                      detail: context.localize(
+                        'account.overview.active_pieces',
+                        args: {'count': '${overview.activePieces}'},
+                      ),
                     ),
                   ),
                   SizedBox(
@@ -7485,8 +9213,13 @@ class AccountOverviewCard extends StatelessWidget {
                     child: AccountOverviewTile(
                       icon: Icons.payments_outlined,
                       value: money.format(overview.confirmedSpend),
-                      label: 'tasdiqlangan to‘lov',
-                      detail: '${overview.pendingPaymentOrders} ta tekshiruvda',
+                      label: context.localize(
+                        'account.overview.confirmed_payment_label',
+                      ),
+                      detail: context.localize(
+                        'account.overview.pending_payment_orders',
+                        args: {'count': '${overview.pendingPaymentOrders}'},
+                      ),
                     ),
                   ),
                   SizedBox(
@@ -7494,8 +9227,13 @@ class AccountOverviewCard extends StatelessWidget {
                     child: AccountOverviewTile(
                       icon: Icons.receipt_long_outlined,
                       value: '${overview.totalOrders}',
-                      label: 'jami buyurtma',
-                      detail: '${overview.totalPackages} paket tarixda',
+                      label: context.localize(
+                        'account.overview.total_orders_label',
+                      ),
+                      detail: context.localize(
+                        'account.overview.total_packages',
+                        args: {'count': '${overview.totalPackages}'},
+                      ),
                     ),
                   ),
                   SizedBox(
@@ -7503,8 +9241,12 @@ class AccountOverviewCard extends StatelessWidget {
                     child: AccountOverviewTile(
                       icon: Icons.support_agent_outlined,
                       value: '${overview.openSupportTickets}',
-                      label: 'ochiq murojaat',
-                      detail: 'menejer javobi kuzatiladi',
+                      label: context.localize(
+                        'account.overview.open_tickets_label',
+                      ),
+                      detail: context.localize(
+                        'account.overview.ticket_waiting',
+                      ),
                     ),
                   ),
                 ],
@@ -7611,9 +9353,9 @@ class CustomerOrdersList extends StatelessWidget {
       );
     }
     if (rows.isEmpty && hasError) {
-      return const Text('Buyurtmalar hozircha yangilanmadi.');
+      return Text(context.localize('order.status.empty'));
     }
-    if (rows.isEmpty) return const Text('Hozircha buyurtmalar yo‘q.');
+    if (rows.isEmpty) return Text(context.localize('order.list_empty'));
     return Column(
       children: rows
           .map(
@@ -7655,8 +9397,11 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
     final order = widget.order;
     final created = order.createdAt == null
         ? ''
-        : shortDate.format(order.createdAt!.toLocal());
-    final nextAction = orderNextAction(order);
+        : shortDate(context, order.createdAt!.toLocal());
+    final nextAction = orderNextAction(
+      order,
+      languageCode: context.currentLanguageCode,
+    );
     final canSubmitPayment =
         order.id.isNotEmpty &&
         !const {
@@ -7706,13 +9451,16 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
               children: [
                 StatusPill(
                   icon: Icons.receipt_long_outlined,
-                  label: orderStatusLabel(order.status),
+                  label: orderStatusLabel(
+                    order.status,
+                    languageCode: context.currentLanguageCode,
+                  ),
                   color: statusColor(order.status),
                 ),
                 StatusPill(
                   icon: Icons.payments_outlined,
                   label:
-                      '${order.paymentLabel}: ${paymentStatusLabel(order.paymentStatus)}',
+                      '${order.paymentLabel}: ${paymentStatusLabel(order.paymentStatus, languageCode: context.currentLanguageCode)}',
                   color: statusColor(order.paymentStatus),
                 ),
               ],
@@ -7747,8 +9495,8 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Keyingi qadam',
+                        Text(
+                          context.localize('order.share.next_step'),
                           style: TextStyle(fontWeight: FontWeight.w900),
                         ),
                         const SizedBox(height: 2),
@@ -7774,14 +9522,19 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
               children: [
                 Expanded(
                   child: Text(
-                    orderTrackingSummary(order),
+                    orderTrackingSummary(
+                      order,
+                      languageCode: context.currentLanguageCode,
+                    ),
                     style: const TextStyle(fontWeight: FontWeight.w700),
                   ),
                 ),
                 Text(
                   order.paymentStatus == 'paid'
-                      ? 'To‘lov tasdiqlangan'
-                      : 'Menejer tasdiqlaydi',
+                      ? context.localize('order.payment_status_label.paid')
+                      : context.localize(
+                          'order.payment_status_label.reviewing',
+                        ),
                   style: TextStyle(
                     color: milanaInk.withValues(alpha: .62),
                     fontWeight: FontWeight.w600,
@@ -7793,7 +9546,7 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
                 order.paymentSubmissionReference.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
-                'Yuborilgan reference: ${order.paymentSubmissionReference}',
+                '${context.localize('order.share.submitted_reference')}: ${order.paymentSubmissionReference}',
                 style: TextStyle(
                   color: milanaInk.withValues(alpha: .64),
                   fontWeight: FontWeight.w700,
@@ -7808,21 +9561,26 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
                 OutlinedButton.icon(
                   onPressed: () => _openOrderDetails(order),
                   icon: const Icon(Icons.list_alt_outlined),
-                  label: const Text('Tafsilot'),
+                  label: Text(context.localize('order.details')),
                 ),
                 OutlinedButton.icon(
                   onPressed: () {
                     Clipboard.setData(
-                      ClipboardData(text: customerOrderShareText(order)),
+                      ClipboardData(
+                        text: customerOrderShareText(
+                          order,
+                          languageCode: context.currentLanguageCode,
+                        ),
+                      ),
                     );
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Buyurtma ma’lumoti nusxalandi'),
+                      SnackBar(
+                        content: Text(context.localize('copy.toast.order')),
                       ),
                     );
                   },
                   icon: const Icon(Icons.copy_all_outlined),
-                  label: const Text('Nusxalash'),
+                  label: Text(context.localize('action.copy')),
                 ),
                 if (canSubmitPayment)
                   OutlinedButton.icon(
@@ -7834,7 +9592,7 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.upload_file_outlined),
-                    label: const Text('To‘lov ma’lumotini yuborish'),
+                    label: Text(context.localize('order.submit_payment')),
                   ),
                 if (canCancel)
                   OutlinedButton.icon(
@@ -7846,7 +9604,7 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.cancel_outlined),
-                    label: const Text('Bekor qilish'),
+                    label: Text(context.localize('delete.cancel')),
                   ),
               ],
             ),
@@ -7878,7 +9636,9 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
       if (mounted && receipt != null) {
         widget.onChanged();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('To‘lov ma’lumoti yuborildi')),
+          SnackBar(
+            content: Text(context.localize('order.payment_submission.sent')),
+          ),
         );
       }
     } finally {
@@ -7893,21 +9653,24 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
       builder: (context) {
         return AlertDialog(
           scrollable: true,
-          title: const Text('Buyurtmani bekor qilish'),
+          title: Text(context.localize('order.cancel.title')),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '${order.number} bekor qilinsinmi? Qop zaxirasi katalogga qaytariladi.',
+                context.localize(
+                  'order.cancel.confirm',
+                  args: {'number': order.number},
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: reasonController,
                 maxLines: 3,
                 maxLength: 300,
-                decoration: const InputDecoration(
-                  labelText: 'Sabab',
-                  hintText: 'Ixtiyoriy',
+                decoration: InputDecoration(
+                  labelText: context.localize('order.cancel.reason_label'),
+                  hintText: context.localize('order.cancel.reason_optional'),
                 ),
               ),
             ],
@@ -7915,12 +9678,12 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Qoldirish'),
+              child: Text(context.localize('order.cancel.keep')),
             ),
             FilledButton(
               onPressed: () =>
                   Navigator.of(context).pop(reasonController.text.trim()),
-              child: const Text('Bekor qilish'),
+              child: Text(context.localize('delete.cancel')),
             ),
           ],
         );
@@ -7941,13 +9704,17 @@ class _OrderStatusCardState extends State<OrderStatusCard> {
       );
       if (!mounted) return;
       widget.onChanged();
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Buyurtma bekor qilindi')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.localize('order.cancel.success'))),
+      );
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Bekor qilish amalga oshmadi: $error')),
+        SnackBar(
+          content: Text(
+            context.localize('order.cancel.failed', args: {'error': '$error'}),
+          ),
+        ),
       );
     } finally {
       if (mounted) setState(() => busy = false);
@@ -7965,7 +9732,7 @@ class OrderDetailsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final created = order.createdAt == null
         ? ''
-        : shortDateTime.format(order.createdAt!.toLocal());
+        : shortDateTime(context, order.createdAt!.toLocal());
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: .82,
@@ -8020,19 +9787,28 @@ class OrderDetailsSheet extends StatelessWidget {
               children: [
                 StatusPill(
                   icon: Icons.receipt_long_outlined,
-                  label: orderStatusLabel(order.status),
+                  label: orderStatusLabel(
+                    order.status,
+                    languageCode: context.currentLanguageCode,
+                  ),
                   color: statusColor(order.status),
                 ),
                 StatusPill(
                   icon: Icons.payments_outlined,
-                  label: paymentStatusLabel(order.paymentStatus),
+                  label: paymentStatusLabel(
+                    order.paymentStatus,
+                    languageCode: context.currentLanguageCode,
+                  ),
                   color: statusColor(order.paymentStatus),
                 ),
               ],
             ),
             const SizedBox(height: 18),
             Text(
-              orderTrackingSummary(order),
+              orderTrackingSummary(
+                order,
+                languageCode: context.currentLanguageCode,
+              ),
               style: Theme.of(
                 context,
               ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
@@ -8040,7 +9816,7 @@ class OrderDetailsSheet extends StatelessWidget {
             const SizedBox(height: 10),
             if (order.items.isEmpty)
               Text(
-                'Mahsulot tafsilotlari menejer tomonidan tasdiqlanadi.',
+                context.localize('order.details.empty_items'),
                 style: TextStyle(color: milanaInk.withValues(alpha: .65)),
               )
             else
@@ -8049,12 +9825,17 @@ class OrderDetailsSheet extends StatelessWidget {
             PaymentNotice(
               title: order.paymentLabel,
               message: order.paymentInstructions.isEmpty
-                  ? paymentInstructions(order.paymentMethod)
+                  ? paymentInstructions(
+                      order.paymentMethod,
+                      languageCode: context.currentLanguageCode,
+                    )
                   : order.paymentInstructions,
             ),
             if (order.paymentReference.isNotEmpty) ...[
               const SizedBox(height: 12),
-              SelectableText('Reference: ${order.paymentReference}'),
+              SelectableText(
+                '${context.localize('order.share.payment_reference')}: ${order.paymentReference}',
+              ),
             ],
             if (order.items.isNotEmpty) ...[
               const SizedBox(height: 18),
@@ -8067,14 +9848,14 @@ class OrderDetailsSheet extends StatelessWidget {
                     SnackBar(
                       content: Text(
                         added > 0
-                            ? 'Buyurtma savatga qo‘shildi'
-                            : 'Savatdagi buyurtma miqdori allaqachon limitda',
+                            ? context.localize('order.cart.item_added')
+                            : context.localize('order.cart.limit_reached'),
                       ),
                     ),
                   );
                 },
                 icon: const Icon(Icons.shopping_bag_outlined),
-                label: const Text('Savatga qo‘shish'),
+                label: Text(context.localize('catalog.add')),
               ),
             ],
           ],
@@ -8132,12 +9913,18 @@ class OrderLineItemTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  orderLineItemSubtitle(item),
+                  orderLineItemSubtitle(
+                    item,
+                    languageCode: context.currentLanguageCode,
+                  ),
                   style: TextStyle(color: milanaInk.withValues(alpha: .64)),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  orderSizeMixSummary(item),
+                  orderSizeMixSummary(
+                    item,
+                    languageCode: context.currentLanguageCode,
+                  ),
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
@@ -8145,13 +9932,21 @@ class OrderLineItemTile extends StatelessWidget {
                   spacing: 10,
                   runSpacing: 4,
                   children: [
-                    Text('Dona: ${money.format(item.unitPrice)}'),
                     Text(
-                      '${orderUnitLabel(item.unitType)}: ${money.format(item.bagPrice)}',
+                      '${context.localize('product.unit', args: {'count': '1'})}: ${money.format(item.unitPrice)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      'Jami: ${money.format(item.lineTotal)}',
+                      '${orderUnitLabel(item.unitType, languageCode: context.currentLanguageCode)}: ${money.format(item.bagPrice)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      '${context.localize('order.share.total')}: ${money.format(item.lineTotal)}',
                       style: const TextStyle(fontWeight: FontWeight.w900),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
@@ -8229,7 +10024,7 @@ class _PaymentSubmissionSheetState extends State<PaymentSubmissionSheet> {
               ),
               const SizedBox(height: 16),
               Text(
-                'To‘lov ma’lumoti',
+                context.localize('order.payment_submission.title'),
                 style: Theme.of(context).textTheme.titleLarge,
               ),
               const SizedBox(height: 4),
@@ -8241,7 +10036,9 @@ class _PaymentSubmissionSheetState extends State<PaymentSubmissionSheet> {
               DropdownButtonFormField<String>(
                 initialValue: method,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'To‘lov usuli'),
+                decoration: InputDecoration(
+                  labelText: context.localize('cart.field.payment_method'),
+                ),
                 items: [
                   for (final value in const [
                     'manager',
@@ -8254,7 +10051,10 @@ class _PaymentSubmissionSheetState extends State<PaymentSubmissionSheet> {
                     DropdownMenuItem(
                       value: value,
                       child: Text(
-                        paymentMethodLabel(value),
+                        paymentMethodLabel(
+                          value,
+                          languageCode: context.currentLanguageCode,
+                        ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -8266,25 +10066,33 @@ class _PaymentSubmissionSheetState extends State<PaymentSubmissionSheet> {
               const SizedBox(height: 10),
               TextFormField(
                 controller: amount,
-                decoration: const InputDecoration(labelText: 'To‘langan summa'),
+                decoration: InputDecoration(
+                  labelText: context.localize(
+                    'order.payment_submission.amount',
+                  ),
+                ),
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
                 validator: (value) => paymentAmountValidationMessage(
                   value ?? '',
                   widget.order.total,
+                  languageCode: context.currentLanguageCode,
                 ),
               ),
               const SizedBox(height: 10),
               TextFormField(
                 controller: reference,
-                decoration: const InputDecoration(
-                  labelText: 'Reference / tranzaksiya raqami',
+                decoration: InputDecoration(
+                  labelText: context.localize(
+                    'order.payment_submission.reference',
+                  ),
                 ),
                 validator: (value) => paymentProofDetailValidationMessage(
                   method: method,
                   reference: value ?? '',
                   note: note.text,
+                  languageCode: context.currentLanguageCode,
                 ),
               ),
               const SizedBox(height: 10),
@@ -8292,11 +10100,14 @@ class _PaymentSubmissionSheetState extends State<PaymentSubmissionSheet> {
                 controller: note,
                 minLines: 2,
                 maxLines: 4,
-                decoration: const InputDecoration(labelText: 'Izoh'),
+                decoration: InputDecoration(
+                  labelText: context.localize('order.payment_submission.notes'),
+                ),
                 validator: (value) => paymentProofDetailValidationMessage(
                   method: method,
                   reference: reference.text,
                   note: value ?? '',
+                  languageCode: context.currentLanguageCode,
                 ),
               ),
               const SizedBox(height: 14),
@@ -8309,7 +10120,9 @@ class _PaymentSubmissionSheetState extends State<PaymentSubmissionSheet> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.check),
-                label: const Text('Yuborish'),
+                label: Text(
+                  context.localize('order.payment_submission.submit'),
+                ),
               ),
             ],
           ),
@@ -8335,9 +10148,16 @@ class _PaymentSubmissionSheetState extends State<PaymentSubmissionSheet> {
       if (mounted) Navigator.of(context).pop(receipt);
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Yuborilmadi: $error')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              context.localize(
+                'order.payment_submission.failed',
+                args: {'error': '$error'},
+              ),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => sending = false);
@@ -8364,8 +10184,8 @@ class OrderActivityTimeline extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Buyurtma tarixi',
+          Text(
+            context.localize('order.activity.title'),
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 10),
@@ -8388,7 +10208,7 @@ class _OrderActivityRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final created = entry.createdAt == null
         ? ''
-        : shortDateTime.format(entry.createdAt!.toLocal());
+        : shortDateTime(context, entry.createdAt!.toLocal());
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -8470,7 +10290,7 @@ class DeliveryTrackingPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final carrier = order.deliveryCarrier.isEmpty
-        ? 'Cargo'
+        ? context.localize('order.delivery_carrier.cargo')
         : order.deliveryCarrier;
     return Container(
       width: double.infinity,
@@ -8495,7 +10315,9 @@ class DeliveryTrackingPanel extends StatelessWidget {
                 ),
                 if (order.trackingNumber.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  SelectableText('Cargo raqami: ${order.trackingNumber}'),
+                  Text(
+                    '${context.localize('order.share.tracking_number')}: ${order.trackingNumber}',
+                  ),
                 ],
                 if (order.deliveryNote.isNotEmpty) ...[
                   const SizedBox(height: 2),
@@ -8509,11 +10331,13 @@ class DeliveryTrackingPanel extends StatelessWidget {
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: order.trackingNumber));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Cargo raqami nusxalandi')),
+                  SnackBar(
+                    content: Text(context.localize('copy.toast.tracking')),
+                  ),
                 );
               },
               icon: const Icon(Icons.copy, size: 18),
-              tooltip: 'Nusxalash',
+              tooltip: context.localize('action.copy'),
             ),
         ],
       ),
@@ -8569,7 +10393,12 @@ class OrderProgressLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final current = _stepIndex();
-    final steps = const ['Yangi', 'Tasdiq', 'Yuborish', 'Yetkazish'];
+    final steps = [
+      context.localize('order.progress.new'),
+      context.localize('order.progress.confirming'),
+      context.localize('order.progress.submitting'),
+      context.localize('order.progress.delivery'),
+    ];
     return Row(
       children: [
         for (var i = 0; i < steps.length; i++) ...[
@@ -8638,11 +10467,11 @@ class CustomerSupportTicketsList extends StatelessWidget {
         child: TextButton.icon(
           onPressed: onRetry,
           icon: const Icon(Icons.refresh),
-          label: const Text('Murojaatlarni qayta yuklash'),
+          label: Text(context.localize('support.ticket.reload')),
         ),
       );
     }
-    if (rows.isEmpty) return const Text('Hozircha murojaatlar yo‘q.');
+    if (rows.isEmpty) return Text(context.localize('support.ticket.empty'));
     return Column(
       children: rows
           .map((ticket) => SupportTicketCard(ticket: ticket))
@@ -8660,7 +10489,7 @@ class SupportTicketCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final created = ticket.createdAt == null
         ? ''
-        : shortDate.format(ticket.createdAt!.toLocal());
+        : shortDate(context, ticket.createdAt!.toLocal());
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       child: Padding(
@@ -8682,14 +10511,17 @@ class SupportTicketCard extends StatelessWidget {
                 ),
                 StatusPill(
                   icon: Icons.mark_chat_read_outlined,
-                  label: _supportStatusLabel(ticket.status),
+                  label: _supportStatusLabel(
+                    ticket.status,
+                    languageCode: context.currentLanguageCode,
+                  ),
                   color: statusColor(ticket.status),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             Text(
-              '${_supportTopicLabel(ticket.topic)}${created.isEmpty ? '' : ' · $created'}',
+              '${_supportTopicLabel(ticket.topic, languageCode: context.currentLanguageCode)}${created.isEmpty ? '' : ' · $created'}',
               style: TextStyle(color: milanaInk.withValues(alpha: .6)),
             ),
             const SizedBox(height: 6),
@@ -8706,8 +10538,8 @@ class SupportTicketCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Menejer javobi',
+                    Text(
+                      context.localize('support.ticket.manager_reply'),
                       style: TextStyle(fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 4),
@@ -8723,35 +10555,76 @@ class SupportTicketCard extends StatelessWidget {
   }
 }
 
-String _supportStatusLabel(String status) {
+String _supportStatusLabel(
+  String status, {
+  String languageCode = defaultLanguageCode,
+}) {
   switch (status) {
     case 'open':
-      return 'Jarayonda';
+      return localizedText(
+        'support.ticket.status.open',
+        languageCode: languageCode,
+      );
     case 'waiting_for_customer':
-      return 'Javob kutilmoqda';
+      return localizedText(
+        'support.ticket.status.waiting_for_customer',
+        languageCode: languageCode,
+      );
     case 'resolved':
-      return 'Hal qilindi';
+      return localizedText(
+        'support.ticket.status.resolved',
+        languageCode: languageCode,
+      );
     case 'closed':
-      return 'Yopildi';
+      return localizedText(
+        'support.ticket.status.closed',
+        languageCode: languageCode,
+      );
+    case 'new':
+      return localizedText(
+        'support.ticket.status.new',
+        languageCode: languageCode,
+      );
     default:
-      return 'Yangi';
+      return localizedText(
+        'support.ticket.status.open',
+        languageCode: languageCode,
+      );
   }
 }
 
-String _supportTopicLabel(String topic) {
+String _supportTopicLabel(
+  String topic, {
+  String languageCode = defaultLanguageCode,
+}) {
   switch (topic) {
     case 'catalog':
-      return 'Katalog';
+      return localizedText(
+        'support.faq.topic.products',
+        languageCode: languageCode,
+      );
     case 'price':
-      return 'Narx';
+      return localizedText(
+        'support.faq.topic.price',
+        languageCode: languageCode,
+      );
     case 'delivery':
-      return 'Yetkazib berish';
+      return localizedText(
+        'support.faq.topic.delivery',
+        languageCode: languageCode,
+      );
     case 'payment':
-      return 'To‘lov';
+      return localizedText(
+        'support.faq.topic.payment',
+        languageCode: languageCode,
+      );
     case 'defect':
-      return 'Brak';
+      return localizedText(
+        'support.faq.topic.defect',
+        languageCode: languageCode,
+      );
     default:
-      return 'Umumiy';
+      return localizedText('support.topic.general', languageCode: languageCode);
   }
 }
 

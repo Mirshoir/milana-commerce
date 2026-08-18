@@ -3,6 +3,7 @@
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { FieldValue, getFirestore } = require('firebase-admin/firestore');
+const { getMessaging } = require('firebase-admin/messaging');
 const { HttpsError, onCall, onRequest } = require('firebase-functions/v2/https');
 const {
   activityEntry,
@@ -32,21 +33,103 @@ const { normalizeAckRequest, normalizeClaimRequest } = require('./erp');
 const { requestPublicApi } = require('./public_api');
 const {
   forwardWebsiteRequest,
+  normalizeWebsiteOrderRequest,
   websitePublicApiError,
 } = require('./website_account');
 const {
+  accountDeletionFeedbackDocument,
   erpEventAnonymizationPatch,
   normalizeAccountDeletionRequest,
   orderAnonymizationPatch,
   paymentAnonymizationPatch,
   supportAnonymizationPatch,
 } = require('./account');
+const {
+  buildDistributorApplication,
+  distributorApplicationKey,
+  normalizeApplicationStatus,
+  normalizeDistributorApplication,
+} = require('./distributor');
+const {
+  customerNotification,
+  deviceTokenId,
+  normalizeDeviceRegistration,
+  normalizeNotificationPreferences,
+} = require('./notification');
 
 const app = initializeApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
+const messaging = getMessaging(app);
 const region = 'asia-southeast1';
 const accountDeletionBatchSize = 400;
+
+const notificationPreferenceByType = Object.freeze({
+  application_submitted: 'application_updates',
+  application_status: 'application_updates',
+  order_status: 'order_updates',
+  support_status: 'company_news',
+});
+
+async function sendCustomerPush({
+  customerId,
+  type,
+  title,
+  message,
+  entityId = '',
+  action = '',
+}) {
+  if (!customerId) return;
+  try {
+    const preferenceKey = notificationPreferenceByType[type];
+    if (preferenceKey) {
+      const preferences = await db
+        .collection('notification_preferences')
+        .doc(customerId)
+        .get();
+      if (preferences.exists && preferences.data()[preferenceKey] === false) {
+        return;
+      }
+    }
+    const devices = await db
+      .collection('notification_devices')
+      .where('customer_id', '==', customerId)
+      .limit(100)
+      .get();
+    const activeDevices = devices.docs.filter(
+      (document) => document.data().active !== false && document.data().token,
+    );
+    if (activeDevices.length === 0) return;
+    const response = await messaging.sendEachForMulticast({
+      tokens: activeDevices.map((document) => document.data().token),
+      notification: { title, body: message },
+      data: {
+        type,
+        entity_id: String(entityId),
+        action: String(action),
+      },
+    });
+    const invalidTokenCodes = new Set([
+      'messaging/invalid-registration-token',
+      'messaging/registration-token-not-registered',
+    ]);
+    const cleanup = db.batch();
+    let cleanupCount = 0;
+    response.responses.forEach((result, index) => {
+      if (!result.success && invalidTokenCodes.has(result.error?.code)) {
+        cleanup.delete(activeDevices[index].ref);
+        cleanupCount += 1;
+      }
+    });
+    if (cleanupCount > 0) await cleanup.commit();
+  } catch (error) {
+    console.error('Customer push delivery failed.', {
+      customerId,
+      type,
+      error: error?.code || error?.message || 'unknown',
+    });
+  }
+}
 
 async function anonymizeOwnedDocuments({
   collection,
@@ -77,6 +160,22 @@ async function anonymizeOwnedDocuments({
   }
 }
 
+async function deleteOwnedDocuments({ collection, ownerField, ownerId }) {
+  let deleted = 0;
+  while (true) {
+    const snapshot = await db
+      .collection(collection)
+      .where(ownerField, '==', ownerId)
+      .limit(accountDeletionBatchSize)
+      .get();
+    if (snapshot.empty) return deleted;
+    const batch = db.batch();
+    for (const document of snapshot.docs) batch.delete(document.ref);
+    await batch.commit();
+    deleted += snapshot.size;
+  }
+}
+
 exports.listCheckoutManagers = onCall({ region }, async () => {
   let result;
   try {
@@ -90,6 +189,251 @@ exports.listCheckoutManagers = onCall({ region }, async () => {
   return result.body;
 });
 
+exports.submitDistributorApplication = onCall({ region }, async (request) => {
+  let normalized;
+  try {
+    normalized = normalizeDistributorApplication(request.data || {});
+  } catch (_) {
+    throw new HttpsError(
+      'invalid-argument',
+      'Distributor application information is invalid.',
+    );
+  }
+
+  const customerId = request.auth?.uid || null;
+  const applicationKey = distributorApplicationKey({
+    customerId,
+    phone: normalized.phone,
+    clientApplicationId: normalized.clientApplicationId,
+  });
+  const applicationRef = db
+    .collection('distributor_applications')
+    .doc(`application_${applicationKey}`);
+  const rateLimitKey = distributorApplicationKey({
+    customerId: null,
+    phone: normalized.phone,
+    clientApplicationId: 'distributor_daily_limit',
+  });
+  const rateLimitRef = db
+    .collection('distributor_rate_limits')
+    .doc(rateLimitKey);
+  const nowIso = new Date().toISOString();
+  const applicationNumber = `MD-${new Date().getUTCFullYear()}-${applicationKey
+    .slice(0, 6)
+    .toUpperCase()}`;
+
+  let receipt;
+  let pushPayload = null;
+  await db.runTransaction(async (tx) => {
+    const existing = await tx.get(applicationRef);
+    if (existing.exists) {
+      const data = existing.data();
+      receipt = {
+        application_id: applicationRef.id,
+        number: data.number,
+        status: data.status,
+      };
+      return;
+    }
+    const rateLimit = await tx.get(rateLimitRef);
+    const previousRate = rateLimit.data() || {};
+    const windowStartedAt = Date.parse(previousRate.window_started_at || '');
+    const withinWindow =
+      Number.isFinite(windowStartedAt) && Date.now() - windowStartedAt < 86400000;
+    const submissionCount = withinWindow
+      ? Number(previousRate.submission_count || 0)
+      : 0;
+    if (submissionCount >= 5) {
+      throw new HttpsError(
+        'resource-exhausted',
+        'Too many distributor applications. Please contact sales directly.',
+      );
+    }
+    tx.set(rateLimitRef, {
+      submission_count: submissionCount + 1,
+      window_started_at: withinWindow
+        ? previousRate.window_started_at
+        : nowIso,
+      updated_at: nowIso,
+    });
+    const application = buildDistributorApplication({
+      request: normalized,
+      customerId,
+      applicationNumber,
+      nowIso,
+    });
+    tx.create(applicationRef, application);
+    if (customerId) {
+      pushPayload = {
+        customerId,
+        type: 'application_submitted',
+        title: 'Distributor application received',
+        message: `${applicationNumber} is ready for manager review.`,
+        entityId: applicationRef.id,
+        action: 'partnership',
+      };
+      const notificationRef = db.collection('customer_notifications').doc();
+      tx.create(
+        notificationRef,
+        customerNotification({
+          ...pushPayload,
+          nowIso,
+        }),
+      );
+    }
+    receipt = {
+      application_id: applicationRef.id,
+      number: applicationNumber,
+      status: 'submitted',
+    };
+  });
+  if (pushPayload) await sendCustomerPush(pushPayload);
+  return receipt;
+});
+
+exports.updateDistributorApplicationStatus = onCall(
+  { region },
+  async (request) => {
+    if (
+      request.auth?.token?.admin !== true &&
+      request.auth?.token?.manager !== true
+    ) {
+      throw new HttpsError(
+        'permission-denied',
+        'Only sales managers can update distributor applications.',
+      );
+    }
+    const applicationId = String(request.data?.application_id || '').trim();
+    if (!/^application_[a-f0-9]{64}$/.test(applicationId)) {
+      throw new HttpsError('invalid-argument', 'Application id is invalid.');
+    }
+    let status;
+    try {
+      status = normalizeApplicationStatus(request.data?.status);
+    } catch (_) {
+      throw new HttpsError('invalid-argument', 'Application status is invalid.');
+    }
+    const managerMessage = String(request.data?.manager_message || '')
+      .trim()
+      .slice(0, 2000);
+    const assignedManagerId = String(
+      request.data?.assigned_manager_id || request.auth.uid || '',
+    )
+      .trim()
+      .slice(0, 160);
+    const applicationRef = db
+      .collection('distributor_applications')
+      .doc(applicationId);
+    const application = await applicationRef.get();
+    if (!application.exists) {
+      throw new HttpsError('not-found', 'Distributor application was not found.');
+    }
+    const current = application.data();
+    const nowIso = new Date().toISOString();
+    const batch = db.batch();
+    batch.update(applicationRef, {
+      status,
+      manager_message: managerMessage,
+      assigned_manager_id: assignedManagerId,
+      reviewed_at: nowIso,
+      updated_at: nowIso,
+    });
+    let pushPayload = null;
+    if (current.customer_id) {
+      pushPayload = {
+        customerId: current.customer_id,
+        type: 'application_status',
+        title: 'Partnership application updated',
+        message: managerMessage || `${current.number} is now ${status}.`,
+        entityId: applicationId,
+        action: 'partnership',
+      };
+      batch.create(
+        db.collection('customer_notifications').doc(),
+        customerNotification({
+          ...pushPayload,
+          nowIso,
+        }),
+      );
+    }
+    await batch.commit();
+    if (pushPayload) await sendCustomerPush(pushPayload);
+    return { application_id: applicationId, status, updated_at: nowIso };
+  },
+);
+
+exports.updateNotificationPreferences = onCall({ region }, async (request) => {
+  const customerId = request.auth?.uid;
+  if (!customerId) {
+    throw new HttpsError('unauthenticated', 'Sign in to update notifications.');
+  }
+  const preferences = normalizeNotificationPreferences(request.data || {});
+  await db.collection('notification_preferences').doc(customerId).set(
+    {
+      customer_id: customerId,
+      ...preferences,
+      updated_at: new Date().toISOString(),
+    },
+    { merge: true },
+  );
+  return preferences;
+});
+
+exports.registerNotificationDevice = onCall({ region }, async (request) => {
+  const customerId = request.auth?.uid;
+  if (!customerId) {
+    throw new HttpsError('unauthenticated', 'Sign in to enable notifications.');
+  }
+  let registration;
+  try {
+    registration = normalizeDeviceRegistration(request.data || {});
+  } catch (_) {
+    throw new HttpsError('invalid-argument', 'Device registration is invalid.');
+  }
+  const nowIso = new Date().toISOString();
+  await db
+    .collection('notification_devices')
+    .doc(deviceTokenId(registration.token))
+    .set({
+      customer_id: customerId,
+      token: registration.token,
+      platform: registration.platform,
+      lang: registration.lang,
+      active: true,
+      updated_at: nowIso,
+      created_at: nowIso,
+    });
+  return { registered: true };
+});
+
+exports.markNotificationRead = onCall({ region }, async (request) => {
+  const customerId = request.auth?.uid;
+  if (!customerId) {
+    throw new HttpsError('unauthenticated', 'Sign in to update notifications.');
+  }
+  const notificationId = String(request.data?.notification_id || '').trim();
+  if (!/^[a-zA-Z0-9]{10,80}$/.test(notificationId)) {
+    throw new HttpsError('invalid-argument', 'Notification id is invalid.');
+  }
+  const notificationRef = db
+    .collection('customer_notifications')
+    .doc(notificationId);
+  await db.runTransaction(async (tx) => {
+    const notification = await tx.get(notificationRef);
+    if (!notification.exists) {
+      throw new HttpsError('not-found', 'Notification was not found.');
+    }
+    if (notification.data().customer_id !== customerId) {
+      throw new HttpsError('permission-denied', 'Notification is not owned.');
+    }
+    tx.update(notificationRef, {
+      read: true,
+      read_at: new Date().toISOString(),
+    });
+  });
+  return { notification_id: notificationId, read: true };
+});
+
 exports.placeWebsiteOrder = onCall({ region }, async (request) => {
   const data =
     request.data && typeof request.data === 'object' && !Array.isArray(request.data)
@@ -99,7 +443,7 @@ exports.placeWebsiteOrder = onCall({ region }, async (request) => {
     request,
     path: '/api/orders',
     method: 'POST',
-    data: { ...data, source: 'flutter' },
+    data: normalizeWebsiteOrderRequest(data),
     fallback: 'Order could not be submitted.',
     optionalSession: true,
   });
@@ -166,12 +510,17 @@ exports.deleteCustomerAccount = onCall({ region }, async (request) => {
   if (!customerId) {
     throw new HttpsError('unauthenticated', 'Sign in to delete your account.');
   }
+  let normalizedDeletion;
   try {
-    normalizeAccountDeletionRequest(request.data);
+    normalizedDeletion = normalizeAccountDeletionRequest(request.data);
   } catch (error) {
+    const confirmationInvalid =
+      error?.message === 'invalid-deletion-confirmation';
     throw new HttpsError(
       'invalid-argument',
-      'Type DELETE exactly to confirm account deletion.',
+      confirmationInvalid
+        ? 'Type DELETE exactly to confirm account deletion.'
+        : 'Select a valid account deletion reason.',
     );
   }
 
@@ -206,13 +555,61 @@ exports.deleteCustomerAccount = onCall({ region }, async (request) => {
       nowIso,
       patchFor: erpEventAnonymizationPatch,
     });
-
-    await db.collection('customers').doc(customerId).delete();
+    const distributorApplications = await anonymizeOwnedDocuments({
+      collection: 'distributor_applications',
+      ownerField: 'customer_id',
+      ownerId: customerId,
+      nowIso,
+      patchFor: (_data, { deleteField }) => ({
+        customer_id: null,
+        contact_name: 'Deleted applicant',
+        company_name: 'Deleted company',
+        phone: deleteField,
+        email: deleteField,
+        country: deleteField,
+        city: deleteField,
+        website: deleteField,
+        sales_channels: deleteField,
+        requested_territories: deleteField,
+        message: deleteField,
+        manager_message: deleteField,
+        legal_accepted_at: deleteField,
+        anonymized_at: nowIso,
+        updated_at: nowIso,
+      }),
+    });
+    const notifications = await deleteOwnedDocuments({
+      collection: 'customer_notifications',
+      ownerField: 'customer_id',
+      ownerId: customerId,
+    });
+    const notificationDevices = await deleteOwnedDocuments({
+      collection: 'notification_devices',
+      ownerField: 'customer_id',
+      ownerId: customerId,
+    });
+    const deletionFeedback = accountDeletionFeedbackDocument(
+      normalizedDeletion,
+      { nowIso },
+    );
+    const finalBatch = db.batch();
+    finalBatch.delete(
+      db.collection('notification_preferences').doc(customerId),
+    );
+    finalBatch.delete(db.collection('customers').doc(customerId));
+    finalBatch.set(
+      db.collection('account_deletion_feedback').doc(),
+      deletionFeedback,
+    );
+    await finalBatch.commit();
     anonymized = {
       orders,
       support_requests: supportRequests,
       payments,
       erp_events: erpEvents,
+      distributor_applications: distributorApplications,
+      customer_notifications: notifications,
+      notification_devices: notificationDevices,
     };
   } catch (error) {
     throw new HttpsError(
@@ -1063,6 +1460,7 @@ exports.updateOrderStatus = onCall({ region }, async (request) => {
   if (status === 'shipped') update.shipped_at = nowIso;
   if (status === 'delivered') update.delivered_at = nowIso;
 
+  let pushPayload = null;
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(orderRef);
     if (!snap.exists) {
@@ -1099,6 +1497,24 @@ exports.updateOrderStatus = onCall({ region }, async (request) => {
     update.activity = appendActivities(order.activity, activities);
     if (stockRelease.released) update.stock_released_at = nowIso;
     tx.update(orderRef, update);
+    if (order.customer_id) {
+      const message =
+        status === 'shipped' && tracking.trackingNumber
+          ? `Cargo tracking: ${tracking.trackingNumber}`
+          : tracking.note || `Your order is now ${status}.`;
+      pushPayload = {
+        customerId: order.customer_id,
+        type: 'order_status',
+        title: orderStatusTitle(status),
+        message,
+        entityId: orderId,
+        action: 'orders',
+      };
+      tx.create(
+        db.collection('customer_notifications').doc(),
+        customerNotification({ ...pushPayload, nowIso }),
+      );
+    }
     createErpEvent(
       tx,
       erpEvent({
@@ -1121,6 +1537,8 @@ exports.updateOrderStatus = onCall({ region }, async (request) => {
       }),
     );
   });
+
+  if (pushPayload) await sendCustomerPush(pushPayload);
 
   return {
     order_id: orderId,
@@ -1171,6 +1589,23 @@ exports.updateSupportStatus = onCall({ region }, async (request) => {
 
   const batch = db.batch();
   batch.update(ticketRef, update);
+  let pushPayload = null;
+  const ticket = snap.data();
+  if (ticket.customer_id) {
+    pushPayload = {
+      customerId: ticket.customer_id,
+      type: 'support_status',
+      title: 'Support request updated',
+      message:
+        normalized.reply || `Your support request is now ${normalized.status}.`,
+      entityId: ticketId,
+      action: 'support',
+    };
+    batch.create(
+      db.collection('customer_notifications').doc(),
+      customerNotification({ ...pushPayload, nowIso }),
+    );
+  }
   batch.create(
     db.collection('erp_events').doc(),
     erpEvent({
@@ -1187,6 +1622,7 @@ exports.updateSupportStatus = onCall({ region }, async (request) => {
     }),
   );
   await batch.commit();
+  if (pushPayload) await sendCustomerPush(pushPayload);
   return {
     ticket_id: ticketId,
     status: normalized.status,

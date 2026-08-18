@@ -3,6 +3,22 @@
 const retainedActivityMessage =
   'Customer details were removed after account deletion.';
 
+const accountDeletionReasonCodes = new Set([
+  'no_longer_needed',
+  'missing_features',
+  'difficult_to_use',
+  'technical_problems',
+  'privacy_concerns',
+  'created_by_mistake',
+  'prefer_not_to_say',
+  'other',
+]);
+
+function compactFeedbackText(value) {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/\s+/g, ' ');
+}
+
 function normalizeAccountDeletionRequest(data) {
   if (
     !data ||
@@ -12,7 +28,42 @@ function normalizeAccountDeletionRequest(data) {
   ) {
     throw new Error('invalid-deletion-confirmation');
   }
-  return { confirmation: 'DELETE' };
+  const reasonCode = compactFeedbackText(data.reason_code);
+  if (!accountDeletionReasonCodes.has(reasonCode)) {
+    throw new Error('invalid-deletion-reason');
+  }
+  const reasonDetail = compactFeedbackText(data.reason_detail);
+  if (
+    reasonDetail.length > 500 ||
+    (reasonCode === 'other' && reasonDetail.length < 3)
+  ) {
+    throw new Error('invalid-deletion-reason-detail');
+  }
+  const requestedLocale = compactFeedbackText(data.locale).toLowerCase();
+  const locale = new Set(['uz', 'ru', 'en']).has(requestedLocale)
+    ? requestedLocale
+    : 'unknown';
+  return {
+    confirmation: 'DELETE',
+    reasonCode,
+    reasonDetail,
+    locale,
+  };
+}
+
+function accountDeletionFeedbackDocument(deletion, options = {}) {
+  const nowIso = deletionTimestamp(options);
+  if (!deletion || !accountDeletionReasonCodes.has(deletion.reasonCode)) {
+    throw new Error('invalid-deletion-feedback');
+  }
+  return {
+    reason_code: deletion.reasonCode,
+    reason_detail: compactFeedbackText(deletion.reasonDetail),
+    locale: deletion.locale || 'unknown',
+    source: 'customer_self_service',
+    schema_version: 1,
+    created_at: nowIso,
+  };
 }
 
 function deletionValue(options) {
@@ -122,6 +173,8 @@ function erpEventAnonymizationPatch(_event = {}, options = {}) {
 }
 
 module.exports = {
+  accountDeletionFeedbackDocument,
+  accountDeletionReasonCodes,
   erpEventAnonymizationPatch,
   normalizeAccountDeletionRequest,
   orderAnonymizationPatch,

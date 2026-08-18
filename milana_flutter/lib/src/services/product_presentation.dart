@@ -1,74 +1,159 @@
 import '../models/cart_item.dart';
 import '../models/product.dart';
+import '../localization/app_localization.dart';
 
-String genderLabel(String gender) {
+String genderLabel(String gender, {String languageCode = defaultLanguageCode}) {
   return switch (gender) {
-    'men' => 'Erkaklar',
-    'kids' => 'Bolalar',
-    'women' => 'Ayollar',
-    _ => 'Hamma uchun',
+    'men' => localizedText('catalog.gender.men', languageCode: languageCode),
+    'kids' => localizedText('catalog.gender.kids', languageCode: languageCode),
+    'women' => localizedText(
+      'catalog.gender.women',
+      languageCode: languageCode,
+    ),
+    _ => localizedText('catalog.gender.all', languageCode: languageCode),
   };
 }
 
-String categoryLabel(String category) {
+String categoryLabel(
+  String category, {
+  String languageCode = defaultLanguageCode,
+}) {
   return switch (category) {
-    'pajamas' => 'Pijama',
-    'robes' => 'Xalat',
-    'homewear' => 'Uy kiyimi',
-    'loungewear' => 'Lounge to‘plam',
-    'family' => 'Oilaviy to‘plam',
-    _ => 'Kiyim',
+    'pajamas' => localizedText(
+      'catalog.category.pajamas',
+      languageCode: languageCode,
+    ),
+    'robes' => localizedText(
+      'catalog.category.robes',
+      languageCode: languageCode,
+    ),
+    'homewear' => localizedText(
+      'catalog.category.homewear',
+      languageCode: languageCode,
+    ),
+    'loungewear' => localizedText(
+      'catalog.category.loungewear',
+      languageCode: languageCode,
+    ),
+    'family' => localizedText(
+      'catalog.category.family',
+      languageCode: languageCode,
+    ),
+    _ => localizedText('catalog.category.default', languageCode: languageCode),
   };
 }
 
-List<ProductSpec> productSpecs(Product product, CartItem item) {
+List<ProductSpec> productSpecs(
+  Product product,
+  CartItem item, {
+  String languageCode = defaultLanguageCode,
+}) {
   return [
     ProductSpec(
-      label: 'Model',
-      value: product.modelNo.isEmpty ? product.name : product.modelNo,
+      label: localizedText('product.spec.model', languageCode: languageCode),
+      value: product.modelNo.isEmpty
+          ? product.nameFor(languageCode)
+          : product.modelNo,
     ),
-    ProductSpec(label: 'Bo‘lim', value: genderLabel(product.gender)),
-    ProductSpec(label: 'Kategoriya', value: categoryLabel(product.category)),
     ProductSpec(
-      label: 'Buyurtma turi',
-      value: '${orderUnitLabel(item.unitType)} · ${item.piecesPerUnit} dona',
+      label: localizedText('product.spec.gender', languageCode: languageCode),
+      value: genderLabel(product.gender, languageCode: languageCode),
     ),
-    if (product.material.isNotEmpty)
-      ProductSpec(label: 'Material', value: product.material),
-    if (product.composition.isNotEmpty)
-      ProductSpec(label: 'Tarkib', value: product.composition),
-    if (product.season.isNotEmpty)
-      ProductSpec(label: 'Mavsum', value: product.season),
+    ProductSpec(
+      label: localizedText('product.spec.category', languageCode: languageCode),
+      value: categoryLabel(product.category, languageCode: languageCode),
+    ),
+    ProductSpec(
+      label: localizedText(
+        'product.spec.order_type',
+        languageCode: languageCode,
+      ),
+      value:
+          '${orderUnitLabel(item.unitType, languageCode: languageCode)} · '
+          '${localizedText('product.unit', languageCode: languageCode, args: {'count': '${item.piecesPerUnit}'})}',
+    ),
+    if (product.materialFor(languageCode).isNotEmpty)
+      ProductSpec(
+        label: localizedText(
+          'product.spec.material',
+          languageCode: languageCode,
+        ),
+        value: product.materialFor(languageCode),
+      ),
+    if (product.compositionFor(languageCode).isNotEmpty)
+      ProductSpec(
+        label: localizedText(
+          'product.spec.composition',
+          languageCode: languageCode,
+        ),
+        value: product.compositionFor(languageCode),
+      ),
+    if (product.seasonFor(languageCode).isNotEmpty)
+      ProductSpec(
+        label: localizedText('product.spec.season', languageCode: languageCode),
+        value: product.seasonFor(languageCode),
+      ),
     if (product.availableQop != null)
       ProductSpec(
-        label: 'Omborda',
-        value: '${_stockLabel(product.availableQop!)} qop ekvivalenti',
+        label: localizedText('product.spec.stock', languageCode: languageCode),
+        value:
+            '${_stockLabel(product.availableQop!)} ${localizedText('product.unit.bag', languageCode: languageCode)}',
       ),
   ];
 }
 
-List<ProductHighlight> productHighlights(Product product) {
+List<ProductHighlight> productHighlights(
+  Product product, {
+  String languageCode = defaultLanguageCode,
+}) {
   return [
     ProductHighlight(
-      title: 'Qadoq yoki qop',
-      text:
-          'Minimal buyurtma ${product.orderUnitFor(packUnitType).pieces} donalik qadoqdan boshlanadi. Qopda 60 dona.',
+      title: localizedText(
+        'product.highlight.manager',
+        languageCode: languageCode,
+      ),
+      text: localizedText('product.highlight.pack', languageCode: languageCode),
     ),
-    const ProductHighlight(
-      title: 'Cargo / pochta',
-      text: 'Yetkazib berish xarajati mijoz tomonidan to‘lanadi.',
+    ProductHighlight(
+      title: localizedText(
+        'product.highlight.payment',
+        languageCode: languageCode,
+      ),
+      text: localizedText(
+        'product.highlight.delivery_cost',
+        languageCode: languageCode,
+      ),
     ),
     ProductHighlight(
       title: product.preorder
-          ? 'Oldindan buyurtma'
+          ? localizedText(
+              'product.highlight.preorder',
+              languageCode: languageCode,
+            )
           : !product.canOrderWholesale
-          ? 'Hozircha mavjud emas'
+          ? localizedText(
+              'product.highlight.unavailable',
+              languageCode: languageCode,
+            )
           : product.price > 0
-          ? 'Narx tasdiqlanadi'
-          : 'Menejer bilan',
+          ? localizedText(
+              'product.highlight.price_confirmed',
+              languageCode: languageCode,
+            )
+          : localizedText(
+              'product.highlight.with_manager',
+              languageCode: languageCode,
+            ),
       text: product.availableQop == null
-          ? 'Mavjudlik va to‘lov menejer orqali yakuniy tasdiqlanadi.'
-          : 'Ombor qoldig‘i: ${_stockLabel(product.availableQop!)} qop ekvivalenti. Yakuniy tasdiq menejer orqali.',
+          ? localizedText(
+              'product.highlight.pending_confirmation',
+              languageCode: languageCode,
+            )
+          : localizedText(
+              'product.highlight.stock',
+              languageCode: languageCode,
+              args: {'count': _stockLabel(product.availableQop!)},
+            ),
     ),
   ];
 }
@@ -77,27 +162,37 @@ String productInquiryShareText(
   Product product, {
   CartItem? item,
   String managerPhone = '+998501551010',
+  String languageCode = defaultLanguageCode,
 }) {
   final qopItem = item ?? CartItem(product: product);
   final mix = qopItem.sizeMix
       .map((row) => '${row['size']}×${row['qty']}')
       .join(', ');
   final available = product.availableQop == null
-      ? 'Menejer tasdiqlaydi'
+      ? localizedText(
+          'product.availability.manager',
+          languageCode: languageCode,
+        )
       : product.availableQop! <= 0
-      ? 'Mavjud emas'
-      : '${_stockLabel(product.availableQop!)} qop';
+      ? localizedText(
+          'product.availability.out_of_stock',
+          languageCode: languageCode,
+        )
+      : '${_stockLabel(product.availableQop!)} ${localizedText('product.unit.bag', languageCode: languageCode)}';
   final lines = [
-    'Milana Premium model',
-    'Model: ${product.name}',
-    'Bo‘lim: ${genderLabel(product.gender)}',
-    'Kategoriya: ${categoryLabel(product.category)}',
-    if (product.fabric.isNotEmpty) 'Mato: ${product.fabric}',
-    'Dona narxi: \$${product.price.toStringAsFixed(2)}',
-    '${orderUnitLabel(qopItem.unitType)}: ${qopItem.piecesPerUnit} ta kiyim · \$${qopItem.packagePrice.toStringAsFixed(2)}',
-    'O‘lcham tarkibi: $mix',
-    'Mavjudlik: $available',
-    'Menejer: $managerPhone',
+    localizedText('product.share.title', languageCode: languageCode),
+    '${localizedText('product.share.model', languageCode: languageCode)}: ${product.nameFor(languageCode)}',
+    '${localizedText('product.share.gender', languageCode: languageCode)}: '
+        '${genderLabel(product.gender, languageCode: languageCode)}',
+    '${localizedText('product.share.category', languageCode: languageCode)}: '
+        '${categoryLabel(product.category, languageCode: languageCode)}',
+    if (product.fabricFor(languageCode).isNotEmpty)
+      '${localizedText('product.spec.material', languageCode: languageCode)}: ${product.fabricFor(languageCode)}',
+    '${localizedText('product.share.price_per_item', languageCode: languageCode)}: \$${product.price.toStringAsFixed(2)}',
+    '${localizedText('product.share.unit', languageCode: languageCode)}: ${qopItem.piecesPerUnit} ${localizedText('product.unit.item', languageCode: languageCode)} · \$${qopItem.packagePrice.toStringAsFixed(2)}',
+    '${localizedText('product.share.size_mix', languageCode: languageCode)}: $mix',
+    '${localizedText('product.share.availability', languageCode: languageCode)}: $available',
+    '${localizedText('product.share.manager', languageCode: languageCode)}: $managerPhone',
   ];
   return lines.join('\n');
 }

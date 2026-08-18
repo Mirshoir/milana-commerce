@@ -9,18 +9,30 @@ void main() {
   });
 
   test('auth form validators reject invalid values', () {
-    expect(validateEmail(''), 'Email kiriting');
-    expect(validateEmail('buyer'), 'Email noto‘g‘ri');
+    expect(validateEmail('', languageCode: 'uz'), 'Email kiriting');
+    expect(validateEmail('buyer', languageCode: 'uz'), 'Email noto‘g‘ri');
     expect(validateEmail('buyer@example.com'), isNull);
-    expect(validatePassword('', signUp: false), 'Parol kiriting');
-    expect(validatePassword('short', signUp: true), 'Kamida 8 ta belgi');
+    expect(
+      validatePassword('', signUp: false, languageCode: 'uz'),
+      'Parol kiriting',
+    );
+    expect(
+      validatePassword('short', signUp: true, languageCode: 'uz'),
+      'Kamida 8 ta belgi',
+    );
     expect(validatePassword('strong-pass', signUp: true), isNull);
-    expect(validateRequiredText(' ', 'Ism'), 'Ism kiriting');
-    expect(validatePhone(''), 'Telefon kiriting');
-    expect(validatePhone('12345'), 'Telefonni tekshiring');
+    expect(
+      validateRequiredText(' ', 'Ism', languageCode: 'uz'),
+      'Ism kiriting',
+    );
+    expect(validatePhone('', languageCode: 'uz'), 'Telefon kiriting');
+    expect(validatePhone('12345', languageCode: 'uz'), 'Telefonni tekshiring');
     expect(validatePhone('+998 90 123 45 67'), isNull);
     expect(validatePhone('+1 (212) 555-0199'), isNull);
-    expect(validatePhone('+998 90 phone'), 'Telefonni tekshiring');
+    expect(
+      validatePhone('+998 90 phone', languageCode: 'uz'),
+      'Telefonni tekshiring',
+    );
   });
 
   test('phone helpers normalize whitespace and expose digits', () {
@@ -44,15 +56,39 @@ void main() {
 
   test('authErrorMessage maps Firebase-like errors to customer text', () {
     expect(
-      authErrorMessage(Exception('user-not-found')),
+      authErrorMessage(Exception('user-not-found'), languageCode: 'uz'),
       contains('noto‘g‘ri'),
     );
     expect(
-      authErrorMessage(Exception('email-already-in-use')),
+      authErrorMessage(Exception('email-already-in-use'), languageCode: 'uz'),
       contains('akkaunt mavjud'),
     );
-    expect(authErrorMessage(Exception('weak-password')), contains('oddiy'));
-    expect(authErrorMessage(ArgumentError('Rozilik kerak.')), 'Rozilik kerak.');
+    expect(
+      authErrorMessage(Exception('weak-password'), languageCode: 'uz'),
+      contains('oddiy'),
+    );
+    expect(
+      authErrorMessage(ArgumentError('Rozilik kerak.'), languageCode: 'uz'),
+      'Rozilik kerak.',
+    );
+    expect(
+      authErrorMessage(Exception('apple-signin-cancelled'), languageCode: 'en'),
+      'Apple sign in was cancelled.',
+    );
+    expect(
+      authErrorMessage(
+        Exception('apple-signin-failed:operation-not-allowed'),
+        languageCode: 'en',
+      ),
+      'Apple sign in failed. Please try again.',
+    );
+    expect(
+      authErrorMessage(
+        Exception('[firebase_auth/popup-closed-by-user] popup closed'),
+        languageCode: 'en',
+      ),
+      'Google sign in was cancelled.',
+    );
   });
 
   test('legal links require public HTTPS destinations', () {
@@ -92,12 +128,21 @@ void main() {
     );
 
     await expectLater(
-      auth.deleteAccount(confirmation: 'keep'),
+      auth.deleteAccount(confirmation: 'keep', reasonCode: 'no_longer_needed'),
       throwsA(isA<ArgumentError>()),
     );
     expect(auth.customer, isNotNull);
 
-    await auth.deleteAccount(confirmation: ' delete ');
+    await expectLater(
+      auth.deleteAccount(confirmation: 'DELETE', reasonCode: 'unknown'),
+      throwsA(isA<ArgumentError>()),
+    );
+    expect(auth.customer, isNotNull);
+
+    await auth.deleteAccount(
+      confirmation: ' delete ',
+      reasonCode: 'no_longer_needed',
+    );
     expect(auth.customer, isNull);
   });
 

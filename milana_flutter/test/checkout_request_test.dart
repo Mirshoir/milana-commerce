@@ -42,6 +42,8 @@ void main() {
     expect(json['client_order_id'], 'co_2026_checkout');
     expect(json['manager_id'], 4);
     expect(json['source'], 'flutter');
+    expect(json['market_type'], 'internal');
+    expect(json['order_type'], 'wholesale');
     expect(json['items'], [
       {
         'product_id': '5287',
@@ -95,10 +97,29 @@ void main() {
 
     expect(json['manager_id'], 2);
     expect(json['source'], 'flutter');
+    expect(json['market_type'], 'internal');
     expect(json['order_type'], 'wholesale');
     expect(json['items'], [
       {'id': 5287, 'qty': 3, 'unit_type': 'qop'},
     ]);
+  });
+
+  test('checkout normalizes the supported export market type', () {
+    const request = CheckoutRequest(
+      name: 'Ali',
+      phone: '+998 90 123 45 67',
+      city: 'Moscow',
+      address: 'Delivery depot',
+      comment: '',
+      paymentMethod: 'manager',
+      managerId: 2,
+      marketType: ' EXPORT ',
+      items: [CartItem(product: product)],
+    );
+
+    expect(request.toBackendJson()['market_type'], 'export');
+    expect(request.toFunctionJson()['market_type'], 'export');
+    expect(request.toFirestore('MP-1')['market_type'], 'export');
   });
 
   test('payment submission sends order payment proof to callable', () {
@@ -149,13 +170,13 @@ void main() {
       supportPhone: '+998501551010',
     );
 
-    final text = orderReceiptShareText(receipt);
+    final text = orderReceiptShareText(receipt, languageCode: 'uz');
 
-    expect(text, contains('Milana Premium buyurtma'));
+    expect(text, contains('Buyurtma ma’lumoti'));
     expect(text, contains('Raqam: MP-2026-ABCD'));
     expect(text, contains(r'Jami: $540.00'));
-    expect(text, contains('To‘lov: Payme'));
-    expect(text, contains('Reference: MP2026ABCD'));
+    expect(text, contains('To‘lov turi: Payme'));
+    expect(text, contains('To‘lov referecensiya: MP2026ABCD'));
     expect(text, contains('Menejer: +998501551010'));
   });
 }

@@ -1,6 +1,7 @@
 'use strict';
 
 const { HttpsError } = require('firebase-functions/v2/https');
+const logger = require('firebase-functions/logger');
 const { requestPublicApi } = require('./public_api');
 
 const websiteSessionTokenFields = new Set([
@@ -48,6 +49,23 @@ function stripWebsiteSessionTokens(value) {
     sanitized[key] = stripWebsiteSessionTokens(entry);
   }
   return sanitized;
+}
+
+function normalizeWebsiteOrderRequest(value) {
+  const data =
+    value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const requestedMarketType = String(data.market_type || '')
+    .trim()
+    .toLowerCase();
+  const requestedOrderType = String(data.order_type || '')
+    .trim()
+    .toLowerCase();
+  return {
+    ...data,
+    source: 'flutter',
+    market_type: requestedMarketType === 'export' ? 'export' : 'internal',
+    order_type: requestedOrderType === 'retail' ? 'retail' : 'wholesale',
+  };
 }
 
 function websitePublicApiError(result, fallback) {
@@ -128,10 +146,23 @@ async function forwardWebsiteRequest({
   optionalSession = false,
   requestApi = requestPublicApi,
 }) {
-  const token = await validatedWebsiteSession(request, {
-    optional: optionalSession,
-    requestApi,
-  });
+  let token = '';
+  try {
+    token = await validatedWebsiteSession(request, {
+      optional: optionalSession,
+      requestApi,
+    });
+  } catch (error) {
+    if (!optionalSession) throw error;
+    logger.warn(
+      'Optional website session was rejected; continuing as a guest.',
+      {
+        path,
+        method,
+        error_code: String(error?.code || error?.name || 'unknown'),
+      },
+    );
+  }
   let result;
   try {
     result = await requestApi({
@@ -140,10 +171,24 @@ async function forwardWebsiteRequest({
       data: data === undefined ? undefined : stripWebsiteSessionTokens(data),
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
-  } catch (_) {
+  } catch (error) {
+    logger.error('Website API request failed before receiving a response.', {
+      path,
+      method,
+      error_code: String(error?.code || error?.name || 'unknown'),
+    });
     throw new HttpsError('unavailable', fallback);
   }
   if (!result?.ok || !result.body || typeof result.body !== 'object') {
+    logger.warn('Website API request was rejected.', {
+      path,
+      method,
+      status: Number(result?.status || 0),
+      error_code:
+        result?.body && typeof result.body.error === 'string'
+          ? result.body.error
+          : 'invalid_response',
+    });
     throw websitePublicApiError(result, fallback);
   }
   return result.body;
@@ -152,6 +197,7 @@ async function forwardWebsiteRequest({
 module.exports = {
   forwardWebsiteRequest,
   normalizeEmail,
+  normalizeWebsiteOrderRequest,
   stripWebsiteSessionTokens,
   suppliedWebsiteSessionToken,
   validatedWebsiteSession,

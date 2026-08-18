@@ -157,8 +157,12 @@
       "id": "ai-generated-content-policy",
       "status": "unknown",
       "answer": null,
-      "rationale": "The catalog assistant must be reviewed for the current AI-generated-content reporting policy.",
-      "evidence": [{"kind": "source-code", "ref": "lib/src/services/assistant_service.dart"}],
+      "rationale": "The catalog assistant now exposes a per-response in-app report control; production ticket routing and policy handling still require owner approval.",
+      "evidence": [
+        {"kind": "source-code", "ref": "lib/src/app.dart"},
+        {"kind": "source-code", "ref": "functions/support.js"},
+        {"kind": "test-report", "ref": "test/app_widget_accessibility_test.dart"}
+      ],
       "approvedBy": null,
       "approvedAt": null
     }

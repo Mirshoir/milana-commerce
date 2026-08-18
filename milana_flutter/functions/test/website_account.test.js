@@ -4,12 +4,37 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   forwardWebsiteRequest,
+  normalizeWebsiteOrderRequest,
   stripWebsiteSessionTokens,
   validatedWebsiteSession,
 } = require('../website_account');
 
 const websiteToken =
   '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+test('normalizes legacy Flutter orders to the current website contract', () => {
+  assert.deepEqual(
+    normalizeWebsiteOrderRequest({
+      order_type: 'wholesale',
+      customer: { name: 'Ali' },
+    }),
+    {
+      source: 'flutter',
+      market_type: 'internal',
+      order_type: 'wholesale',
+      customer: { name: 'Ali' },
+    },
+  );
+
+  assert.equal(
+    normalizeWebsiteOrderRequest({ market_type: ' EXPORT ' }).market_type,
+    'export',
+  );
+  assert.equal(
+    normalizeWebsiteOrderRequest({ order_type: ' RETAIL ' }).order_type,
+    'retail',
+  );
+});
 
 function firebaseRequest({
   uid = 'firebase-buyer-1',
@@ -166,4 +191,30 @@ test('authenticated proxy forwarding keeps the website token only in headers', a
     assert.equal(Object.hasOwn(calls[1].data, '_website_session_token'), false);
     assert.equal(JSON.stringify(calls[1].data).includes(websiteToken), false);
   }
+});
+
+test('optional checkout falls back to guest when the website session expired', async () => {
+  const calls = [];
+  const request = firebaseRequest();
+  const response = await forwardWebsiteRequest({
+    request,
+    path: '/api/orders',
+    method: 'POST',
+    data: request.data,
+    fallback: 'request failed',
+    optionalSession: true,
+    requestApi: async (apiRequest) => {
+      calls.push(apiRequest);
+      if (apiRequest.path === '/api/auth/me') {
+        return { ok: false, status: 401, body: { error: 'expired' } };
+      }
+      return { ok: true, status: 201, body: { number: 'MP-1' } };
+    },
+  });
+
+  assert.deepEqual(response, { number: 'MP-1' });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].path, '/api/orders');
+  assert.equal(calls[1].headers, undefined);
+  assert.equal(Object.hasOwn(calls[1].data, 'website_session_token'), false);
 });

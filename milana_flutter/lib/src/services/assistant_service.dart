@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/product.dart';
+import '../localization/app_localization.dart';
 import 'catalog_repository.dart';
 
 const _defaultAssistantTimeout = Duration(seconds: 20);
@@ -34,7 +35,7 @@ class AssistantService {
   Future<AssistantReply> send({
     required String message,
     int? sessionId,
-    String lang = 'uz',
+    String lang = defaultLanguageCode,
   }) async {
     final response = await _client
         .post(
@@ -63,8 +64,9 @@ class AssistantService {
     final rows = body['products'] is List ? body['products'] as List : const [];
     return AssistantReply(
       sessionId: (body['session_id'] as num?)?.toInt(),
-      reply: '${body['reply'] ?? 'Rahmat. Menejer tez orada javob beradi.'}'
-          .trim(),
+      reply:
+          '${body['reply'] ?? localizedText('assistant.fallback', languageCode: lang)}'
+              .trim(),
       products: rows
           .whereType<Map>()
           .map((row) => Product.fromJson(row.cast<String, dynamic>()))

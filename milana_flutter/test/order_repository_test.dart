@@ -246,6 +246,8 @@ void main() {
           calls.add(callableName);
           expect(data?['_website_session_token'], session);
           expect(data?['source'], 'flutter');
+          expect(data?['market_type'], 'internal');
+          expect(data?['order_type'], 'wholesale');
           return {
             'id': 93,
             'number': 'MP-2026-0093',

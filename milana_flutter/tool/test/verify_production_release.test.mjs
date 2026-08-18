@@ -104,6 +104,7 @@ async function fixture(options = {}) {
 PRODUCT_BUNDLE_IDENTIFIER = ${options.iosId ?? iosId};
 PRODUCT_BUNDLE_IDENTIFIER = ${options.iosId ?? iosId}.RunnerTests;
 PrivacyInfo.xcprivacy in Resources
+CODE_SIGN_ENTITLEMENTS = Runner/RunnerRelease.entitlements;
 `,
   );
   await write(
@@ -132,7 +133,16 @@ PrivacyInfo.xcprivacy in Resources
 <string>NSPrivacyCollectedDataTypePurchaseHistory</string>
 <string>NSPrivacyCollectedDataTypeCustomerSupport</string>
 <string>NSPrivacyCollectedDataTypeProductInteraction</string>
+<string>NSPrivacyCollectedDataTypeDeviceID</string>
+<string>NSPrivacyCollectedDataTypeCoarseLocation</string>
+<string>NSPrivacyCollectedDataTypeOtherDiagnosticData</string>
 </array>\n`,
+  );
+  await write(
+    root,
+    'ios/Runner/RunnerRelease.entitlements',
+    `<key>aps-environment</key><string>production</string>
+<key>com.apple.developer.applesignin</key><array><string>Default</string></array>\n`,
   );
 
   return root;
@@ -211,6 +221,18 @@ test('rejects invalid versioning and identifiers that drift from Firebase', asyn
   t.after(() => fs.rm(root, { recursive: true, force: true }));
 
   await expectBlockers(root, ['app-version', 'android-application-id', 'ios-bundle-id']);
+});
+
+test('rejects iOS release entitlements without production push and Apple sign-in', async (t) => {
+  const root = await fixture();
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await write(
+    root,
+    'ios/Runner/RunnerRelease.entitlements',
+    '<key>aps-environment</key><string>development</string>\n',
+  );
+
+  await expectBlockers(root, ['ios-release-entitlements'], { platform: 'ios' });
 });
 
 test('process environment can supply release values without exposing secret details', async (t) => {

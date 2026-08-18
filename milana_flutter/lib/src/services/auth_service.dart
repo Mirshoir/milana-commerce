@@ -4,7 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
+import '../localization/app_localization.dart';
 import '../models/cart_item.dart';
 import 'auth_forms.dart';
 import 'cart_store.dart';
@@ -15,6 +17,19 @@ import 'recent_products_store.dart';
 import 'website_session_service.dart';
 
 const _firebaseOperationTimeout = Duration(seconds: 30);
+const _googleClientId = String.fromEnvironment('GOOGLE_CLIENT_ID');
+const _googleServerClientId = String.fromEnvironment('GOOGLE_SERVER_CLIENT_ID');
+
+const Set<String> accountDeletionReasonCodes = {
+  'no_longer_needed',
+  'missing_features',
+  'difficult_to_use',
+  'technical_problems',
+  'privacy_concerns',
+  'created_by_mistake',
+  'prefer_not_to_say',
+  'other',
+};
 
 enum CommerceAccountState {
   inactive,
@@ -32,6 +47,8 @@ class Customer {
     required this.phone,
     this.city = '',
     this.address = '',
+    this.companyName = '',
+    this.country = '',
     this.savedProductIds = const <String>{},
     this.recentProductIds = const <String>[],
     this.cartItems = const <CartItem>[],
@@ -43,12 +60,16 @@ class Customer {
   final String phone;
   final String city;
   final String address;
+  final String companyName;
+  final String country;
   final Set<String> savedProductIds;
   final List<String> recentProductIds;
   final List<CartItem> cartItems;
 }
 
 class AuthService extends ChangeNotifier {
+  static Future<void>? _googleSignInInit;
+
   AuthService({
     required this.firebaseEnabled,
     bool? enableLocalAuth,
@@ -92,6 +113,30 @@ class AuthService extends ChangeNotifier {
   String? get websiteSessionToken => _websiteSessionToken;
   String get commerceAccountError => _commerceAccountError;
   String? get lastDeletedCustomerId => _lastDeletedCustomerId;
+
+  Future<void> _initializeGoogleSignIn() async {
+    if (_googleSignInInit != null) {
+      await _googleSignInInit;
+      return;
+    }
+    try {
+      if (_googleClientId.isEmpty && _googleServerClientId.isEmpty) {
+        if (kIsWeb) {
+          throw Exception('google-client-id-missing');
+        }
+      }
+      _googleSignInInit = GoogleSignIn.instance.initialize(
+        clientId: _googleClientId.isEmpty ? null : _googleClientId,
+        serverClientId: _googleServerClientId.isEmpty
+            ? null
+            : _googleServerClientId,
+      );
+      await _googleSignInInit;
+    } catch (_) {
+      _googleSignInInit = null;
+      rethrow;
+    }
+  }
 
   void _watchFirebaseCustomer(fb.User? user) {
     final generation = ++_websiteSessionGeneration;
@@ -137,6 +182,8 @@ class AuthService extends ChangeNotifier {
             phone: '${data['phone'] ?? user.phoneNumber ?? ''}',
             city: '${data['city'] ?? ''}',
             address: '${data['address'] ?? ''}',
+            companyName: '${data['company_name'] ?? ''}',
+            country: '${data['country'] ?? ''}',
             savedProductIds: _savedProductIds(data['saved_product_ids']),
             recentProductIds: _orderedProductIds(data['recent_product_ids']),
             cartItems: _cartItems(data['cart_items']),
@@ -167,6 +214,8 @@ class AuthService extends ChangeNotifier {
           'phone': user.phoneNumber ?? '',
           'city': '',
           'address': '',
+          'company_name': '',
+          'country': '',
           'status': 'active',
           'created_at': DateTime.now().toUtc().toIso8601String(),
           'updated_at': DateTime.now().toUtc().toIso8601String(),
@@ -406,6 +455,62 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> signInWithGoogle() async {
+    if (!firebaseEnabled) {
+      _requireLocalAuth();
+    }
+
+    // google_sign_in's authenticate() API is intentionally unavailable on
+    // web. Firebase Auth provides the supported popup flow there and lets us
+    // keep the same branded app button while native platforms continue using
+    // GoogleSignIn below.
+    if (kIsWeb) {
+      final provider = fb.GoogleAuthProvider()
+        ..addScope('email')
+        ..addScope('profile');
+      await fb.FirebaseAuth.instance.signInWithPopup(provider);
+      return;
+    }
+
+    await _initializeGoogleSignIn();
+    final account = await GoogleSignIn.instance.authenticate(
+      scopeHint: const ['email', 'profile'],
+    );
+    final auth = account.authentication;
+    if (auth.idToken == null) {
+      throw Exception('google-signin-failed');
+    }
+    final credential = fb.GoogleAuthProvider.credential(
+      idToken: auth.idToken,
+      accessToken: null,
+    );
+    await fb.FirebaseAuth.instance.signInWithCredential(credential);
+  }
+
+  Future<void> signInWithApple() async {
+    if (!firebaseEnabled) {
+      _requireLocalAuth();
+    }
+
+    final provider = fb.AppleAuthProvider()
+      ..addScope('email')
+      ..addScope('name');
+    try {
+      if (kIsWeb) {
+        await fb.FirebaseAuth.instance.signInWithPopup(provider);
+      } else {
+        await fb.FirebaseAuth.instance.signInWithProvider(provider);
+      }
+    } on fb.FirebaseAuthException catch (error) {
+      if (error.code == 'web-context-canceled' ||
+          error.code == 'popup-closed-by-user' ||
+          error.code == 'canceled-popup-request') {
+        throw Exception('apple-signin-cancelled');
+      }
+      throw Exception('apple-signin-failed:${error.code}');
+    }
+  }
+
   Future<void> signUp({
     required String name,
     required String phone,
@@ -445,6 +550,8 @@ class AuthService extends ChangeNotifier {
               'phone': normalizedPhone,
               'city': normalizedCity,
               'address': normalizedAddress,
+              'company_name': '',
+              'country': '',
               'status': 'active',
               'legal_consent_version': legalConsentVersion,
               'legal_accepted_at': DateTime.now().toUtc().toIso8601String(),
@@ -505,6 +612,8 @@ class AuthService extends ChangeNotifier {
     required String phone,
     String city = '',
     String address = '',
+    String companyName = '',
+    String country = '',
   }) async {
     final current = _customer;
     if (current == null) return;
@@ -514,6 +623,16 @@ class AuthService extends ChangeNotifier {
       address,
       max: 200,
       label: 'Manzil',
+    );
+    final normalizedCompanyName = normalizeProfileText(
+      companyName,
+      max: 160,
+      label: 'Kompaniya',
+    );
+    final normalizedCountry = normalizeProfileText(
+      country,
+      max: 80,
+      label: 'Mamlakat',
     );
     if (firebaseEnabled) {
       final user = fb.FirebaseAuth.instance.currentUser;
@@ -527,6 +646,8 @@ class AuthService extends ChangeNotifier {
             'phone': normalizedPhone,
             'city': normalizedCity,
             'address': normalizedAddress,
+            'company_name': normalizedCompanyName,
+            'country': normalizedCountry,
             'status': 'active',
             'updated_at': DateTime.now().toUtc().toIso8601String(),
           }, SetOptions(merge: true));
@@ -537,6 +658,8 @@ class AuthService extends ChangeNotifier {
         phone: normalizedPhone,
         city: normalizedCity,
         address: normalizedAddress,
+        companyName: normalizedCompanyName,
+        country: normalizedCountry,
         savedProductIds: current.savedProductIds,
         recentProductIds: current.recentProductIds,
         cartItems: current.cartItems,
@@ -553,6 +676,8 @@ class AuthService extends ChangeNotifier {
       phone: normalizedPhone,
       city: normalizedCity,
       address: normalizedAddress,
+      companyName: normalizedCompanyName,
+      country: normalizedCountry,
       savedProductIds: current.savedProductIds,
       recentProductIds: current.recentProductIds,
       cartItems: current.cartItems,
@@ -590,6 +715,8 @@ class AuthService extends ChangeNotifier {
       phone: current.phone,
       city: current.city,
       address: current.address,
+      companyName: current.companyName,
+      country: current.country,
       savedProductIds: saved,
       recentProductIds: current.recentProductIds,
       cartItems: current.cartItems,
@@ -629,6 +756,8 @@ class AuthService extends ChangeNotifier {
       phone: current.phone,
       city: current.city,
       address: current.address,
+      companyName: current.companyName,
+      country: current.country,
       savedProductIds: current.savedProductIds,
       recentProductIds: List.unmodifiable(recent),
       cartItems: current.cartItems,
@@ -665,6 +794,8 @@ class AuthService extends ChangeNotifier {
       phone: current.phone,
       city: current.city,
       address: current.address,
+      companyName: current.companyName,
+      country: current.country,
       savedProductIds: current.savedProductIds,
       recentProductIds: current.recentProductIds,
       cartItems: List.unmodifiable(compactItems),
@@ -690,9 +821,24 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  Future<void> deleteAccount({required String confirmation}) async {
+  Future<void> deleteAccount({
+    required String confirmation,
+    required String reasonCode,
+    String reasonDetail = '',
+    String languageCode = defaultLanguageCode,
+  }) async {
     if (confirmation.trim().toUpperCase() != 'DELETE') {
       throw ArgumentError('Tasdiqlash uchun DELETE deb yozing.');
+    }
+    final normalizedReasonCode = reasonCode.trim();
+    final normalizedReasonDetail = reasonDetail.trim();
+    if (!accountDeletionReasonCodes.contains(normalizedReasonCode) ||
+        normalizedReasonDetail.length > 500 ||
+        (normalizedReasonCode == 'other' &&
+            normalizedReasonDetail.length < 3)) {
+      throw ArgumentError(
+        localizedText('delete.reason_invalid', languageCode: languageCode),
+      );
     }
     final deletedCustomerId = _customer?.id;
     if (firebaseEnabled) {
@@ -700,7 +846,12 @@ class AuthService extends ChangeNotifier {
         region: 'asia-southeast1',
       ).httpsCallable('deleteCustomerAccount');
       await callable
-          .call<void>({'confirmation': 'DELETE'})
+          .call<void>({
+            'confirmation': 'DELETE',
+            'reason_code': normalizedReasonCode,
+            'reason_detail': normalizedReasonDetail,
+            'locale': normalizeLanguageCode(languageCode),
+          })
           .timeout(_firebaseOperationTimeout);
       final websiteToken = _websiteSessionToken;
       _websiteSessionGeneration += 1;

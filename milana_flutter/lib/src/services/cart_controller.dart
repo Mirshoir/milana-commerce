@@ -42,12 +42,42 @@ class CartController extends ChangeNotifier {
   double get total => _items.fold(0, (sum, item) => sum + item.lineTotal);
 
   int quantityLimit(Product product, {String unitType = bagUnitType}) {
+    final normalizedUnit = normalizeOrderUnitType(unitType);
+    final staticLimit = _staticQuantityLimit(product, unitType: normalizedUnit);
+    if (staticLimit < 1 || product.availableQop == null) return staticLimit;
+    final pieces = product.orderUnitFor(normalizedUnit).pieces;
+    final remainingPieces =
+        _availablePieces(product)! -
+        _usedPiecesForProduct(product, exceptUnitType: normalizedUnit);
+    return (remainingPieces / pieces).floor().clamp(0, staticLimit).toInt();
+  }
+
+  int _staticQuantityLimit(Product product, {String unitType = bagUnitType}) {
     if (!product.active || !product.canOrderWholesale) return 0;
+    final minimum = product.orderUnitFor(unitType).minQty;
     final available = product.availableQop;
-    if (available == null) return 20;
+    if (available == null) return minimum > 20 ? minimum : 20;
     final pieces = product.orderUnitFor(unitType).pieces;
-    final availableUnits = (available * bagSize / pieces).floor();
-    return availableUnits.clamp(0, 20).toInt();
+    final availableUnits = (_availablePieces(product)! / pieces).floor();
+    if (availableUnits < minimum) return 0;
+    return availableUnits.clamp(0, minimum > 20 ? minimum : 20).toInt();
+  }
+
+  int? _availablePieces(Product product) {
+    final available = product.availableQop;
+    if (available == null) return null;
+    return (available * bagSize).floor();
+  }
+
+  int _usedPiecesForProduct(Product product, {String? exceptUnitType}) {
+    return _items
+        .where(
+          (item) =>
+              item.product.id == product.id &&
+              (exceptUnitType == null ||
+                  item.orderUnit.unitType != exceptUnitType),
+        )
+        .fold(0, (sum, item) => sum + item.pieceCount);
   }
 
   int quantityOf(Product product, {String unitType = bagUnitType}) {
@@ -65,9 +95,12 @@ class CartController extends ChangeNotifier {
     int quantity = 1,
     String unitType = bagUnitType,
   }) {
+    if (quantity < 1) return false;
     final limit = quantityLimit(product, unitType: unitType);
-    return limit > 0 &&
-        quantityOf(product, unitType: unitType) + quantity <= limit;
+    final existing = quantityOf(product, unitType: unitType);
+    final minimum = product.orderUnitFor(unitType).minQty;
+    final requested = existing == 0 && quantity < minimum ? minimum : quantity;
+    return limit > 0 && existing + requested <= limit;
   }
 
   Future<void> _restore() async {
@@ -199,7 +232,8 @@ class CartController extends ChangeNotifier {
     };
     for (final item in pending) {
       final existing = byId[item.storageKey];
-      final limit = quantityLimit(item.product, unitType: item.unitType);
+      final limit = _staticQuantityLimit(item.product, unitType: item.unitType);
+      if (limit < 1) continue;
       byId[item.storageKey] = existing == null
           ? item
           : item.copyWith(
@@ -219,19 +253,34 @@ class CartController extends ChangeNotifier {
   }
 
   List<CartItem> _normalizeItems(Iterable<CartItem> items) {
-    return items
-        .where(
-          (item) => quantityLimit(item.product, unitType: item.unitType) > 0,
-        )
-        .map(
-          (item) => item.copyWith(
-            quantity: item.quantity.clamp(
-              1,
-              quantityLimit(item.product, unitType: item.unitType),
-            ),
-          ),
-        )
-        .toList();
+    final remainingPiecesByProductId = <String, int>{};
+    final normalized = <CartItem>[];
+    for (final item in items) {
+      final limit = _staticQuantityLimit(item.product, unitType: item.unitType);
+      if (limit < 1) continue;
+      final availablePieces = _availablePieces(item.product);
+      final pieces = item.piecesPerUnit;
+      final maxByStock = availablePieces == null
+          ? limit
+          : ((remainingPiecesByProductId.putIfAbsent(
+                          item.product.id,
+                          () => availablePieces,
+                        ) /
+                        pieces)
+                    .floor())
+                .clamp(0, limit)
+                .toInt();
+      if (maxByStock < 1) continue;
+      final minimum = item.minimumQuantity;
+      if (maxByStock < minimum) continue;
+      final quantity = item.quantity.clamp(minimum, maxByStock).toInt();
+      normalized.add(item.copyWith(quantity: quantity));
+      if (availablePieces != null) {
+        remainingPiecesByProductId[item.product.id] =
+            remainingPiecesByProductId[item.product.id]! - quantity * pieces;
+      }
+    }
+    return normalized;
   }
 
   void _handleAuthChange() {
@@ -271,19 +320,36 @@ class CartController extends ChangeNotifier {
       if (product.slug.isNotEmpty) latestBySlug[product.slug] = product;
     }
     final refreshed = <CartItem>[];
+    final remainingPiecesByProductId = <String, int>{};
     for (final item in _items) {
       final latest =
           latestById[item.product.id] ?? latestBySlug[item.product.slug];
       if (latest == null) continue;
-      final limit = quantityLimit(latest, unitType: item.unitType);
+      final limit = _staticQuantityLimit(latest, unitType: item.unitType);
       if (limit < 1) continue;
+      final availablePieces = _availablePieces(latest);
+      final pieces = latest.orderUnitFor(item.unitType).pieces;
+      final maxByStock = availablePieces == null
+          ? limit
+          : ((remainingPiecesByProductId.putIfAbsent(
+                          latest.id,
+                          () => availablePieces,
+                        ) /
+                        pieces)
+                    .floor())
+                .clamp(0, limit)
+                .toInt();
+      if (maxByStock < 1) continue;
+      final minimum = latest.orderUnitFor(item.unitType).minQty;
+      if (maxByStock < minimum) continue;
+      final quantity = item.quantity.clamp(minimum, maxByStock).toInt();
       refreshed.add(
-        CartItem(
-          product: latest,
-          quantity: item.quantity.clamp(1, limit),
-          unitType: item.unitType,
-        ),
+        CartItem(product: latest, quantity: quantity, unitType: item.unitType),
       );
+      if (availablePieces != null) {
+        remainingPiecesByProductId[latest.id] =
+            remainingPiecesByProductId[latest.id]! - quantity * pieces;
+      }
     }
     if (_fullFingerprint(refreshed) == _fullFingerprint(_items)) return;
     _items
@@ -317,7 +383,13 @@ class CartController extends ChangeNotifier {
           item.orderUnit.unitType == normalizedUnit,
     );
     if (index == -1) {
-      _items.add(CartItem(product: product, unitType: normalizedUnit));
+      _items.add(
+        CartItem(
+          product: product,
+          quantity: product.orderUnitFor(normalizedUnit).minQty,
+          unitType: normalizedUnit,
+        ),
+      );
     } else {
       _items[index] = _items[index].copyWith(
         product: product,
@@ -331,14 +403,19 @@ class CartController extends ChangeNotifier {
   void addItem(CartItem item) {
     final limit = quantityLimit(item.product, unitType: item.unitType);
     if (limit < 1) return;
-    final quantity = item.quantity.clamp(1, limit);
     final index = _items.indexWhere((row) => row.storageKey == item.storageKey);
     if (index == -1) {
+      final minimum = item.minimumQuantity;
+      if (limit < minimum) return;
+      final quantity = item.quantity.clamp(minimum, limit).toInt();
       _items.add(item.copyWith(quantity: quantity));
     } else {
+      final current = _items[index].quantity;
+      final quantity = (current + item.quantity).clamp(1, limit).toInt();
+      if (quantity == current) return;
       _items[index] = _items[index].copyWith(
         product: item.product,
-        quantity: (_items[index].quantity + quantity).clamp(1, limit),
+        quantity: quantity,
       );
     }
     _persistAndSync();
@@ -373,8 +450,9 @@ class CartController extends ChangeNotifier {
     if (limit < 1) {
       _items.removeAt(index);
     } else {
+      final minimum = product.orderUnitFor(normalizedUnit).minQty;
       _items[index] = _items[index].copyWith(
-        quantity: quantity.clamp(1, limit),
+        quantity: quantity.clamp(minimum, limit),
       );
     }
     _persistAndSync();

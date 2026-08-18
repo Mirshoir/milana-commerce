@@ -42,7 +42,10 @@ void main() {
   });
 
   test('orderTrackingSummary converts qop count to clothes count', () {
-    expect(orderTrackingSummary(order(itemCount: 3)), '3 qop · 180 ta kiyim');
+    expect(
+      orderTrackingSummary(order(itemCount: 3), languageCode: 'uz'),
+      '3 ta buyurtma to‘plami · 180 dona',
+    );
     expect(orderClothesCount(order(itemCount: 4)), 240);
   });
 
@@ -65,8 +68,8 @@ void main() {
     );
 
     expect(
-      orderLineItemSubtitle(item),
-      'F-2219 / V-100 · 2 qop · 120 ta kiyim',
+      orderLineItemSubtitle(item, languageCode: 'uz'),
+      'F-2219 / V-100 · 2 qop · 120 dona',
     );
     expect(orderSizeMixSummary(item), '44: 10 · 46: 10');
   });
@@ -85,19 +88,25 @@ void main() {
   });
 
   test('orderNextAction gives customer-facing next steps', () {
-    expect(orderNextAction(order()), contains('Menejer'));
     expect(
-      orderNextAction(order(paymentStatus: 'submitted')),
-      contains('tekshirilmoqda'),
+      orderNextAction(order(), languageCode: 'uz'),
+      contains('To‘lov kutilmoqda'),
     );
     expect(
-      orderNextAction(order(paymentStatus: 'paid')),
-      contains('qadoqlash'),
+      orderNextAction(order(paymentStatus: 'submitted'), languageCode: 'uz'),
+      contains('Tekshirilmoqda'),
     );
-    expect(orderNextAction(order(status: 'shipped')), contains('Cargo'));
     expect(
-      orderNextAction(order(status: 'delivered')),
-      contains('yetkazilgan'),
+      orderNextAction(order(paymentStatus: 'paid'), languageCode: 'uz'),
+      contains('To‘langan'),
+    );
+    expect(
+      orderNextAction(order(status: 'shipped'), languageCode: 'uz'),
+      contains('Yuborildi'),
+    );
+    expect(
+      orderNextAction(order(status: 'delivered'), languageCode: 'uz'),
+      contains('Yetkazildi'),
     );
   });
 
@@ -124,17 +133,18 @@ void main() {
           ),
         ],
       ),
+      languageCode: 'uz',
     );
 
-    expect(text, contains('Milana Premium buyurtma'));
+    expect(text, contains('Buyurtma ma’lumoti'));
     expect(text, contains('Raqam: MP-2026-ABCD'));
     expect(text, contains(r'Jami: $540.00'));
-    expect(text, contains('Tarkib: 2 qop · 120 ta kiyim'));
+    expect(text, contains('Tarkibi: 2 Qop · jami 120 dona'));
     expect(text, contains(r'- F-2219: 2 qop, $540.00'));
-    expect(text, contains('To‘lov reference: MP2026ABCD'));
-    expect(text, contains('Yuborilgan to‘lov: TRX-123'));
-    expect(text, contains('Cargo raqami: CRG-123'));
-    expect(text, contains('Keyingi qadam: Cargo raqami'));
+    expect(text, contains('To‘lov referecensiya: MP2026ABCD'));
+    expect(text, contains('Yuborilgan hujjat: TRX-123'));
+    expect(text, contains('Yetkazib beruvchi: Cargo'));
+    expect(text, contains('Keyingi qadam: Yuborildi'));
   });
 
   test('payment amount helpers parse and validate expected order total', () {
@@ -144,13 +154,22 @@ void main() {
     expect(parsePaymentAmount(''), isNull);
     expect(parsePaymentAmount('abc'), isNull);
 
-    expect(paymentAmountValidationMessage('540', 540), isNull);
-    expect(paymentAmountValidationMessage('540.009', 540), isNull);
-    expect(paymentAmountValidationMessage('', 540), 'Summani kiriting');
-    expect(paymentAmountValidationMessage('-1', 540), 'Summani kiriting');
+    expect(paymentAmountValidationMessage('540', 540, languageCode: 'uz'), isNull);
     expect(
-      paymentAmountValidationMessage('500', 540),
-      r'Summa buyurtma jami bilan mos emas: $540.00',
+      paymentAmountValidationMessage('540.009', 540, languageCode: 'uz'),
+      isNull,
+    );
+    expect(
+      paymentAmountValidationMessage('', 540, languageCode: 'uz'),
+      'To‘lov summasini kiriting',
+    );
+    expect(
+      paymentAmountValidationMessage('-1', 540, languageCode: 'uz'),
+      'To‘lov summasini kiriting',
+    );
+    expect(
+      paymentAmountValidationMessage('500', 540, languageCode: 'uz'),
+      r'Summada farq bor. Kutilgan summa: 540.00',
     );
   });
 
@@ -167,14 +186,16 @@ void main() {
           method: 'payme',
           reference: '',
           note: '',
+          languageCode: 'uz',
         ),
-        'Reference yoki izoh kiriting',
+        'Reference yoki izohni kiriting (kamida 8 belgi)',
       );
       expect(
         paymentProofDetailValidationMessage(
           method: 'payme',
           reference: 'TRX-123',
           note: '',
+          languageCode: 'uz',
         ),
         isNull,
       );
@@ -183,6 +204,7 @@ void main() {
           method: 'bank',
           reference: '',
           note: 'Bankdan yuborildi',
+          languageCode: 'uz',
         ),
         isNull,
       );
@@ -191,6 +213,7 @@ void main() {
           method: 'cash',
           reference: '',
           note: '',
+          languageCode: 'uz',
         ),
         isNull,
       );

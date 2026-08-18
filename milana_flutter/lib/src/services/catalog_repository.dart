@@ -11,6 +11,7 @@ const String apiBaseUrl = String.fromEnvironment(
   defaultValue: 'https://milanapremium.uz',
 );
 const Duration maxCatalogCacheAge = Duration(days: 7);
+const Duration publicConfigCacheAge = Duration(minutes: 10);
 
 enum CatalogLoadSource { fresh, cache, empty }
 
@@ -25,12 +26,44 @@ class CatalogLoadInfo {
   bool get isFresh => source == CatalogLoadSource.fresh;
 }
 
+class PublicCatalogConfig {
+  const PublicCatalogConfig({this.garmentMeasurements = false});
+
+  final bool garmentMeasurements;
+
+  factory PublicCatalogConfig.fromSettings(Map<String, dynamic> settings) {
+    dynamic siteConfig = settings['site_config'];
+    if (siteConfig is String && siteConfig.trim().isNotEmpty) {
+      try {
+        siteConfig = jsonDecode(siteConfig);
+      } catch (_) {
+        siteConfig = const <String, dynamic>{};
+      }
+    }
+    final config = siteConfig is Map
+        ? Map<String, dynamic>.from(siteConfig)
+        : const <String, dynamic>{};
+    final rawProduct = config['product'];
+    final product = rawProduct is Map
+        ? Map<String, dynamic>.from(rawProduct)
+        : const <String, dynamic>{};
+    final rawGarmentMeasurements = product['garmentMeasurements'];
+    return PublicCatalogConfig(
+      garmentMeasurements:
+          rawGarmentMeasurements == true ||
+          rawGarmentMeasurements == 1 ||
+          '$rawGarmentMeasurements'.toLowerCase() == 'true',
+    );
+  }
+}
+
 class CatalogRepository {
   CatalogRepository({
     required this.firebaseEnabled,
     CatalogCacheStore? cache,
     http.Client? client,
     DateTime Function()? now,
+    this.baseUrl = apiBaseUrl,
     this.cacheMaxAge = maxCatalogCacheAge,
   }) : _cache = cache ?? CatalogCacheStore(),
        _client = client ?? http.Client(),
@@ -40,8 +73,12 @@ class CatalogRepository {
   final CatalogCacheStore _cache;
   final http.Client _client;
   final DateTime Function() _now;
+  final String baseUrl;
   final Duration cacheMaxAge;
   Future<List<Product>>? _inFlightLoad;
+  Future<PublicCatalogConfig>? _inFlightConfigLoad;
+  PublicCatalogConfig? _cachedPublicConfig;
+  DateTime? _publicConfigCachedAt;
   CatalogLoadInfo _lastLoadInfo = const CatalogLoadInfo(
     source: CatalogLoadSource.empty,
   );
@@ -134,27 +171,118 @@ class CatalogRepository {
   }
 
   Future<List<Product>> _loadApiProducts() async {
-    final uri = Uri.parse('$apiBaseUrl/api/products?limit=2500');
+    final uri = Uri.parse('$baseUrl/api/products?limit=2500');
+    final response = await _get(uri, operation: 'Catalog');
+    return _decodeProducts(jsonDecode(response.body));
+  }
+
+  Future<List<Product>> searchProducts(String query, {int limit = 100}) async {
+    final normalized = query.trim();
+    if (normalized.length < 2) return const <Product>[];
+    final uri = Uri.parse('$baseUrl/api/search/smart').replace(
+      queryParameters: {'q': normalized, 'limit': '${limit.clamp(1, 250)}'},
+    );
+    final response = await _get(uri, operation: 'Search');
+    return _decodeProducts(jsonDecode(response.body));
+  }
+
+  Future<Product> loadProductDetails(String slug) async {
+    final normalized = slug.trim();
+    if (normalized.isEmpty) throw ArgumentError.value(slug, 'slug');
+    final uri = Uri.parse(
+      '$baseUrl/api/products/${Uri.encodeComponent(normalized)}',
+    );
+    final response = await _get(uri, operation: 'Product detail');
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map) throw const FormatException('Invalid product detail');
+    return _normalizeApiProduct(
+      Product.fromJson(Map<String, dynamic>.from(decoded)),
+    );
+  }
+
+  Future<List<Product>> loadRecommendations(
+    String slug, {
+    int limit = 12,
+  }) async {
+    final normalized = slug.trim();
+    if (normalized.isEmpty) return const <Product>[];
+    final uri = Uri.parse('$baseUrl/api/recommendations').replace(
+      queryParameters: {'slug': normalized, 'limit': '${limit.clamp(1, 30)}'},
+    );
+    final response = await _get(uri, operation: 'Recommendations');
+    return _decodeProducts(jsonDecode(response.body));
+  }
+
+  Future<PublicCatalogConfig> loadPublicConfig() async {
+    final cached = _cachedPublicConfig;
+    final cachedAt = _publicConfigCachedAt;
+    if (cached != null &&
+        cachedAt != null &&
+        _now().difference(cachedAt) < publicConfigCacheAge) {
+      return cached;
+    }
+    final activeLoad = _inFlightConfigLoad;
+    if (activeLoad != null) return activeLoad;
+
+    late final Future<PublicCatalogConfig> nextLoad;
+    nextLoad = _loadPublicConfig().whenComplete(() {
+      if (identical(_inFlightConfigLoad, nextLoad)) {
+        _inFlightConfigLoad = null;
+      }
+    });
+    _inFlightConfigLoad = nextLoad;
+    return nextLoad;
+  }
+
+  Future<PublicCatalogConfig> _loadPublicConfig() async {
+    final response = await _get(
+      Uri.parse('$baseUrl/api/settings'),
+      operation: 'Public settings',
+    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map) return const PublicCatalogConfig();
+    final config = PublicCatalogConfig.fromSettings(
+      Map<String, dynamic>.from(decoded),
+    );
+    _cachedPublicConfig = config;
+    _publicConfigCachedAt = _now();
+    return config;
+  }
+
+  Future<http.Response> _get(Uri uri, {required String operation}) async {
     final response = await _client
-        .get(uri)
+        .get(uri, headers: const {'Accept': 'application/json'})
         .timeout(
           const Duration(seconds: 15),
-          onTimeout: () => throw TimeoutException('Catalog request timed out'),
+          onTimeout: () => throw TimeoutException('$operation timed out'),
         );
     if (response.statusCode != 200) {
-      throw Exception('Catalog failed: ${response.statusCode}');
+      throw Exception('$operation failed: ${response.statusCode}');
     }
-    final rows = (jsonDecode(response.body) as List)
-        .cast<Map<String, dynamic>>();
+    return response;
+  }
+
+  List<Product> _decodeProducts(dynamic decoded) {
+    dynamic rows = decoded;
+    if (decoded is Map) {
+      rows = decoded['products'] ?? decoded['items'];
+    }
+    if (rows is! List) return const <Product>[];
     return rows
-        .map((row) => _normalizeApiProduct(Product.fromJson(row)))
-        .toList();
+        .whereType<Map>()
+        .map(
+          (row) => _normalizeApiProduct(
+            Product.fromJson(Map<String, dynamic>.from(row)),
+          ),
+        )
+        .where((product) => product.active)
+        .toList(growable: false);
   }
 
   Product _normalizeApiProduct(Product product) {
     final images = product.images.map((image) {
       if (image.startsWith('http')) return image;
-      if (image.startsWith('/')) return '$apiBaseUrl$image';
+      if (image.startsWith('/')) return '$baseUrl$image';
       return image;
     }).toList();
     return product.copyWith(images: images);

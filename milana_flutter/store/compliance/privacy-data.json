@@ -12,7 +12,7 @@
     {
       "id": "firebase",
       "role": null,
-      "services": ["Authentication", "Cloud Firestore", "Cloud Functions"],
+      "services": ["Authentication", "Cloud Firestore", "Cloud Functions", "Analytics"],
       "retentionReference": null,
       "deletionReference": null,
       "status": "unknown"
@@ -159,6 +159,109 @@
         "answer": null,
         "rationale": "Reconcile callable-function metadata with App Store privacy definitions.",
         "evidence": [{"kind": "policy", "ref": "https://firebase.google.com/docs/ios/app-store-data-collection"}],
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "firebase-messaging.android.automatic",
+      "dependency": "firebase_messaging",
+      "platform": "android",
+      "dataTypes": ["fcm-registration-token", "firebase-installation-id", "device-metadata"],
+      "automatic": true,
+      "collected": null,
+      "shared": null,
+      "linkedToUser": null,
+      "usedForTracking": false,
+      "required": false,
+      "purposes": ["app-functionality", "developer-communications"],
+      "processorIds": ["firebase"],
+      "retention": null,
+      "deletion": "The app deletes its local token at sign-out; invalid server tokens are removed after failed delivery and account deletion removes owned device records.",
+      "classification": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Reconcile FCM token and installation metadata with the production Firebase configuration and Play definitions.",
+        "evidence": [{"kind": "policy", "ref": "https://firebase.google.com/docs/android/play-data-disclosure"}],
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "firebase-messaging.ios.automatic",
+      "dependency": "firebase_messaging",
+      "platform": "ios",
+      "dataTypes": ["fcm-registration-token", "firebase-installation-id", "device-metadata"],
+      "automatic": true,
+      "collected": null,
+      "shared": null,
+      "linkedToUser": null,
+      "usedForTracking": false,
+      "required": false,
+      "purposes": ["app-functionality", "developer-communications"],
+      "processorIds": ["firebase"],
+      "retention": null,
+      "deletion": "The app deletes its local token at sign-out; invalid server tokens are removed after failed delivery and account deletion removes owned device records.",
+      "classification": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Reconcile FCM token and installation metadata with the production Firebase configuration and App Store privacy definitions.",
+        "evidence": [{"kind": "policy", "ref": "https://firebase.google.com/docs/ios/app-store-data-collection"}],
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "firebase-analytics.android.opt-in",
+      "dependency": "firebase_analytics",
+      "platform": "android",
+      "dataTypes": ["app-interactions", "device-identifiers", "diagnostics"],
+      "automatic": true,
+      "collected": true,
+      "shared": null,
+      "linkedToUser": null,
+      "usedForTracking": false,
+      "required": false,
+      "purposes": ["analytics"],
+      "processorIds": ["firebase"],
+      "retention": null,
+      "deletion": "Analytics collection is disabled by platform configuration until the customer opts in and can be disabled again in the app.",
+      "classification": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Reconcile consented Firebase Analytics events and any future Google Ads linkage with Play Data Safety before publication.",
+        "evidence": [
+          {"kind": "source-code", "ref": "lib/src/services/analytics_service.dart"},
+          {"kind": "source-code", "ref": "android/app/src/main/AndroidManifest.xml"}
+        ],
+        "approvedBy": null,
+        "approvedAt": null
+      }
+    },
+    {
+      "id": "firebase-analytics.ios.opt-in",
+      "dependency": "firebase_analytics",
+      "platform": "ios",
+      "dataTypes": ["product-interaction", "device-id", "diagnostics"],
+      "automatic": true,
+      "collected": true,
+      "shared": null,
+      "linkedToUser": null,
+      "usedForTracking": false,
+      "required": false,
+      "purposes": ["analytics"],
+      "processorIds": ["firebase"],
+      "retention": null,
+      "deletion": "Analytics collection is disabled by platform configuration until the customer opts in and can be disabled again in the app.",
+      "classification": {
+        "status": "unknown",
+        "answer": null,
+        "rationale": "Reconcile consented Firebase Analytics events and any future Google Ads linkage with App Store privacy answers before publication.",
+        "evidence": [
+          {"kind": "source-code", "ref": "lib/src/services/analytics_service.dart"},
+          {"kind": "source-code", "ref": "ios/Runner/Info.plist"},
+          {"kind": "source-code", "ref": "ios/Runner/PrivacyInfo.xcprivacy"}
+        ],
         "approvedBy": null,
         "approvedAt": null
       }
