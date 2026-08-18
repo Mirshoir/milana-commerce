@@ -5211,11 +5211,6 @@ class _ProductSheetState extends State<ProductSheet> {
                     ),
                   ],
                   const SizedBox(height: 14),
-                  if (product.fabricFor(context.currentLanguageCode).isNotEmpty)
-                    Text(
-                      product.fabricFor(context.currentLanguageCode),
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
                   if (product
                           .descriptionFor(context.currentLanguageCode)
                           .isNotEmpty &&

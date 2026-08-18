@@ -37,6 +37,7 @@ void main() {
       'Jins',
       'Kategoriya',
       'Buyurtma formati',
+      'O‘lcham qatori',
       'Mavjud',
     ]);
     expect(specs.map((spec) => spec.value), [
@@ -44,8 +45,65 @@ void main() {
       'Ayollar',
       'Uy kiyimi',
       'Qop · 60 dona',
+      '44 · 46 · 48 · 50 · 52 · 54',
       '12 qop',
     ]);
+  });
+
+  test('PM-7007 presentation matches every website-owned field', () {
+    final websiteProduct = Product.fromJson({
+      'id': 11,
+      'slug': 'pm-7007-v3766',
+      'model_no': 'PM-7007',
+      'name_i18n': {
+        'uz': 'Katak yoqali erkaklar pijama kalta yeng',
+        'ru': 'Пижама',
+        'en': "Plaid collared men's pajama set, short sleeve",
+      },
+      'desc': {
+        'uz': 'Erkaklar uchun katak naqshli va kalta yengli pijama.',
+        'ru': 'Мужская пижама в клетку с коротким рукавом.',
+        'en': "Men's plaid pajamas with short sleeves.",
+      },
+      'gender': 'men',
+      'category': 'Пижамы',
+      'catalog_panel': 'men',
+      'product_type': 'pajamas',
+      'price': 7.8,
+      'material': 'Супрем',
+      'composition': '100% Хлопок',
+      'season': 'Демисезонный',
+      'country': 'Узбекистан',
+      'sizes': ['48', '50', '52', '54', '56', '58'],
+      'available_qop': 2.7,
+    });
+
+    expect(
+      websiteProduct.detailTitleFor('uz'),
+      'Erkaklar uchun katak naqshli va kalta yengli pijama.',
+    );
+    expect(
+      websiteProduct.detailTitleFor('ru'),
+      'Мужская пижама в клетку с коротким рукавом.',
+    );
+    expect(
+      websiteProduct.detailTitleFor('en'),
+      "Men's plaid pajamas with short sleeves.",
+    );
+
+    final specs = productSpecs(
+      websiteProduct,
+      CartItem(product: websiteProduct, unitType: packUnitType),
+      languageCode: 'uz',
+    );
+    final values = {for (final spec in specs) spec.label: spec.value};
+
+    expect(values['Kategoriya'], 'Erkaklar');
+    expect(values['Matoga oid'], 'Suprem');
+    expect(values['Kompozitsiya'], '100% Paxta');
+    expect(values['Mavsum'], 'Mavsum oralig‘i');
+    expect(values['Mamlakat'], 'O‘zbekiston');
+    expect(values['O‘lcham qatori'], '48 · 50 · 52 · 54 · 56 · 58');
   });
 
   test('productHighlights describe wholesale buying rules', () {
@@ -58,10 +116,7 @@ void main() {
       'Qadoqdan boshlang yoki to‘liq qop tanlang. Narx, qoldiq va jo‘natishni menejer yakuniy tasdiqlaydi.',
     );
     expect(highlights[1].title, 'To‘lov va Cargo');
-    expect(
-      highlights[1].text,
-      'Yetkazib berish xarajatini mijoz to‘laydi.',
-    );
+    expect(highlights[1].text, 'Yetkazib berish xarajatini mijoz to‘laydi.');
     expect(highlights[2].title, 'Narx tasdiqlandi');
     expect(highlights[2].text, 'Qoldiq: 12 dona');
   });
@@ -97,11 +152,7 @@ void main() {
       'Qadoq · 6 dona',
     );
     expect(
-      productInquiryShareText(
-        product,
-        item: pack,
-        languageCode: 'uz',
-      ),
+      productInquiryShareText(product, item: pack, languageCode: 'uz'),
       contains(r'O‘lchov: 6 dona · $27.00'),
     );
   });

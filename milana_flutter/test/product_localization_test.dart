@@ -73,8 +73,8 @@ void main() {
     expect(product.nameFor('uz'), 'Katak yoqali erkaklar pijama kalta yeng');
   });
 
-  test('does not promote generated or oversized descriptions to titles', () {
-    final generated = Product.fromJson({
+  test('uses website descriptions for every product with a safe fallback', () {
+    final websiteProduct = Product.fromJson({
       'id': 12,
       'name_i18n': {'uz': 'Qora xalat'},
       'desc': {'uz': 'Suratdagi mahsulot turi: xalat.'},
@@ -83,11 +83,14 @@ void main() {
     final oversized = Product.fromJson({
       'id': 13,
       'name_i18n': {'uz': 'Qora tunika'},
-      'desc': {'uz': List.filled(121, 'a').join()},
+      'desc': {'uz': List.filled(161, 'a').join()},
       'copy_manual': true,
     });
 
-    expect(generated.detailTitleFor('uz'), 'Qora xalat');
+    expect(
+      websiteProduct.detailTitleFor('uz'),
+      'Suratdagi mahsulot turi: xalat.',
+    );
     expect(oversized.detailTitleFor('uz'), 'Qora tunika');
   });
 
@@ -113,6 +116,34 @@ void main() {
       'views': 210,
       'colors': ['Blue', 'White'],
       'copy_manual': true,
+      'category': 'Пижамы',
+      'catalog_panel': 'pajamas',
+      'old_price': 8.5,
+      'wholesale_price': 7.5,
+      'wholesale_moq': 6,
+      'retail_enabled': true,
+      'retail_price': 9,
+      'retail_stock': 120,
+      'can_order_retail': true,
+      'price_visible': true,
+      'price_label': 'public',
+      'price_source': 'public_catalog',
+      'price_discount': 1,
+      'assigned_manager': 'manager-1',
+      'sort': 42,
+      'created_at': '2026-08-18 10:00:00',
+      'availability_wholesale': {
+        'status': 'in_stock',
+        'tracked': true,
+        'available': true,
+        'remaining_qop': 2.5,
+      },
+      'availability_retail': {
+        'status': 'in_stock',
+        'tracked': true,
+        'available': true,
+        'remaining_units': 120,
+      },
     });
 
     final restored = Product.fromJson(original.toJson());
@@ -128,5 +159,30 @@ void main() {
     expect(restored.views, 210);
     expect(restored.colors, ['Blue', 'White']);
     expect(restored.copyManual, isTrue);
+    expect(restored.sourceCategory, 'Пижамы');
+    expect(restored.catalogPanel, 'pajamas');
+    expect(restored.oldPrice, 8.5);
+    expect(restored.wholesalePrice, 7.5);
+    expect(restored.wholesaleMoq, 6);
+    expect(restored.retailEnabled, isTrue);
+    expect(restored.retailPrice, 9);
+    expect(restored.retailStock, 120);
+    expect(restored.canOrderRetail, isTrue);
+    expect(restored.priceVisible, isTrue);
+    expect(restored.priceLabel, 'public');
+    expect(restored.priceSource, 'public_catalog');
+    expect(restored.priceDiscount, 1);
+    expect(restored.assignedManager, 'manager-1');
+    expect(restored.sortOrder, 42);
+    expect(restored.createdAt, '2026-08-18 10:00:00');
+    expect(restored.wholesaleAvailability.remainingQop, 2.5);
+    expect(restored.retailAvailability.remainingUnits, 120);
+  });
+
+  test('does not invent ratings absent from the website response', () {
+    final product = Product.fromJson({'id': 99, 'name': 'Pijama'});
+
+    expect(product.rating, 0);
+    expect(product.reviews, 0);
   });
 }

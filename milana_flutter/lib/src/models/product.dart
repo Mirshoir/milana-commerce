@@ -43,6 +43,42 @@ class ProductOrderUnit {
   };
 }
 
+class ProductAvailability {
+  const ProductAvailability({
+    this.status = '',
+    this.tracked = false,
+    this.available = false,
+    this.remainingQop,
+    this.remainingUnits,
+  });
+
+  factory ProductAvailability.fromJson(dynamic value) {
+    if (value is! Map) return const ProductAvailability();
+    final json = Map<String, dynamic>.from(value);
+    return ProductAvailability(
+      status: '${json['status'] ?? ''}'.trim().toLowerCase(),
+      tracked: _asBool(json['tracked'], fallback: false),
+      available: _asBool(json['available'], fallback: false),
+      remainingQop: _asDouble(json['remaining_qop']),
+      remainingUnits: _asInt(json['remaining_units']),
+    );
+  }
+
+  final String status;
+  final bool tracked;
+  final bool available;
+  final double? remainingQop;
+  final int? remainingUnits;
+
+  Map<String, dynamic> toJson() => {
+    'status': status,
+    'tracked': tracked,
+    'available': available,
+    if (remainingQop != null) 'remaining_qop': remainingQop,
+    if (remainingUnits != null) 'remaining_units': remainingUnits,
+  };
+}
+
 class Product {
   const Product({
     required this.id,
@@ -62,7 +98,7 @@ class Product {
     this.season = '',
     this.tag = '',
     this.collection = '',
-    this.rating = 4.8,
+    this.rating = 0,
     this.reviews = 0,
     this.active = true,
     this.availableQop,
@@ -85,6 +121,24 @@ class Product {
     this.likeCount = 0,
     this.views = 0,
     this.colors = const <String>[],
+    this.sourceCategory = '',
+    this.catalogPanel = '',
+    this.oldPrice,
+    this.wholesalePrice,
+    this.wholesaleMoq,
+    this.retailEnabled = false,
+    this.retailPrice,
+    this.retailStock,
+    this.canOrderRetail = false,
+    this.priceVisible = true,
+    this.priceLabel = '',
+    this.priceSource = '',
+    this.priceDiscount = 0,
+    this.assignedManager = '',
+    this.sortOrder = 0,
+    this.createdAt = '',
+    this.wholesaleAvailability = const ProductAvailability(),
+    this.retailAvailability = const ProductAvailability(),
   });
 
   final String id;
@@ -127,6 +181,24 @@ class Product {
   final int likeCount;
   final int views;
   final List<String> colors;
+  final String sourceCategory;
+  final String catalogPanel;
+  final double? oldPrice;
+  final double? wholesalePrice;
+  final int? wholesaleMoq;
+  final bool retailEnabled;
+  final double? retailPrice;
+  final int? retailStock;
+  final bool canOrderRetail;
+  final bool priceVisible;
+  final String priceLabel;
+  final String priceSource;
+  final double priceDiscount;
+  final String assignedManager;
+  final int sortOrder;
+  final String createdAt;
+  final ProductAvailability wholesaleAvailability;
+  final ProductAvailability retailAvailability;
 
   String nameFor(String languageCode) {
     final translated = _localizedValue(localizedNames, languageCode);
@@ -144,17 +216,15 @@ class Product {
     return modelNo.isEmpty ? name : modelNo;
   }
 
-  /// Uses the website's administrator-reviewed copy for a product detail
-  /// heading when it is concise enough. The shorter localized name remains
-  /// available for catalog navigation and search results.
+  /// Product descriptions are maintained by the website and are the
+  /// authoritative detail copy. Short catalog names remain available for
+  /// navigation and search results.
   String detailTitleFor(String languageCode) {
-    if (copyManual) {
-      final reviewed = descriptionFor(languageCode).trim();
-      if (reviewed.length >= 2 &&
-          reviewed.length <= 120 &&
-          !reviewed.contains('\n')) {
-        return reviewed;
-      }
+    final websiteCopy = descriptionFor(languageCode).trim();
+    if (websiteCopy.length >= 2 &&
+        websiteCopy.length <= 160 &&
+        !websiteCopy.contains('\n')) {
+      return websiteCopy;
     }
     return nameFor(languageCode);
   }
@@ -267,6 +337,26 @@ class Product {
       if (raw.contains('lounge')) return 'loungewear';
       if (raw.contains('family')) return 'family';
       if (raw.contains('home')) return 'homewear';
+      if (raw.contains('tunic') || raw.contains('туник')) return 'tunic';
+      if (raw.contains('saroch') || raw.contains('сороч')) return 'sarochka';
+      if (raw.contains('set') ||
+          raw.contains('комплект') ||
+          raw.contains('двойк')) {
+        return 'set';
+      }
+      if (raw.contains('trouser') ||
+          raw.contains('pants') ||
+          raw.contains('брюк') ||
+          raw.contains('штан')) {
+        return 'trousers';
+      }
+      if (raw.contains('tshirt') ||
+          raw.contains('t-shirt') ||
+          raw.contains('футбол')) {
+        return 'tshirt';
+      }
+      if (raw.contains('hoodie') || raw.contains('худи')) return 'hoodie';
+      if (raw.contains('shirt') || raw.contains('рубаш')) return 'shirt';
       return raw.isEmpty ? 'homewear' : raw;
     }
 
@@ -283,6 +373,7 @@ class Product {
       json['can_order_wholesale'],
       fallback: active && (availableQop == null || availableQop > 0),
     );
+    final wholesalePrice = _asDouble(json['wholesale_price']);
     final rawUnits = json['order_units'];
     final orderUnits = rawUnits is List
         ? rawUnits
@@ -339,7 +430,7 @@ class Product {
       collection: _canonicalValue(json, const [
         'collection',
       ], localizedCollections),
-      rating: _asDouble(json['rating']) ?? 4.8,
+      rating: _asDouble(json['rating']) ?? 0,
       reviews: _asInt(json['reviews']) ?? 0,
       active: active,
       availableQop: availableQop,
@@ -362,6 +453,28 @@ class Product {
       likeCount: _asInt(json['like_count']) ?? 0,
       views: _asInt(json['views']) ?? 0,
       colors: asList(json['colors']),
+      sourceCategory: '${json['category'] ?? ''}'.trim(),
+      catalogPanel: '${json['catalog_panel'] ?? ''}'.trim(),
+      oldPrice: _asDouble(json['old_price']),
+      wholesalePrice: wholesalePrice,
+      wholesaleMoq: _asInt(json['wholesale_moq']),
+      retailEnabled: asBool(json['retail_enabled'], fallback: false),
+      retailPrice: _asDouble(json['retail_price']),
+      retailStock: _asInt(json['retail_stock']),
+      canOrderRetail: asBool(json['can_order_retail'], fallback: false),
+      priceVisible: asBool(json['price_visible'], fallback: true),
+      priceLabel: '${json['price_label'] ?? ''}'.trim(),
+      priceSource: '${json['price_source'] ?? ''}'.trim(),
+      priceDiscount: _asDouble(json['price_discount']) ?? 0,
+      assignedManager: '${json['assigned_manager'] ?? ''}'.trim(),
+      sortOrder: _asInt(json['sort']) ?? 0,
+      createdAt: '${json['created_at'] ?? ''}'.trim(),
+      wholesaleAvailability: ProductAvailability.fromJson(
+        json['availability_wholesale'],
+      ),
+      retailAvailability: ProductAvailability.fromJson(
+        json['availability_retail'],
+      ),
     );
   }
 
@@ -412,6 +525,24 @@ class Product {
       likeCount: likeCount,
       views: views,
       colors: colors,
+      sourceCategory: sourceCategory,
+      catalogPanel: catalogPanel,
+      oldPrice: oldPrice,
+      wholesalePrice: wholesalePrice,
+      wholesaleMoq: wholesaleMoq,
+      retailEnabled: retailEnabled,
+      retailPrice: retailPrice,
+      retailStock: retailStock,
+      canOrderRetail: canOrderRetail,
+      priceVisible: priceVisible,
+      priceLabel: priceLabel,
+      priceSource: priceSource,
+      priceDiscount: priceDiscount,
+      assignedManager: assignedManager,
+      sortOrder: sortOrder,
+      createdAt: createdAt,
+      wholesaleAvailability: wholesaleAvailability,
+      retailAvailability: retailAvailability,
     );
   }
 
@@ -422,9 +553,16 @@ class Product {
     'slug': slug,
     'name': name,
     'gender': gender,
-    'category': category,
+    'category': sourceCategory.isEmpty ? category : sourceCategory,
     'product_type': category,
+    if (catalogPanel.isNotEmpty) 'catalog_panel': catalogPanel,
     'price': price,
+    if (oldPrice != null) 'old_price': oldPrice,
+    if (wholesalePrice != null) 'wholesale_price': wholesalePrice,
+    if (wholesaleMoq != null) 'wholesale_moq': wholesaleMoq,
+    'retail_enabled': retailEnabled,
+    if (retailPrice != null) 'retail_price': retailPrice,
+    if (retailStock != null) 'retail_stock': retailStock,
     'sizes': sizes,
     'images': images,
     'model_no': modelNo,
@@ -450,6 +588,16 @@ class Product {
     'copy_manual': copyManual,
     'in_stock': inStock,
     'can_order_wholesale': canOrderWholesale,
+    'can_order_retail': canOrderRetail,
+    'price_visible': priceVisible,
+    'price_label': priceLabel,
+    'price_source': priceSource,
+    'price_discount': priceDiscount,
+    'assigned_manager': assignedManager,
+    'sort': sortOrder,
+    'created_at': createdAt,
+    'availability_wholesale': wholesaleAvailability.toJson(),
+    'availability_retail': retailAvailability.toJson(),
     'order_units': orderUnits.map((unit) => unit.toJson()).toList(),
     if (localizedNames.isNotEmpty) 'name_i18n': localizedNames,
     if (localizedFabrics.isNotEmpty) 'fabric_i18n': localizedFabrics,
@@ -550,4 +698,13 @@ int? _asInt(dynamic value) {
   if (value is num) return value.toInt();
   final parsed = _asDouble(value);
   return parsed?.toInt();
+}
+
+bool _asBool(dynamic value, {required bool fallback}) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  final normalized = '$value'.trim().toLowerCase();
+  if (normalized == 'true' || normalized == '1') return true;
+  if (normalized == 'false' || normalized == '0') return false;
+  return fallback;
 }
