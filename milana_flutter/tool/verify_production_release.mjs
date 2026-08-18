@@ -567,7 +567,6 @@ export async function verifyProductionRelease(options = {}) {
         'NSPrivacyCollectedDataTypeCustomerSupport',
         'NSPrivacyCollectedDataTypeProductInteraction',
         'NSPrivacyCollectedDataTypeDeviceID',
-        'NSPrivacyCollectedDataTypeCoarseLocation',
         'NSPrivacyCollectedDataTypeOtherDiagnosticData',
       ]) {
         if (!privacyText.includes(requirement)) {

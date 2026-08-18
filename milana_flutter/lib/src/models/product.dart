@@ -75,8 +75,15 @@ class Product {
     this.localizedMaterials = const <String, String>{},
     this.localizedCompositions = const <String, String>{},
     this.localizedDescriptions = const <String, String>{},
+    this.localizedCare = const <String, String>{},
     this.localizedSeasons = const <String, String>{},
     this.localizedCollections = const <String, String>{},
+    this.sizeChart = '',
+    this.color = '',
+    this.country = '',
+    this.likeCount = 0,
+    this.views = 0,
+    this.colors = const <String>[],
   });
 
   final String id;
@@ -109,8 +116,15 @@ class Product {
   final Map<String, String> localizedMaterials;
   final Map<String, String> localizedCompositions;
   final Map<String, String> localizedDescriptions;
+  final Map<String, String> localizedCare;
   final Map<String, String> localizedSeasons;
   final Map<String, String> localizedCollections;
+  final String sizeChart;
+  final String color;
+  final String country;
+  final int likeCount;
+  final int views;
+  final List<String> colors;
 
   String nameFor(String languageCode) {
     final translated = _localizedValue(localizedNames, languageCode);
@@ -146,6 +160,9 @@ class Product {
     fallback: description,
   );
 
+  String careFor(String languageCode) =>
+      _localizedValue(localizedCare, languageCode);
+
   String seasonFor(String languageCode) =>
       _localizedValue(localizedSeasons, languageCode, fallback: season);
 
@@ -158,6 +175,7 @@ class Product {
     yield* localizedMaterials.values;
     yield* localizedCompositions.values;
     yield* localizedDescriptions.values;
+    yield* localizedCare.values;
     yield* localizedSeasons.values;
     yield* localizedCollections.values;
   }
@@ -270,6 +288,7 @@ class Product {
       'desc',
       'description',
     ]);
+    final localizedCare = _readLocalizedField(json, const ['care']);
     final localizedSeasons = _readLocalizedField(json, const ['season']);
     final localizedCollections = _readLocalizedField(json, const [
       'collection',
@@ -315,8 +334,15 @@ class Product {
       localizedMaterials: localizedMaterials,
       localizedCompositions: localizedCompositions,
       localizedDescriptions: localizedDescriptions,
+      localizedCare: localizedCare,
       localizedSeasons: localizedSeasons,
       localizedCollections: localizedCollections,
+      sizeChart: '${json['size_chart'] ?? ''}'.trim(),
+      color: '${json['color'] ?? ''}'.trim(),
+      country: '${json['country'] ?? ''}'.trim(),
+      likeCount: _asInt(json['like_count']) ?? 0,
+      views: _asInt(json['views']) ?? 0,
+      colors: asList(json['colors']),
     );
   }
 
@@ -357,8 +383,15 @@ class Product {
       localizedMaterials: localizedMaterials,
       localizedCompositions: localizedCompositions,
       localizedDescriptions: localizedDescriptions,
+      localizedCare: localizedCare,
       localizedSeasons: localizedSeasons,
       localizedCollections: localizedCollections,
+      sizeChart: sizeChart,
+      color: color,
+      country: country,
+      likeCount: likeCount,
+      views: views,
+      colors: colors,
     );
   }
 
@@ -385,6 +418,12 @@ class Product {
     'collection': collection,
     'rating': rating,
     'reviews': reviews,
+    'size_chart': sizeChart,
+    'color': color,
+    'country': country,
+    'like_count': likeCount,
+    'views': views,
+    'colors': colors,
     'active': active,
     if (availableQop != null) 'available_qop': availableQop,
     'preorder': preorder,
@@ -398,6 +437,7 @@ class Product {
       'composition_i18n': localizedCompositions,
     if (localizedDescriptions.isNotEmpty)
       'description_i18n': localizedDescriptions,
+    if (localizedCare.isNotEmpty) 'care_i18n': localizedCare,
     if (localizedSeasons.isNotEmpty) 'season_i18n': localizedSeasons,
     if (localizedCollections.isNotEmpty)
       'collection_i18n': localizedCollections,

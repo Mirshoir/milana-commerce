@@ -59,13 +59,7 @@ void main() {
       cache: cache,
       client: MockClient((request) async {
         requestedUri = request.url;
-        return http.Response(
-          jsonEncode({
-            'items': [productRow('5287')],
-            'meta': {'total': 1, 'has_more': false, 'next_offset': 1},
-          }),
-          200,
-        );
+        return http.Response(jsonEncode([productRow('5287')]), 200);
       }),
     );
 
@@ -83,59 +77,12 @@ void main() {
     expect(products.first.orderUnitFor(bagUnitType).pieces, 60);
     expect(products.first.images.first, startsWith(apiBaseUrl));
     expect(requestedUri?.path, '/api/products');
-    expect(requestedUri?.queryParameters['limit'], '$catalogNetworkPageSize');
-    expect(requestedUri?.queryParameters['offset'], '0');
-    expect(requestedUri?.queryParameters['meta'], '1');
-    expect(repo.totalProducts, 1);
-    expect(repo.hasMore, isFalse);
+    expect(requestedUri?.queryParameters['limit'], '2500');
     expect(repo.lastLoadInfo.isFresh, isTrue);
     expect(repo.lastLoadInfo.fromCache, isFalse);
     expect(cached, hasLength(1));
     expect(await cache.cachedAt(), isNotNull);
   });
-
-  test(
-    'catalog repository loads bounded pages without duplicate products',
-    () async {
-      SharedPreferences.setMockInitialValues({});
-      final requestedOffsets = <String?>[];
-      final repo = CatalogRepository(
-        firebaseEnabled: false,
-        client: MockClient((request) async {
-          final offset = request.url.queryParameters['offset'];
-          requestedOffsets.add(offset);
-          final secondPage = offset == '$catalogNetworkPageSize';
-          return http.Response(
-            jsonEncode({
-              'items': secondPage
-                  ? [productRow('5000'), productRow('5288')]
-                  : List.generate(
-                      catalogNetworkPageSize,
-                      (index) => productRow('${5000 + index}'),
-                    ),
-              'meta': {
-                'total': catalogNetworkPageSize + 2,
-                'has_more': !secondPage,
-                'next_offset': secondPage
-                    ? catalogNetworkPageSize + 2
-                    : catalogNetworkPageSize,
-              },
-            }),
-            200,
-          );
-        }),
-      );
-
-      final first = await repo.loadProducts();
-      final all = await repo.loadMoreProducts();
-
-      expect(first, hasLength(catalogNetworkPageSize));
-      expect(all, hasLength(catalogNetworkPageSize + 1));
-      expect(requestedOffsets, ['0', '$catalogNetworkPageSize']);
-      expect(repo.totalProducts, catalogNetworkPageSize + 2);
-      expect(repo.hasMore, isFalse);
-    },
-  );
 
   test('product parsing accepts website string numbers and unit aliases', () {
     final product = Product.fromJson({
@@ -156,6 +103,104 @@ void main() {
     expect(product.reviews, 12);
     expect(product.orderUnitFor(packUnitType).pieces, 6);
     expect(product.orderUnitFor(bagUnitType).pieces, 60);
+  });
+
+  test(
+    'smart search uses the backend endpoint and keeps backend order',
+    () async {
+      final requested = <Uri>[];
+      final repo = CatalogRepository(
+        firebaseEnabled: false,
+        baseUrl: 'https://example.test',
+        client: MockClient((request) async {
+          requested.add(request.url);
+          return http.Response(
+            jsonEncode({
+              'query': 'F-2219',
+              'products': [productRow('exact'), productRow('related')],
+            }),
+            200,
+          );
+        }),
+      );
+
+      final products = await repo.searchProducts(' F-2219 ', limit: 8);
+
+      expect(products.map((product) => product.id), ['exact', 'related']);
+      expect(requested.single.path, '/api/search/smart');
+      expect(requested.single.queryParameters, {'q': 'F-2219', 'limit': '8'});
+      expect(
+        products.first.images.single,
+        'https://example.test/uploads/f-2219.jpg',
+      );
+    },
+  );
+
+  test('loads authoritative details and recommendations by slug', () async {
+    final requested = <Uri>[];
+    final repo = CatalogRepository(
+      firebaseEnabled: false,
+      baseUrl: 'https://example.test',
+      client: MockClient((request) async {
+        requested.add(request.url);
+        if (request.url.path == '/api/products/f-2219') {
+          return http.Response(
+            jsonEncode({
+              ...productRow('detail'),
+              'desc': {'en': 'Fresh backend description'},
+              'care': {'en': 'Wash at 30°C'},
+              'size_chart': 'https://example.test/chart.webp',
+            }),
+            200,
+          );
+        }
+        if (request.url.path == '/api/recommendations') {
+          return http.Response(
+            jsonEncode({
+              'products': [productRow('recommendation')],
+            }),
+            200,
+          );
+        }
+        return http.Response('not found', 404);
+      }),
+    );
+
+    final detail = await repo.loadProductDetails('f-2219');
+    final recommendations = await repo.loadRecommendations('f-2219', limit: 6);
+
+    expect(detail.descriptionFor('en'), 'Fresh backend description');
+    expect(detail.careFor('en'), 'Wash at 30°C');
+    expect(detail.sizeChart, 'https://example.test/chart.webp');
+    expect(recommendations.single.id, 'recommendation');
+    expect(requested[1].queryParameters, {'slug': 'f-2219', 'limit': '6'});
+  });
+
+  test('public product configuration is parsed and cached briefly', () async {
+    var requestCount = 0;
+    final repo = CatalogRepository(
+      firebaseEnabled: false,
+      baseUrl: 'https://example.test',
+      client: MockClient((request) async {
+        requestCount += 1;
+        expect(request.url.path, '/api/settings');
+        return http.Response(
+          jsonEncode({
+            'site_config': jsonEncode({
+              'product': {'garmentMeasurements': true},
+            }),
+          }),
+          200,
+        );
+      }),
+    );
+
+    final first = await repo.loadPublicConfig();
+    final second = await repo.loadPublicConfig();
+
+    expect(first.garmentMeasurements, isTrue);
+    expect(second.garmentMeasurements, isTrue);
+    expect(requestCount, 1);
   });
 
   test('concurrent catalog loads share one in-flight HTTP request', () async {
@@ -246,6 +291,20 @@ void main() {
     );
 
     await expectLater(repo.loadProducts(), throwsException);
+  });
+
+  test('catalog cache invalidates a pre-schema snapshot', () async {
+    SharedPreferences.setMockInitialValues({
+      'milana_catalog_products': jsonEncode([productRow('5287')]),
+      'milana_catalog_cached_at': DateTime.now().toUtc().toIso8601String(),
+    });
+    final cache = CatalogCacheStore();
+
+    expect(await cache.load(), isEmpty);
+    expect(await cache.cachedAt(), isNull);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.containsKey('milana_catalog_products'), isFalse);
+    expect(prefs.containsKey('milana_catalog_cached_at'), isFalse);
   });
 
   test(

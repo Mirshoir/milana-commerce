@@ -47,12 +47,12 @@ class DistributorApplicationRequest {
     required this.email,
     required this.country,
     required this.city,
-    required this.expectedMonthlyVolume,
-    required this.salesChannels,
-    required this.requestedTerritories,
-    required this.message,
     required this.legalAccepted,
     this.website = '',
+    this.expectedMonthlyVolume = '',
+    this.salesChannels = '',
+    this.requestedTerritories = '',
+    this.message = '',
     this.languageCode = defaultLanguageCode,
   });
 

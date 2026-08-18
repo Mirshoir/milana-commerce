@@ -34,6 +34,8 @@
 	<true/>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>FIREBASE_ANALYTICS_COLLECTION_ENABLED</key>
+	<false/>
 	<key>GIDClientID</key>
 	<string>454114412391-1ckhuldtvca7p2u4n9vjcf44rbi0la5m.apps.googleusercontent.com</string>
 	<key>GIDServerClientID</key>

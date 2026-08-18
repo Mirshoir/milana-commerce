@@ -68,6 +68,13 @@ class CartItem {
         'material': json['material'],
         'composition': json['composition'],
         'description': json['description'],
+        'care_i18n': json['care_i18n'],
+        'size_chart': json['size_chart'],
+        'color': json['color'],
+        'country': json['country'],
+        'like_count': json['like_count'],
+        'views': json['views'],
+        'colors': json['colors'],
         'season': json['season'],
         'tag': json['tag'],
         'collection': json['collection'],
@@ -182,6 +189,13 @@ class CartItem {
       'composition_i18n': product.localizedCompositions,
     if (product.localizedDescriptions.isNotEmpty)
       'description_i18n': product.localizedDescriptions,
+    if (product.localizedCare.isNotEmpty) 'care_i18n': product.localizedCare,
+    if (product.sizeChart.isNotEmpty) 'size_chart': product.sizeChart,
+    if (product.color.isNotEmpty) 'color': product.color,
+    if (product.country.isNotEmpty) 'country': product.country,
+    if (product.likeCount > 0) 'like_count': product.likeCount,
+    if (product.views > 0) 'views': product.views,
+    if (product.colors.isNotEmpty) 'colors': product.colors,
     if (product.localizedSeasons.isNotEmpty)
       'season_i18n': product.localizedSeasons,
     if (product.localizedCollections.isNotEmpty)

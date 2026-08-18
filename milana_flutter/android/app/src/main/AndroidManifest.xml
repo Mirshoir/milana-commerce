@@ -14,6 +14,9 @@
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="false">
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

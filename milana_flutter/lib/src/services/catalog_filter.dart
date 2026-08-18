@@ -21,6 +21,7 @@ class CatalogFilterOptions {
     this.savedOnly = false,
     this.savedProductIds = const <String>{},
     this.languageCode = 'ru',
+    this.preserveInputOrder = false,
   });
 
   final String query;
@@ -34,6 +35,7 @@ class CatalogFilterOptions {
   final bool savedOnly;
   final Set<String> savedProductIds;
   final String languageCode;
+  final bool preserveInputOrder;
 }
 
 List<Product> filterCatalog(
@@ -70,6 +72,7 @@ List<Product> filterCatalog(
             .compareTo(b.product.nameFor(options.languageCode)),
       );
     case CatalogSort.featured:
+      if (options.preserveInputOrder) break;
       ranked.sort((a, b) {
         final byScore = b.score.compareTo(a.score);
         if (byScore != 0) return byScore;

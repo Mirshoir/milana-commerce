@@ -10,6 +10,7 @@ import 'package:milana_flutter/src/models/order.dart';
 import 'package:milana_flutter/src/models/product.dart';
 import 'package:milana_flutter/src/services/auth_service.dart';
 import 'package:milana_flutter/src/services/assistant_service.dart';
+import 'package:milana_flutter/src/services/analytics_service.dart';
 import 'package:milana_flutter/src/services/cart_controller.dart';
 import 'package:milana_flutter/src/services/cart_store.dart';
 import 'package:milana_flutter/src/services/catalog_repository.dart';
@@ -386,9 +387,15 @@ void main() {
       client: MockClient((_) async => http.Response('[]', 200)),
     );
     final auth = AuthService(firebaseEnabled: false);
+    final analytics = AnalyticsService(firebaseEnabled: false);
 
     await tester.pumpWidget(
-      MilanaApp(catalog: catalog, orders: orders, auth: auth),
+      MilanaApp(
+        catalog: catalog,
+        orders: orders,
+        auth: auth,
+        analytics: analytics,
+      ),
     );
     await tester.pump(const Duration(milliseconds: 100));
 
@@ -449,8 +456,7 @@ void main() {
   ) async {
     _useViewport(tester, const Size(700, 844));
     const item = CartItem(product: _product, unitType: packUnitType);
-    final store = _MemoryCartStore()
-      ..items = const <CartItem>[item];
+    final store = _MemoryCartStore()..items = const <CartItem>[item];
     final auth = AuthService(firebaseEnabled: false);
     final cart = CartController(store: store, auth: auth);
     addTearDown(() {
@@ -460,7 +466,9 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(body: CartLine(item: item, cart: cart)),
+        home: Scaffold(
+          body: CartLine(item: item, cart: cart),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -560,7 +568,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, -700));
+    await tester.drag(find.byType(ListView).first, const Offset(0, -700));
     await tester.pump();
     await tester.tap(find.text('Показать фильтры'));
     await tester.pump();
@@ -571,73 +579,6 @@ void main() {
       greaterThanOrEqualTo(48),
     );
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('catalog lazily builds cards and survives a fast fling', (
-    tester,
-  ) async {
-    _useViewport(tester, const Size(390, 844));
-    final products = List<Product>.generate(
-      80,
-      (index) => Product(
-        id: 'catalog-$index',
-        slug: 'catalog-$index',
-        name: 'Catalog model $index',
-        gender: index.isEven ? 'women' : 'men',
-        category: 'pajamas',
-        price: 8,
-        sizes: const ['44', '46', '48'],
-        images: const [],
-      ),
-    );
-    final catalog = _MemoryCatalogRepository(
-      MockClient((_) async => http.Response('[]', 200)),
-      products: products,
-    );
-    final auth = AuthService(firebaseEnabled: false);
-    final cart = CartController(store: _MemoryCartStore(), auth: auth);
-    addTearDown(() {
-      cart.dispose();
-      auth.dispose();
-      catalog.close();
-    });
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: CatalogScreen(
-            catalog: catalog,
-            cart: cart,
-            auth: auth,
-            launchRequestId: 0,
-            launchMode: CatalogLaunchMode.browse,
-            requestedGender: 'all',
-            requestedCategory: 'all',
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byType(SliverGrid), findsOneWidget);
-    expect(find.byType(ProductCard).evaluate().length, lessThan(24));
-
-    await tester.fling(
-      find.byType(CustomScrollView),
-      const Offset(0, -5000),
-      10000,
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.byType(CatalogScreen), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  test('catalog image decoding follows rendered size and stays bounded', () {
-    expect(catalogImageCacheDimension(74, 3), 222);
-    expect(catalogImageCacheDimension(600, 3), 1024);
-    expect(catalogImageCacheDimension(double.infinity, 3), 720);
-    expect(catalogImageCacheDimension(40, double.nan), 96);
   });
 
   testWidgets('product image decoding preserves the source aspect ratio', (

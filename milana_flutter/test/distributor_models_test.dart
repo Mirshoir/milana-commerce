@@ -50,6 +50,26 @@ void main() {
     expect(notification.type, 'application_status');
   });
 
+  test('website-parity application defaults legacy compatibility fields', () {
+    const request = DistributorApplicationRequest(
+      clientApplicationId: 'flutter_123456790',
+      contactName: 'Aziza Karimova',
+      companyName: 'Atlas Trade',
+      phone: '+998901234567',
+      email: 'sales@example.com',
+      country: 'Uzbekistan',
+      city: 'Tashkent',
+      legalAccepted: true,
+    );
+
+    final data = request.toFunctionJson();
+    expect(data['website'], '');
+    expect(data['expected_monthly_volume'], '');
+    expect(data['sales_channels'], '');
+    expect(data['requested_territories'], '');
+    expect(data['message'], '');
+  });
+
   test('notification preferences default conservatively', () {
     final preferences = NotificationPreferences.fromMap(const {});
     expect(preferences.orderUpdates, isTrue);

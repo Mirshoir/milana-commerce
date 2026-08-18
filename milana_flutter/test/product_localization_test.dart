@@ -59,6 +59,17 @@ void main() {
         'en': 'Soft pajamas',
       },
       'material_i18n': {'uz': 'Paxta', 'ru': 'Хлопок', 'en': 'Cotton'},
+      'care': {
+        'uz': '30°C da yuving',
+        'ru': 'Стирать при 30°C',
+        'en': 'Wash at 30°C',
+      },
+      'size_chart': 'https://example.test/size-chart.webp',
+      'color': 'Blue',
+      'country': 'Uzbekistan',
+      'like_count': 14,
+      'views': 210,
+      'colors': ['Blue', 'White'],
     });
 
     final restored = Product.fromJson(original.toJson());
@@ -66,5 +77,12 @@ void main() {
     expect(restored.descriptionFor('uz'), 'Yumshoq pijama');
     expect(restored.descriptionFor('en'), 'Soft pajamas');
     expect(restored.materialFor('ru'), 'Хлопок');
+    expect(restored.careFor('uz'), '30°C da yuving');
+    expect(restored.sizeChart, 'https://example.test/size-chart.webp');
+    expect(restored.color, 'Blue');
+    expect(restored.country, 'Uzbekistan');
+    expect(restored.likeCount, 14);
+    expect(restored.views, 210);
+    expect(restored.colors, ['Blue', 'White']);
   });
 }

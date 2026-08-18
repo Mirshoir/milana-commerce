@@ -1,12 +1,10 @@
 'use strict';
 
-const { randomUUID } = require('node:crypto');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { FieldValue, getFirestore } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { HttpsError, onCall, onRequest } = require('firebase-functions/v2/https');
-const { defineSecret } = require('firebase-functions/params');
 const {
   activityEntry,
   buildOrderPayload,
@@ -65,7 +63,6 @@ const db = getFirestore(app);
 const messaging = getMessaging(app);
 const region = 'asia-southeast1';
 const accountDeletionBatchSize = 400;
-const paymentWebhookSecret = defineSecret('PAYMENT_WEBHOOK_SECRET');
 
 const notificationPreferenceByType = Object.freeze({
   application_submitted: 'application_updates',
@@ -600,15 +597,6 @@ exports.deleteCustomerAccount = onCall({ region }, async (request) => {
       db.collection('notification_preferences').doc(customerId),
     );
     finalBatch.delete(db.collection('customers').doc(customerId));
-    finalBatch.delete(
-      db.collection('customers').doc(customerId).collection('state').doc('saved'),
-    );
-    finalBatch.delete(
-      db.collection('customers').doc(customerId).collection('state').doc('recent'),
-    );
-    finalBatch.delete(
-      db.collection('customers').doc(customerId).collection('state').doc('cart'),
-    );
     finalBatch.set(
       db.collection('account_deletion_feedback').doc(),
       deletionFeedback,
@@ -1156,7 +1144,7 @@ exports.updatePaymentStatus = onCall({ region }, async (request) => {
   return receipt;
 });
 
-async function handlePaymentWebhook(req, res) {
+exports.paymentWebhook = onRequest({ region }, async (req, res) => {
   if (req.method !== 'POST') {
     res.set('allow', 'POST');
     res.status(405).json({ ok: false, error: 'method-not-allowed' });
@@ -1169,7 +1157,7 @@ async function handlePaymentWebhook(req, res) {
         typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {}),
         'utf8',
       );
-  const secret = paymentWebhookSecret.value();
+  const secret = process.env.PAYMENT_WEBHOOK_SECRET || '';
   const signature =
     req.get('x-milana-signature') ||
     req.get('x-payment-signature') ||
@@ -1232,12 +1220,7 @@ async function handlePaymentWebhook(req, res) {
     }
     res.status(500).json({ ok: false, error: 'payment-webhook-failed' });
   }
-}
-
-exports.paymentWebhook = onRequest(
-  { region, secrets: [paymentWebhookSecret] },
-  handlePaymentWebhook,
-);
+});
 
 exports.submitPaymentProof = onCall({ region }, async (request) => {
   if (!request.auth?.uid) {
@@ -1673,12 +1656,10 @@ exports.claimErpEvents = onCall({ region }, async (request) => {
     docs.forEach((doc) => {
       const data = doc.data();
       const attempts = Number(data.attempts || 0) + 1;
-      const leaseToken = randomUUID();
       tx.update(doc.ref, {
         status: 'processing',
         attempts,
         lease_owner: normalized.worker,
-        lease_token: leaseToken,
         lease_until: leaseUntil,
         claimed_at: nowIso,
         updated_at: nowIso,
@@ -1686,7 +1667,6 @@ exports.claimErpEvents = onCall({ region }, async (request) => {
       claimed.push({
         ...erpEventReceipt(doc),
         attempts,
-        lease_token: leaseToken,
         lease_until: leaseUntil,
       });
     });
@@ -1722,34 +1702,9 @@ exports.ackErpEvent = onCall({ region }, async (request) => {
     if (event.status === 'processed') {
       throw new HttpsError('failed-precondition', 'ERP event is already processed.');
     }
-    if (event.status !== 'processing') {
-      throw new HttpsError(
-        'failed-precondition',
-        'ERP event does not have an active processing lease.',
-      );
-    }
-    if (
-      event.lease_owner !== normalized.worker ||
-      event.lease_token !== normalized.leaseToken
-    ) {
-      throw new HttpsError(
-        'failed-precondition',
-        'ERP event lease belongs to another worker.',
-      );
-    }
-    if (!event.lease_until || event.lease_until <= nowIso) {
-      throw new HttpsError(
-        'failed-precondition',
-        'ERP event lease has expired.',
-      );
-    }
     const update = {
       status: normalized.status,
       ack_worker: normalized.worker,
-      ack_lease_token: normalized.leaseToken,
-      lease_owner: FieldValue.delete(),
-      lease_token: FieldValue.delete(),
-      lease_until: FieldValue.delete(),
       updated_at: nowIso,
     };
     if (normalized.status === 'processed') {

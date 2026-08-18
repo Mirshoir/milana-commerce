@@ -134,7 +134,6 @@ CODE_SIGN_ENTITLEMENTS = Runner/RunnerRelease.entitlements;
 <string>NSPrivacyCollectedDataTypeCustomerSupport</string>
 <string>NSPrivacyCollectedDataTypeProductInteraction</string>
 <string>NSPrivacyCollectedDataTypeDeviceID</string>
-<string>NSPrivacyCollectedDataTypeCoarseLocation</string>
 <string>NSPrivacyCollectedDataTypeOtherDiagnosticData</string>
 </array>\n`,
   );

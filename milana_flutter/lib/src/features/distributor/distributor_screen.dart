@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../localization/app_localization.dart';
 import '../../models/distributor.dart';
 import '../../services/auth_forms.dart';
+import '../../services/analytics_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/distributor_repository.dart';
 
@@ -289,11 +292,6 @@ class _DistributorApplicationSheetState
         : 'Uzbekistan',
   );
   late final city = TextEditingController(text: widget.customer?.city ?? '');
-  final website = TextEditingController();
-  final salesChannels = TextEditingController();
-  final territories = TextEditingController();
-  final message = TextEditingController();
-  String volume = '1000_5000';
   bool accepted = false;
   bool sending = false;
 
@@ -312,10 +310,6 @@ class _DistributorApplicationSheetState
     email.dispose();
     country.dispose();
     city.dispose();
-    website.dispose();
-    salesChannels.dispose();
-    territories.dispose();
-    message.dispose();
     super.dispose();
   }
 
@@ -368,52 +362,6 @@ class _DistributorApplicationSheetState
             ),
             _field(context, country, 'distributor.field.country'),
             _field(context, city, 'distributor.field.city', required: false),
-            _field(
-              context,
-              website,
-              'distributor.field.website',
-              required: false,
-              keyboardType: TextInputType.url,
-              validator: _validateWebsite,
-            ),
-            DropdownButtonFormField<String>(
-              initialValue: volume,
-              decoration: InputDecoration(
-                labelText: context.localize('distributor.field.volume'),
-              ),
-              items:
-                  const ['under_1000', '1000_5000', '5000_20000', 'over_20000']
-                      .map(
-                        (value) => DropdownMenuItem(
-                          value: value,
-                          child: Text(
-                            context.localize('distributor.volume.$value'),
-                          ),
-                        ),
-                      )
-                      .toList(),
-              onChanged: (value) => setState(() => volume = value ?? volume),
-            ),
-            const SizedBox(height: 10),
-            _field(
-              context,
-              salesChannels,
-              'distributor.field.sales_channels',
-              maxLines: 3,
-            ),
-            _field(
-              context,
-              territories,
-              'distributor.field.territories',
-              maxLines: 3,
-            ),
-            _field(
-              context,
-              message,
-              'distributor.field.message',
-              required: false,
-              maxLines: 4,
-            ),
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
               value: accepted,
@@ -468,18 +416,6 @@ class _DistributorApplicationSheetState
     );
   }
 
-  String? _validateWebsite(String? value) {
-    final text = (value ?? '').trim();
-    if (text.isEmpty) return null;
-    final uri = Uri.tryParse(text);
-    if (uri == null ||
-        !uri.hasAuthority ||
-        (uri.scheme != 'https' && uri.scheme != 'http')) {
-      return 'https://example.com';
-    }
-    return null;
-  }
-
   Future<void> _submit() async {
     if (!formKey.currentState!.validate()) return;
     if (!accepted) {
@@ -490,6 +426,7 @@ class _DistributorApplicationSheetState
       );
       return;
     }
+    final analytics = context.analytics;
     setState(() => sending = true);
     try {
       final receipt = await widget.repository.submitApplication(
@@ -501,15 +438,11 @@ class _DistributorApplicationSheetState
           email: normalizeEmail(email.text),
           country: country.text.trim(),
           city: city.text.trim(),
-          website: website.text.trim(),
-          expectedMonthlyVolume: volume,
-          salesChannels: salesChannels.text.trim(),
-          requestedTerritories: territories.text.trim(),
-          message: message.text.trim(),
           legalAccepted: accepted,
           languageCode: context.currentLanguageCode,
         ),
       );
+      unawaited(analytics?.logDistributorLead());
       if (mounted) Navigator.pop(context, receipt);
     } catch (error) {
       if (mounted) {
@@ -607,12 +540,12 @@ class _MilanaProofStrip extends StatelessWidget {
     return Row(
       children: [
         _Proof(
-          value: '25+',
-          label: context.localize('distributor.proof.years'),
+          value: '3',
+          label: context.localize('distributor.proof.factories'),
         ),
         _Proof(
-          value: '500K',
-          label: context.localize('distributor.proof.monthly'),
+          value: '25+',
+          label: context.localize('distributor.proof.years'),
         ),
         _Proof(
           value: '20+',

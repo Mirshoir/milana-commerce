@@ -11,6 +11,7 @@ import 'src/app.dart';
 import 'src/firebase/firebase_emulators.dart';
 import 'src/firebase/firebase_options.dart';
 import 'src/services/auth_service.dart';
+import 'src/services/analytics_service.dart';
 import 'src/services/catalog_repository.dart';
 import 'src/services/order_repository.dart';
 
@@ -84,6 +85,8 @@ Future<void> _bootstrap() async {
   }
 
   final catalog = CatalogRepository(firebaseEnabled: firebaseReady);
+  final analytics = AnalyticsService(firebaseEnabled: firebaseReady);
+  await analytics.initialize();
   final auth = AuthService(firebaseEnabled: firebaseReady);
   final orders = OrderRepository(
     firebaseEnabled: firebaseReady,
@@ -91,7 +94,14 @@ Future<void> _bootstrap() async {
     onWebsiteSessionInvalidated: auth.invalidateWebsiteSession,
   );
 
-  runApp(MilanaApp(catalog: catalog, orders: orders, auth: auth));
+  runApp(
+    MilanaApp(
+      catalog: catalog,
+      orders: orders,
+      auth: auth,
+      analytics: analytics,
+    ),
+  );
 }
 
 class MilanaBootstrapErrorApp extends StatelessWidget {

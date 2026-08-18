@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -19,6 +18,7 @@ import 'models/order.dart';
 import 'models/product.dart';
 import 'models/support_ticket.dart';
 import 'services/assistant_service.dart';
+import 'services/analytics_service.dart';
 import 'services/auth_service.dart';
 import 'services/account_overview.dart';
 import 'services/auth_forms.dart';
@@ -196,7 +196,13 @@ List<Product> relatedProductsFor(Product product, List<Product> products) {
 
   final ranked =
       products
-          .where((candidate) => candidate.id != product.id && candidate.active)
+          .where(
+            (candidate) =>
+                candidate.id != product.id &&
+                candidate.active &&
+                (product.modelNo.isEmpty ||
+                    candidate.modelNo != product.modelNo),
+          )
           .map((candidate) => (product: candidate, score: score(candidate)))
           .where((row) => row.score > 0)
           .toList()
@@ -207,6 +213,19 @@ List<Product> relatedProductsFor(Product product, List<Product> products) {
         });
 
   return ranked.map((row) => row.product).take(8).toList();
+}
+
+List<Product> productModelVariantsFor(Product product, List<Product> products) {
+  if (product.modelNo.trim().isEmpty) return const <Product>[];
+  return products
+      .where(
+        (candidate) =>
+            candidate.id != product.id &&
+            candidate.active &&
+            candidate.modelNo == product.modelNo,
+      )
+      .take(12)
+      .toList(growable: false);
 }
 
 String paymentInstructions(
@@ -379,11 +398,13 @@ class MilanaApp extends StatefulWidget {
     required this.catalog,
     required this.orders,
     required this.auth,
+    required this.analytics,
   });
 
   final CatalogRepository catalog;
   final OrderRepository orders;
   final AuthService auth;
+  final AnalyticsService analytics;
 
   @override
   State<MilanaApp> createState() => _MilanaAppState();
@@ -400,14 +421,18 @@ class _MilanaAppState extends State<MilanaApp> {
     widget.catalog.close();
     widget.orders.close();
     widget.auth.dispose();
+    widget.analytics.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    return AppLanguageScope(
-      notifier: language,
-      child: Builder(builder: (context) => _buildApp(context)),
+    return AnalyticsScope(
+      service: widget.analytics,
+      child: AppLanguageScope(
+        notifier: language,
+        child: Builder(builder: (context) => _buildApp(context)),
+      ),
     );
   }
 
@@ -853,6 +878,7 @@ class _AppShellState extends State<AppShell> {
       return false;
     }
     widget.cart.addItem(item);
+    unawaited(context.analytics?.logAddToCart(item));
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -877,6 +903,7 @@ class _AppShellState extends State<AppShell> {
   }
 
   void _openAssistantProduct(Product product) {
+    unawaited(context.analytics?.logViewItem(product));
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -887,6 +914,7 @@ class _AppShellState extends State<AppShell> {
         onAdd: _addAssistantItem,
         onOpenRelated: _openAssistantProduct,
         onAddRelated: _addAssistantProduct,
+        catalog: widget.catalog,
       ),
     );
   }
@@ -1398,6 +1426,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return false;
     }
     widget.cart.addItem(item);
+    unawaited(context.analytics?.logAddToCart(item));
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -1423,6 +1452,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openProduct(Product product, List<Product> products) {
     final related = relatedProductsFor(product, products);
+    final variants = productModelVariantsFor(product, products);
+    unawaited(context.analytics?.logViewItem(product));
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1434,6 +1465,8 @@ class _HomeScreenState extends State<HomeScreen> {
         onOpenRelated: (relatedProduct) =>
             _openProduct(relatedProduct, products),
         onAddRelated: _add,
+        catalog: widget.catalog,
+        modelVariants: variants,
       ),
     );
   }
@@ -2451,6 +2484,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
   List<String> lastRemoteRecent = const <String>[];
   bool recentDirty = false;
   String? handledDeletedCustomerId;
+  Timer? searchDebounce;
+  List<Product>? smartSearchProducts;
+  bool smartSearchLoading = false;
+  int searchRevision = 0;
 
   @override
   void initState() {
@@ -2471,30 +2508,6 @@ class _CatalogScreenState extends State<CatalogScreen> {
     return products;
   }
 
-  Future<void> _loadMoreCatalog(List<Product> loadedProducts) async {
-    if (visibleProductCount < loadedProducts.length) {
-      setState(() {
-        visibleProductCount = nextCatalogVisibleCount(
-          total: loadedProducts.length,
-          current: visibleProductCount,
-        );
-      });
-      return;
-    }
-    if (!widget.catalog.hasMore) return;
-    final next = widget.catalog.loadMoreProducts();
-    setState(() => productsFuture = next);
-    final products = await next;
-    if (!mounted) return;
-    widget.cart.refreshProducts(products);
-    setState(() {
-      visibleProductCount = nextCatalogVisibleCount(
-        total: products.length,
-        current: visibleProductCount,
-      );
-    });
-  }
-
   void _reloadCatalog() {
     setState(() => productsFuture = _loadProductsAndRefreshCart());
   }
@@ -2507,6 +2520,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
       if (!mounted) return;
       setState(() {
         searchController.clear();
+        searchDebounce?.cancel();
+        searchRevision += 1;
+        smartSearchProducts = null;
+        smartSearchLoading = false;
         query = '';
         gender = widget.requestedGender;
         category = widget.requestedCategory;
@@ -2531,6 +2548,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
   void dispose() {
     widget.auth.removeListener(_handleAuthChange);
     searchController.dispose();
+    searchDebounce?.cancel();
     searchFocusNode.dispose();
     scrollController.dispose();
     super.dispose();
@@ -2587,281 +2605,243 @@ class _CatalogScreenState extends State<CatalogScreen> {
             setState(() => productsFuture = next);
             await next;
           },
-          child: CustomScrollView(
+          child: ListView(
             controller: scrollController,
-            scrollCacheExtent: const ScrollCacheExtent.pixels(220),
-            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            slivers: [
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(contentInset, 8, contentInset, 0),
-                sliver: SliverList.list(
-                  children: [
-                    PremiumCatalogHeader(
-                      total: widget.catalog.totalProducts,
-                      visible: products.length,
-                    ),
-                    if (loadInfo.fromCache) ...[
-                      const SizedBox(height: 12),
-                      CatalogCacheNotice(
-                        info: loadInfo,
-                        onRefresh: _reloadCatalog,
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    CatalogCategoryRail(
-                      products: allProducts,
-                      activeGender: gender,
-                      activeCategory: category,
-                      onSelect: (selection) => setState(() {
-                        gender = selection.gender;
-                        category = selection.category;
-                        savedOnly = false;
-                        _resetCatalogWindow();
-                      }),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: searchController,
-                      focusNode: searchFocusNode,
-                      decoration: InputDecoration(
-                        hintText: context.localize(
-                          'catalog.search_placeholder',
-                        ),
-                        prefixIcon: Icon(Icons.search, size: 20),
-                        filled: false,
-                        enabledBorder: UnderlineInputBorder(),
-                        focusedBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: milanaInk, width: 1.5),
-                        ),
-                      ),
-                      onChanged: (value) => setState(() {
-                        query = value.trim().toLowerCase();
-                        _resetCatalogWindow();
-                      }),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () =>
-                            setState(() => filtersExpanded = !filtersExpanded),
-                        icon: const Icon(Icons.filter_list, size: 18),
-                        label: Text(
-                          filtersExpanded
-                              ? context.localize('catalog.filters.close')
-                              : _activeFilterCount == 0
-                              ? context.localize('catalog.filters.open')
-                              : context.localize(
-                                  'catalog.filters.active',
-                                  args: {'count': '$_activeFilterCount'},
-                                ),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: milanaInk,
-                          side: BorderSide(
-                            color: milanaInk.withValues(alpha: .3),
+            padding: EdgeInsets.fromLTRB(contentInset, 8, contentInset, 28),
+            children: [
+              PremiumCatalogHeader(
+                total: allProducts.length,
+                visible: products.length,
+              ),
+              if (loadInfo.fromCache) ...[
+                const SizedBox(height: 12),
+                CatalogCacheNotice(info: loadInfo, onRefresh: _reloadCatalog),
+              ],
+              const SizedBox(height: 16),
+              CatalogCategoryRail(
+                products: allProducts,
+                activeGender: gender,
+                activeCategory: category,
+                onSelect: (selection) => setState(() {
+                  gender = selection.gender;
+                  category = selection.category;
+                  savedOnly = false;
+                  _resetCatalogWindow();
+                }),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: searchController,
+                focusNode: searchFocusNode,
+                decoration: InputDecoration(
+                  hintText: context.localize('catalog.search_placeholder'),
+                  prefixIcon: Icon(Icons.search, size: 20),
+                  filled: false,
+                  enabledBorder: UnderlineInputBorder(),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: milanaInk, width: 1.5),
+                  ),
+                ),
+                onChanged: _onSearchChanged,
+              ),
+              if (smartSearchLoading)
+                const LinearProgressIndicator(minHeight: 2),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () =>
+                      setState(() => filtersExpanded = !filtersExpanded),
+                  icon: const Icon(Icons.filter_list, size: 18),
+                  label: Text(
+                    filtersExpanded
+                        ? context.localize('catalog.filters.close')
+                        : _activeFilterCount == 0
+                        ? context.localize('catalog.filters.open')
+                        : context.localize(
+                            'catalog.filters.active',
+                            args: {'count': '$_activeFilterCount'},
                           ),
-                          shape: const RoundedRectangleBorder(),
-                          textStyle: const TextStyle(
-                            fontSize: 11,
-                            letterSpacing: 1.6,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: milanaInk,
+                    side: BorderSide(color: milanaInk.withValues(alpha: .3)),
+                    shape: const RoundedRectangleBorder(),
+                    textStyle: const TextStyle(
+                      fontSize: 11,
+                      letterSpacing: 1.6,
+                      fontWeight: FontWeight.w600,
                     ),
-                    if (filtersExpanded) ...[
-                      const SizedBox(height: 12),
-                      _Filters(
-                        gender: gender,
-                        category: category,
-                        onGender: (value) => setState(() {
-                          gender = value;
-                          _resetCatalogWindow();
-                        }),
-                        onCategory: (value) => setState(() {
-                          category = value;
-                          _resetCatalogWindow();
-                        }),
-                      ),
-                      const SizedBox(height: 10),
-                      DiscoveryFilterPanel(
-                        size: size,
-                        sizes: sizes,
-                        priceBand: priceBand,
-                        availability: availability,
-                        curation: curation,
-                        onSize: (value) => setState(() {
-                          size = value;
-                          _resetCatalogWindow();
-                        }),
-                        onPriceBand: (value) => setState(() {
-                          priceBand = value;
-                          _resetCatalogWindow();
-                        }),
-                        onAvailability: (value) => setState(() {
-                          availability = value;
-                          _resetCatalogWindow();
-                        }),
-                        onCuration: (value) => setState(() {
-                          curation = value;
-                          _resetCatalogWindow();
-                        }),
-                        onClear: _clearFilters,
-                        hasActiveFilters:
-                            query.isNotEmpty ||
-                            gender != 'all' ||
-                            category != 'all' ||
-                            size != 'all' ||
-                            priceBand != PriceBand.all ||
-                            availability != AvailabilityFilter.all ||
-                            curation != CurationFilter.all ||
-                            savedOnly,
-                      ),
-                    ],
-                    const SizedBox(height: 10),
-                    CatalogActionBar(
-                      savedOnly: savedOnly,
-                      savedCount: favorites.length,
-                      sort: sort,
-                      onSavedOnly: (value) => setState(() {
-                        savedOnly = value;
-                        _resetCatalogWindow();
-                      }),
-                      onSort: (value) => setState(() {
-                        sort = value;
-                        _resetCatalogWindow();
-                      }),
-                    ),
-                    const SizedBox(height: 18),
-                    if (showRecent) ...[
-                      SectionHeader(
-                        title: context.localize('home.section.recent'),
-                        trailing: context.localize(
-                          'catalog.models_count',
-                          args: {'count': '${recentProducts.length}'},
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      RecentlyViewedRail(
-                        products: recentProducts,
-                        favorites: favorites,
-                        onOpen: (product) => _openProduct(product, allProducts),
-                        onAdd: _add,
-                        onFavorite: _toggleFavorite,
-                      ),
-                      const SizedBox(height: 24),
-                      Divider(color: milanaInk.withValues(alpha: .12)),
-                      const SizedBox(height: 18),
-                    ],
-                    SectionHeader(
-                      title: context.localize('home.section.all'),
-                      trailing: products.length == visibleProducts.length
-                          ? context.localize(
-                              'catalog.models_count',
-                              args: {'count': '${products.length}'},
-                            )
-                          : context.localize(
-                              'catalog.models_count_ratio',
-                              args: {
-                                'visible': '${visibleProducts.length}',
-                                'total': '${products.length}',
-                              },
-                            ),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
+                  ),
                 ),
               ),
-              SliverPadding(
-                padding: EdgeInsets.symmetric(horizontal: contentInset),
-                sliver: SliverLayoutBuilder(
-                  builder: (context, constraints) {
-                    final width = constraints.crossAxisExtent;
-                    final columns = width > 1100
-                        ? 4
-                        : width > 720
-                        ? 3
-                        : 2;
-                    return SliverGrid(
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columns,
-                        mainAxisSpacing: 22,
-                        crossAxisSpacing: 10,
-                        childAspectRatio: columns > 2 ? .68 : .60,
-                      ),
-                      delegate: SliverChildBuilderDelegate(
-                        (context, index) {
-                          final product = visibleProducts[index];
-                          return ProductCard(
-                            key: ValueKey(product.id),
-                            product: product,
-                            isFavorite: favorites.contains(product.id),
-                            onOpen: () => _openProduct(product, allProducts),
-                            onAdd: isOutOfQop(product)
-                                ? null
-                                : () => _add(product),
-                            onFavorite: () => _toggleFavorite(product),
-                          );
+              if (filtersExpanded) ...[
+                const SizedBox(height: 12),
+                _Filters(
+                  gender: gender,
+                  category: category,
+                  onGender: (value) => setState(() {
+                    gender = value;
+                    _resetCatalogWindow();
+                  }),
+                  onCategory: (value) => setState(() {
+                    category = value;
+                    _resetCatalogWindow();
+                  }),
+                ),
+                const SizedBox(height: 10),
+                DiscoveryFilterPanel(
+                  size: size,
+                  sizes: sizes,
+                  priceBand: priceBand,
+                  availability: availability,
+                  curation: curation,
+                  onSize: (value) => setState(() {
+                    size = value;
+                    _resetCatalogWindow();
+                  }),
+                  onPriceBand: (value) => setState(() {
+                    priceBand = value;
+                    _resetCatalogWindow();
+                  }),
+                  onAvailability: (value) => setState(() {
+                    availability = value;
+                    _resetCatalogWindow();
+                  }),
+                  onCuration: (value) => setState(() {
+                    curation = value;
+                    _resetCatalogWindow();
+                  }),
+                  onClear: _clearFilters,
+                  hasActiveFilters:
+                      query.isNotEmpty ||
+                      gender != 'all' ||
+                      category != 'all' ||
+                      size != 'all' ||
+                      priceBand != PriceBand.all ||
+                      availability != AvailabilityFilter.all ||
+                      curation != CurationFilter.all ||
+                      savedOnly,
+                ),
+              ],
+              const SizedBox(height: 10),
+              CatalogActionBar(
+                savedOnly: savedOnly,
+                savedCount: favorites.length,
+                sort: sort,
+                onSavedOnly: (value) => setState(() {
+                  savedOnly = value;
+                  _resetCatalogWindow();
+                }),
+                onSort: (value) => setState(() {
+                  sort = value;
+                  _resetCatalogWindow();
+                }),
+              ),
+              const SizedBox(height: 18),
+              if (showRecent) ...[
+                SectionHeader(
+                  title: context.localize('home.section.recent'),
+                  trailing: context.localize(
+                    'catalog.models_count',
+                    args: {'count': '${recentProducts.length}'},
+                  ),
+                ),
+                const SizedBox(height: 10),
+                RecentlyViewedRail(
+                  products: recentProducts,
+                  favorites: favorites,
+                  onOpen: (product) => _openProduct(product, allProducts),
+                  onAdd: _add,
+                  onFavorite: _toggleFavorite,
+                ),
+                const SizedBox(height: 24),
+                Divider(color: milanaInk.withValues(alpha: .12)),
+                const SizedBox(height: 18),
+              ],
+              SectionHeader(
+                title: context.localize('home.section.all'),
+                trailing: products.length == visibleProducts.length
+                    ? context.localize(
+                        'catalog.models_count',
+                        args: {'count': '${products.length}'},
+                      )
+                    : context.localize(
+                        'catalog.models_count_ratio',
+                        args: {
+                          'visible': '${visibleProducts.length}',
+                          'total': '${products.length}',
                         },
-                        childCount: visibleProducts.length,
-                        addAutomaticKeepAlives: false,
                       ),
-                    );
-                  },
-                ),
               ),
-              if (products.length > visibleProducts.length ||
-                  widget.catalog.hasMore)
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    contentInset,
-                    16,
-                    contentInset,
-                    0,
-                  ),
-                  sliver: SliverToBoxAdapter(
-                    child: LoadMoreCatalogButton(
-                      visible: visibleProducts.length,
-                      total: query.isEmpty && _activeFilterCount == 0
-                          ? widget.catalog.totalProducts
-                          : products.length,
-                      onPressed: () => _loadMoreCatalog(allProducts),
+              const SizedBox(height: 10),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final columns = constraints.maxWidth > 1100
+                      ? 4
+                      : constraints.maxWidth > 720
+                      ? 3
+                      : 2;
+                  return GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: visibleProducts.length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      mainAxisSpacing: 22,
+                      crossAxisSpacing: 10,
+                      childAspectRatio: columns > 2 ? .68 : .60,
                     ),
-                  ),
+                    itemBuilder: (context, i) => ProductCard(
+                      product: visibleProducts[i],
+                      isFavorite: favorites.contains(visibleProducts[i].id),
+                      onOpen: () =>
+                          _openProduct(visibleProducts[i], allProducts),
+                      onAdd: isOutOfQop(visibleProducts[i])
+                          ? null
+                          : () => _add(visibleProducts[i]),
+                      onFavorite: () => _toggleFavorite(visibleProducts[i]),
+                    ),
+                  );
+                },
+              ),
+              if (products.length > visibleProducts.length) ...[
+                const SizedBox(height: 16),
+                LoadMoreCatalogButton(
+                  visible: visibleProducts.length,
+                  total: products.length,
+                  onPressed: () => setState(() {
+                    visibleProductCount = nextCatalogVisibleCount(
+                      total: products.length,
+                      current: visibleProductCount,
+                    );
+                  }),
                 ),
+              ],
               if (products.isEmpty)
-                SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
-                    contentInset,
-                    36,
-                    contentInset,
-                    0,
-                  ),
-                  sliver: SliverToBoxAdapter(
-                    child: _EmptyState(
-                      icon: savedOnly
-                          ? Icons.favorite_border
-                          : Icons.search_off_outlined,
-                      title: savedOnly
-                          ? context.localize('catalog.empty.saved.title')
-                          : context.localize('catalog.empty.search.title'),
-                      message: savedOnly
-                          ? context.localize('catalog.empty.saved.message')
-                          : context.localize('catalog.empty.search.message'),
-                      action: query.isNotEmpty || _activeFilterCount > 0
-                          ? OutlinedButton.icon(
-                              onPressed: _clearFilters,
-                              icon: const Icon(Icons.restart_alt),
-                              label: Text(
-                                context.localize('catalog.clear_filters'),
-                              ),
-                            )
-                          : null,
-                    ),
+                Padding(
+                  padding: const EdgeInsets.only(top: 36),
+                  child: _EmptyState(
+                    icon: savedOnly
+                        ? Icons.favorite_border
+                        : Icons.search_off_outlined,
+                    title: savedOnly
+                        ? context.localize('catalog.empty.saved.title')
+                        : context.localize('catalog.empty.search.title'),
+                    message: savedOnly
+                        ? context.localize('catalog.empty.saved.message')
+                        : context.localize('catalog.empty.search.message'),
+                    action: query.isNotEmpty || _activeFilterCount > 0
+                        ? OutlinedButton.icon(
+                            onPressed: _clearFilters,
+                            icon: const Icon(Icons.restart_alt),
+                            label: Text(
+                              context.localize('catalog.clear_filters'),
+                            ),
+                          )
+                        : null,
                   ),
                 ),
-              const SliverToBoxAdapter(child: SizedBox(height: 28)),
             ],
           ),
         );
@@ -2870,10 +2850,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
   }
 
   List<Product> _filtered(List<Product> rows) {
+    final serverRows = query.isNotEmpty ? smartSearchProducts : null;
     return filterCatalog(
-      rows,
+      serverRows ?? rows,
       CatalogFilterOptions(
-        query: query,
+        query: serverRows == null ? query : '',
         gender: gender,
         category: category,
         size: size,
@@ -2884,14 +2865,60 @@ class _CatalogScreenState extends State<CatalogScreen> {
         savedProductIds: favorites,
         sort: catalogSortFromString(sort),
         languageCode: context.currentLanguageCode,
+        preserveInputOrder:
+            serverRows != null &&
+            catalogSortFromString(sort) == CatalogSort.featured,
       ),
     );
   }
 
+  void _onSearchChanged(String value) {
+    final nextQuery = value.trim().toLowerCase();
+    searchDebounce?.cancel();
+    searchRevision += 1;
+    setState(() {
+      query = nextQuery;
+      smartSearchProducts = null;
+      smartSearchLoading = nextQuery.length >= 2;
+      _resetCatalogWindow();
+    });
+    if (nextQuery.length < 2) return;
+    final revision = searchRevision;
+    searchDebounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _runSmartSearch(nextQuery, revision),
+    );
+  }
+
+  Future<void> _runSmartSearch(String term, int revision) async {
+    try {
+      final results = await widget.catalog.searchProducts(term);
+      if (!mounted || revision != searchRevision || query != term) return;
+      setState(() {
+        smartSearchProducts = results;
+        smartSearchLoading = false;
+        _resetCatalogWindow();
+      });
+      unawaited(
+        context.analytics?.logSearch(term, resultCount: results.length),
+      );
+    } catch (_) {
+      if (!mounted || revision != searchRevision || query != term) return;
+      // Keep the existing local catalog search as the offline fallback.
+      setState(() {
+        smartSearchProducts = null;
+        smartSearchLoading = false;
+      });
+      unawaited(context.analytics?.logSearch(term, resultCount: 0));
+    }
+  }
+
   void _toggleFavorite(Product product) {
+    final added = !favorites.contains(product.id);
     setState(() {
       if (!favorites.add(product.id)) favorites.remove(product.id);
     });
+    if (added) unawaited(context.analytics?.logAddToWishlist(product));
     favoritesDirty = widget.auth.signedIn;
     unawaited(favoritesStore.save(favorites, scope: localProductScope));
     if (widget.auth.signedIn) {
@@ -3095,6 +3122,10 @@ class _CatalogScreenState extends State<CatalogScreen> {
   void _clearFilters() {
     setState(() {
       searchController.clear();
+      searchDebounce?.cancel();
+      searchRevision += 1;
+      smartSearchProducts = null;
+      smartSearchLoading = false;
       query = '';
       gender = 'all';
       category = 'all';
@@ -3144,6 +3175,7 @@ class _CatalogScreenState extends State<CatalogScreen> {
       return false;
     }
     widget.cart.addItem(item);
+    unawaited(context.analytics?.logAddToCart(item));
     HapticFeedback.lightImpact();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -3170,6 +3202,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
   void _openProduct(Product product, [List<Product> allProducts = const []]) {
     _trackRecent(product);
     final related = relatedProductsFor(product, allProducts);
+    final variants = productModelVariantsFor(product, allProducts);
+    unawaited(context.analytics?.logViewItem(product));
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -3181,6 +3215,8 @@ class _CatalogScreenState extends State<CatalogScreen> {
         onOpenRelated: (relatedProduct) =>
             _openProduct(relatedProduct, allProducts),
         onAddRelated: _add,
+        catalog: widget.catalog,
+        modelVariants: variants,
       ),
     );
   }
@@ -4089,35 +4125,33 @@ class ProductImage extends StatelessWidget {
         child: Center(child: Icon(Icons.image_not_supported_outlined)),
       );
     }
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final pixelRatio = MediaQuery.devicePixelRatioOf(context);
-        final cacheWidth = catalogImageCacheDimension(
-          constraints.maxWidth,
-          pixelRatio,
-        );
-        return Semantics(
-          image: true,
-          label: localizedText(
-            'product.image.label',
-            languageCode: context.currentLanguageCode,
-            args: {'product': productName(context, product)},
-          ),
-          child: CachedNetworkImage(
-            imageUrl: imageUrl,
-            width: double.infinity,
-            height: double.infinity,
+    return Semantics(
+      image: true,
+      label: localizedText(
+        'product.image.label',
+        languageCode: context.currentLanguageCode,
+        args: {'product': productName(context, product)},
+      ),
+      child: CachedNetworkImage(
+        imageUrl: imageUrl,
+        width: double.infinity,
+        fit: fit,
+        alignment: alignment,
+        fadeInDuration: const Duration(milliseconds: 180),
+        fadeOutDuration: const Duration(milliseconds: 90),
+        memCacheWidth: 900,
+        maxWidthDiskCache: 1200,
+        placeholder: (context, url) => const ProductImagePlaceholder(),
+        errorWidget: (context, url, error) => const ProductImageFallback(),
+        imageBuilder: (context, provider) => SizedBox.expand(
+          child: Image(
+            image: provider,
             fit: fit,
             alignment: alignment,
-            fadeInDuration: const Duration(milliseconds: 100),
-            fadeOutDuration: Duration.zero,
-            memCacheWidth: cacheWidth,
-            maxWidthDiskCache: 1200,
-            placeholder: (context, url) => const ProductImagePlaceholder(),
-            errorWidget: (context, url, error) => const ProductImageFallback(),
+            gaplessPlayback: true,
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
@@ -4191,12 +4225,6 @@ class _ProductDetailImageState extends State<_ProductDetailImage> {
     image: widget.image,
     fit: BoxFit.contain,
   );
-}
-
-int catalogImageCacheDimension(double logicalSize, double pixelRatio) {
-  if (!logicalSize.isFinite || logicalSize <= 0) return 720;
-  final safeRatio = pixelRatio.isFinite && pixelRatio > 0 ? pixelRatio : 1.0;
-  return (logicalSize * safeRatio).ceil().clamp(96, 1024);
 }
 
 class ProductImagePlaceholder extends StatelessWidget {
@@ -4528,6 +4556,7 @@ class _AssistantSheetState extends State<AssistantSheet> {
     final message = text.trim();
     if (message.length < 2 || sending) return;
     controller.clear();
+    unawaited(context.analytics?.logAssistantEngagement());
     setState(() {
       sending = true;
       messages.add(_AssistantMessage(text: message, fromUser: true));
@@ -4831,6 +4860,8 @@ class ProductSheet extends StatefulWidget {
     required this.onAdd,
     required this.onOpenRelated,
     required this.onAddRelated,
+    this.catalog,
+    this.modelVariants = const <Product>[],
   });
 
   final Product product;
@@ -4838,6 +4869,8 @@ class ProductSheet extends StatefulWidget {
   final bool Function(CartItem) onAdd;
   final ValueChanged<Product> onOpenRelated;
   final ValueChanged<Product> onAddRelated;
+  final CatalogRepository? catalog;
+  final List<Product> modelVariants;
 
   @override
   State<ProductSheet> createState() => _ProductSheetState();
@@ -4850,6 +4883,11 @@ class _ProductSheetState extends State<ProductSheet> {
   bool addedRecently = false;
   late final PageController imageController;
   final Map<int, double> imageAspectRatios = <int, double>{};
+  late Product product;
+  late List<Product> relatedProducts;
+  late List<Product> modelVariants;
+  bool garmentMeasurementsEnabled = false;
+  bool backendDetailLoading = false;
 
   void _rememberImageAspectRatio(int index, double ratio) {
     final safeRatio = ratio.clamp(.55, 1.6).toDouble();
@@ -4860,8 +4898,12 @@ class _ProductSheetState extends State<ProductSheet> {
   @override
   void initState() {
     super.initState();
-    packageCount = widget.product.orderUnitFor(unitType).minQty;
+    product = widget.product;
+    relatedProducts = widget.relatedProducts;
+    modelVariants = widget.modelVariants;
+    packageCount = product.orderUnitFor(unitType).minQty;
     imageController = PageController();
+    unawaited(_loadBackendDetail());
   }
 
   @override
@@ -4872,7 +4914,6 @@ class _ProductSheetState extends State<ProductSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final product = widget.product;
     final maxPackages = packageUiLimit(product, unitType: unitType);
     final minimumPackages = product.orderUnitFor(unitType).minQty;
     final selectedPackages = packageCount
@@ -4921,6 +4962,9 @@ class _ProductSheetState extends State<ProductSheet> {
                     ),
                   ),
                   const SizedBox(height: 14),
+                  if (backendDetailLoading)
+                    const LinearProgressIndicator(minHeight: 2),
+                  if (backendDetailLoading) const SizedBox(height: 10),
                   AnimatedSize(
                     duration: const Duration(milliseconds: 180),
                     curve: Curves.easeOut,
@@ -5144,6 +5188,25 @@ class _ProductSheetState extends State<ProductSheet> {
                   ),
                   const SizedBox(height: 14),
                   ProductSpecGrid(specs: specs),
+                  if (product.likeCount > 0 || product.views > 0) ...[
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (product.likeCount > 0)
+                          _SoftBadge(
+                            icon: Icons.favorite_outline,
+                            label: '${product.likeCount}',
+                          ),
+                        if (product.views > 0)
+                          _SoftBadge(
+                            icon: Icons.visibility_outlined,
+                            label: '${product.views}',
+                          ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   if (product.fabricFor(context.currentLanguageCode).isNotEmpty)
                     Text(
@@ -5159,22 +5222,70 @@ class _ProductSheetState extends State<ProductSheet> {
                         product.descriptionFor(context.currentLanguageCode),
                       ),
                     ),
+                  if (product.careFor(context.currentLanguageCode).isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: _ProductTextSection(
+                        title: context.localize('product.care.title'),
+                        body: product.careFor(context.currentLanguageCode),
+                      ),
+                    ),
+                  if (garmentMeasurementsEnabled &&
+                      product.sizeChart.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: _GarmentMeasurementSection(
+                        sizeChart: product.sizeChart,
+                      ),
+                    ),
                   const SizedBox(height: 14),
                   ProductHighlightList(highlights: highlights),
-                  if (widget.relatedProducts.isNotEmpty) ...[
+                  if (modelVariants.isNotEmpty) ...[
+                    const SizedBox(height: 22),
+                    SectionHeader(
+                      title: context.localize('product.variants.title'),
+                      trailing: context.localize(
+                        'catalog.models_count',
+                        args: {'count': modelVariants.length.toString()},
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: modelVariants
+                          .map(
+                            (variant) => ActionChip(
+                              avatar: const Icon(
+                                Icons.style_outlined,
+                                size: 18,
+                              ),
+                              label: Text(
+                                variant.variant.isEmpty
+                                    ? variant.modelNo
+                                    : variant.variant,
+                              ),
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                                widget.onOpenRelated(variant);
+                              },
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+                  ],
+                  if (relatedProducts.isNotEmpty) ...[
                     const SizedBox(height: 22),
                     SectionHeader(
                       title: context.localize('product.related.title'),
                       trailing: context.localize(
                         'catalog.models_count',
-                        args: {
-                          'count': widget.relatedProducts.length.toString(),
-                        },
+                        args: {'count': relatedProducts.length.toString()},
                       ),
                     ),
                     const SizedBox(height: 10),
                     FeaturedProductsRail(
-                      products: widget.relatedProducts,
+                      products: relatedProducts,
                       badgeIcon: Icons.style_outlined,
                       badgeLabel: context.localize('product.related.badge'),
                       onOpen: (related) {
@@ -5212,6 +5323,74 @@ class _ProductSheetState extends State<ProductSheet> {
     );
   }
 
+  Future<void> _loadBackendDetail() async {
+    final catalog = widget.catalog;
+    if (catalog == null || product.slug.isEmpty) return;
+    setState(() => backendDetailLoading = true);
+    final slug = product.slug;
+    await Future.wait<void>([
+      _loadAuthoritativeProduct(catalog, slug),
+      _loadAuthoritativeRecommendations(catalog, slug),
+      _loadGarmentMeasurementConfig(catalog, slug),
+    ]);
+    if (mounted && product.slug == slug) {
+      setState(() => backendDetailLoading = false);
+    }
+  }
+
+  Future<void> _loadAuthoritativeProduct(
+    CatalogRepository catalog,
+    String slug,
+  ) async {
+    try {
+      final detail = await catalog.loadProductDetails(slug);
+      if (!mounted || product.slug != slug) return;
+      setState(() {
+        product = detail;
+        if (imageIndex >= product.images.length) imageIndex = 0;
+        packageCount = product.orderUnitFor(unitType).minQty;
+      });
+    } catch (_) {
+      // The catalog snapshot remains a complete offline fallback.
+    }
+  }
+
+  Future<void> _loadAuthoritativeRecommendations(
+    CatalogRepository catalog,
+    String slug,
+  ) async {
+    try {
+      final recommendations = await catalog.loadRecommendations(slug);
+      if (mounted && product.slug == slug && recommendations.isNotEmpty) {
+        setState(
+          () => relatedProducts = recommendations
+              .where(
+                (candidate) =>
+                    candidate.id != product.id &&
+                    candidate.modelNo != product.modelNo,
+              )
+              .toList(growable: false),
+        );
+      }
+    } catch (_) {
+      // Keep locally ranked recommendations when the endpoint is unavailable.
+    }
+  }
+
+  Future<void> _loadGarmentMeasurementConfig(
+    CatalogRepository catalog,
+    String slug,
+  ) async {
+    try {
+      final config = await catalog.loadPublicConfig();
+      if (mounted && product.slug == slug) {
+        setState(() => garmentMeasurementsEnabled = config.garmentMeasurements);
+      }
+    } catch (_) {
+      // A missing public setting must not expose constructor-only details.
+    }
+  }
+
   void _showImage(int index) {
     if (!imageController.hasClients) return;
     imageController.animateToPage(
@@ -5226,12 +5405,93 @@ class _ProductSheetState extends State<ProductSheet> {
       context: context,
       barrierColor: Colors.black,
       builder: (context) => ProductGalleryDialog(
-        product: widget.product,
+        product: product,
         images: images,
         initialIndex: imageIndex,
       ),
     );
     if (selected != null && mounted) _showImage(selected);
+  }
+}
+
+class _ProductTextSection extends StatelessWidget {
+  const _ProductTextSection({required this.title, required this.body});
+
+  final String title;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: milanaBlush,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          Text(body),
+        ],
+      ),
+    );
+  }
+}
+
+class _GarmentMeasurementSection extends StatelessWidget {
+  const _GarmentMeasurementSection({required this.sizeChart});
+
+  final String sizeChart;
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = sizeChart.trim();
+    final isImage = RegExp(
+      r'\.(?:png|jpe?g|webp|gif)(?:\?.*)?$',
+      caseSensitive: false,
+    ).hasMatch(trimmed);
+    final imageUrl = trimmed.startsWith('/') ? '$apiBaseUrl$trimmed' : trimmed;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: milanaBlush,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: milanaInk.withValues(alpha: .1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.straighten_outlined, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  context.localize('product.measurements.title'),
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (isImage)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.contain,
+                errorWidget: (_, _, _) => Text(trimmed),
+              ),
+            )
+          else
+            SelectableText(trimmed),
+        ],
+      ),
+    );
   }
 }
 
@@ -6242,6 +6502,8 @@ class _CartScreenState extends State<CartScreen> {
     }
     setState(() => sending = true);
     final initiatingCustomerId = widget.auth.customer?.id;
+    final checkoutItems = List<CartItem>.unmodifiable(widget.cart.items);
+    unawaited(context.analytics?.logBeginCheckout(checkoutItems));
     try {
       final customer = widget.auth.customer;
       final clientOrderId = pendingClientOrderId ?? createClientOrderId();
@@ -6267,6 +6529,12 @@ class _CartScreenState extends State<CartScreen> {
       );
       if (!mounted || widget.auth.customer?.id != initiatingCustomerId) return;
       widget.cart.clear();
+      unawaited(
+        context.analytics?.logWholesaleOrderSubmitted(
+          orderNumber: result.number,
+          items: checkoutItems,
+        ),
+      );
       pendingClientOrderId = null;
       setState(() => receipt = result);
       try {
@@ -7496,6 +7764,7 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> _submit() async {
     if (!formKey.currentState!.validate()) return;
+    final analytics = context.analytics;
     setState(() => busy = true);
     try {
       if (signUp) {
@@ -7508,6 +7777,7 @@ class _AccountScreenState extends State<AccountScreen> {
           password: password.text,
           legalAccepted: legalAccepted,
         );
+        unawaited(analytics?.logSignUp('email'));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -7519,6 +7789,7 @@ class _AccountScreenState extends State<AccountScreen> {
         }
       } else {
         await widget.auth.signIn(normalizeEmail(email.text), password.text);
+        unawaited(analytics?.logLogin('email'));
       }
       password.clear();
     } catch (e) {
@@ -7534,9 +7805,11 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> _signInWithGoogle() async {
     if (busy) return;
+    final analytics = context.analytics;
     setState(() => busy = true);
     try {
       await widget.auth.signInWithGoogle();
+      unawaited(analytics?.logLogin('google'));
       password.clear();
     } catch (error) {
       if (mounted) {
@@ -7551,9 +7824,11 @@ class _AccountScreenState extends State<AccountScreen> {
 
   Future<void> _signInWithApple() async {
     if (busy) return;
+    final analytics = context.analytics;
     setState(() => busy = true);
     try {
       await widget.auth.signInWithApple();
+      unawaited(analytics?.logLogin('apple'));
       password.clear();
     } catch (error) {
       if (mounted) {
@@ -8709,6 +8984,20 @@ class LegalLinksPanel extends StatelessWidget {
               ),
             ],
           ),
+          if (context.analytics case final analytics?) ...[
+            const Divider(),
+            AnimatedBuilder(
+              animation: analytics,
+              builder: (context, _) => SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                value: analytics.consentGranted,
+                onChanged: analytics.ready ? analytics.setConsent : null,
+                secondary: const Icon(Icons.analytics_outlined),
+                title: Text(context.localize('analytics.consent.title')),
+                subtitle: Text(context.localize('analytics.consent.body')),
+              ),
+            ),
+          ],
         ],
       ),
     );

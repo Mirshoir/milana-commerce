@@ -31,8 +31,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('3'), findsOneWidget);
     expect(find.text('25+'), findsOneWidget);
-    expect(find.text('500K'), findsOneWidget);
     expect(find.text('20+'), findsOneWidget);
     expect(find.text('Distributor bo‘lish'), findsWidgets);
 
@@ -42,5 +42,13 @@ void main() {
     expect(find.text('Distributor arizasi'), findsOneWidget);
     expect(find.text('Kontakt shaxs'), findsOneWidget);
     expect(find.text('Kompaniya nomi'), findsOneWidget);
+    expect(
+      find.text('Veb-sayt yoki ijtimoiy tarmoq (ixtiyoriy)'),
+      findsNothing,
+    );
+    expect(find.text('Kutilayotgan oylik xarid hajmi'), findsNothing);
+    expect(find.text('Savdo kanallari'), findsNothing);
+    expect(find.text('Savdo hududlari'), findsNothing);
+    expect(find.text('Savol yoki qo‘shimcha ma’lumot'), findsNothing);
   });
 }

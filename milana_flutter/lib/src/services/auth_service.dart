@@ -91,13 +91,6 @@ class AuthService extends ChangeNotifier {
   Customer? _customer;
   StreamSubscription<fb.User?>? _authSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _savedStateSub;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _recentStateSub;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _cartStateSub;
-  Map<String, dynamic> _firebaseProfileData = const <String, dynamic>{};
-  Set<String>? _firebaseSavedProductIds;
-  List<String>? _firebaseRecentProductIds;
-  List<CartItem>? _firebaseCartItems;
   CommerceAccountState _commerceAccountState = CommerceAccountState.inactive;
   String? _websiteSessionToken;
   String _commerceAccountError = '';
@@ -150,16 +143,6 @@ class AuthService extends ChangeNotifier {
     _websiteProfileSyncRevision += 1;
     _profileSub?.cancel();
     _profileSub = null;
-    _savedStateSub?.cancel();
-    _savedStateSub = null;
-    _recentStateSub?.cancel();
-    _recentStateSub = null;
-    _cartStateSub?.cancel();
-    _cartStateSub = null;
-    _firebaseProfileData = const <String, dynamic>{};
-    _firebaseSavedProductIds = null;
-    _firebaseRecentProductIds = null;
-    _firebaseCartItems = null;
     final previousWebsiteToken = _websiteSessionToken;
     _websiteSessionToken = null;
     if (previousWebsiteToken != null) {
@@ -191,65 +174,29 @@ class AuthService extends ChangeNotifier {
         .doc(user.uid)
         .snapshots()
         .listen((profile) {
-          _firebaseProfileData = profile.data() ?? const <String, dynamic>{};
+          final data = profile.data() ?? const {};
+          _customer = Customer(
+            id: user.uid,
+            email: '${data['email'] ?? user.email ?? ''}',
+            name: '${data['name'] ?? user.displayName ?? ''}',
+            phone: '${data['phone'] ?? user.phoneNumber ?? ''}',
+            city: '${data['city'] ?? ''}',
+            address: '${data['address'] ?? ''}',
+            companyName: '${data['company_name'] ?? ''}',
+            country: '${data['country'] ?? ''}',
+            savedProductIds: _savedProductIds(data['saved_product_ids']),
+            recentProductIds: _orderedProductIds(data['recent_product_ids']),
+            cartItems: _cartItems(data['cart_items']),
+          );
           _profileReady = true;
-          _rebuildFirebaseCustomer(user, syncWebsiteProfile: true);
+          notifyListeners();
+          if (commerceAccountReady) {
+            _queueWebsiteProfileSync(_customer!);
+          }
         });
-    final state = FirebaseFirestore.instance
-        .collection('customers')
-        .doc(user.uid)
-        .collection('state');
-    _savedStateSub = state.doc('saved').snapshots().listen((snapshot) {
-      _firebaseSavedProductIds = snapshot.exists
-          ? _savedProductIds(snapshot.data()?['product_ids'])
-          : null;
-      _rebuildFirebaseCustomer(user);
-    });
-    _recentStateSub = state.doc('recent').snapshots().listen((snapshot) {
-      _firebaseRecentProductIds = snapshot.exists
-          ? _orderedProductIds(snapshot.data()?['product_ids'])
-          : null;
-      _rebuildFirebaseCustomer(user);
-    });
-    _cartStateSub = state.doc('cart').snapshots().listen((snapshot) {
-      _firebaseCartItems = snapshot.exists
-          ? _cartItems(snapshot.data()?['items'])
-          : null;
-      _rebuildFirebaseCustomer(user);
-    });
     unawaited(_repairFirebaseProfile(user));
     if (user.emailVerified) {
       unawaited(_synchronizeWebsiteSession(user, generation: generation));
-    }
-  }
-
-  void _rebuildFirebaseCustomer(
-    fb.User user, {
-    bool syncWebsiteProfile = false,
-  }) {
-    if (fb.FirebaseAuth.instance.currentUser?.uid != user.uid) return;
-    final data = _firebaseProfileData;
-    final updated = Customer(
-      id: user.uid,
-      email: '${data['email'] ?? user.email ?? ''}',
-      name: '${data['name'] ?? user.displayName ?? ''}',
-      phone: '${data['phone'] ?? user.phoneNumber ?? ''}',
-      city: '${data['city'] ?? ''}',
-      address: '${data['address'] ?? ''}',
-      companyName: '${data['company_name'] ?? ''}',
-      country: '${data['country'] ?? ''}',
-      savedProductIds:
-          _firebaseSavedProductIds ??
-          _savedProductIds(data['saved_product_ids']),
-      recentProductIds:
-          _firebaseRecentProductIds ??
-          _orderedProductIds(data['recent_product_ids']),
-      cartItems: _firebaseCartItems ?? _cartItems(data['cart_items']),
-    );
-    _customer = updated;
-    notifyListeners();
-    if (syncWebsiteProfile && commerceAccountReady) {
-      _queueWebsiteProfileSync(updated);
     }
   }
 
@@ -749,13 +696,16 @@ class AuthService extends ChangeNotifier {
       await FirebaseFirestore.instance
           .collection('customers')
           .doc(current.id)
-          .collection('state')
-          .doc('saved')
           .set({
-            'schema_version': 1,
-            'product_ids': (saved.toList()..sort()).take(500).toList(),
+            'email': current.email,
+            'name': current.name,
+            'phone': current.phone,
+            'city': current.city,
+            'address': current.address,
+            'status': 'active',
+            'saved_product_ids': (saved.toList()..sort()).take(500).toList(),
             'updated_at': DateTime.now().toUtc().toIso8601String(),
-          });
+          }, SetOptions(merge: true));
       return;
     }
     _customer = Customer(
@@ -787,13 +737,16 @@ class AuthService extends ChangeNotifier {
       await FirebaseFirestore.instance
           .collection('customers')
           .doc(current.id)
-          .collection('state')
-          .doc('recent')
           .set({
-            'schema_version': 1,
-            'product_ids': recent,
+            'email': current.email,
+            'name': current.name,
+            'phone': current.phone,
+            'city': current.city,
+            'address': current.address,
+            'status': 'active',
+            'recent_product_ids': recent,
             'updated_at': DateTime.now().toUtc().toIso8601String(),
-          });
+          }, SetOptions(merge: true));
       return;
     }
     _customer = Customer(
@@ -820,13 +773,18 @@ class AuthService extends ChangeNotifier {
       await FirebaseFirestore.instance
           .collection('customers')
           .doc(current.id)
-          .collection('state')
-          .doc('cart')
           .set({
-            'schema_version': 1,
-            'items': compactItems.map((item) => item.toProfileJson()).toList(),
+            'email': current.email,
+            'name': current.name,
+            'phone': current.phone,
+            'city': current.city,
+            'address': current.address,
+            'status': 'active',
+            'cart_items': compactItems
+                .map((item) => item.toProfileJson())
+                .toList(),
             'updated_at': DateTime.now().toUtc().toIso8601String(),
-          });
+          }, SetOptions(merge: true));
       return;
     }
     _customer = Customer(
@@ -934,9 +892,6 @@ class AuthService extends ChangeNotifier {
   void dispose() {
     _authSub?.cancel();
     _profileSub?.cancel();
-    _savedStateSub?.cancel();
-    _recentStateSub?.cancel();
-    _cartStateSub?.cancel();
     if (_ownsWebsiteSessions) _websiteSessions.close();
     super.dispose();
   }
