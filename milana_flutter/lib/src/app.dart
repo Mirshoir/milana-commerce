@@ -519,11 +519,14 @@ class _MilanaAppState extends State<MilanaApp> {
         ),
       ),
       onUnknownRoute: _buildFallbackShellRoute,
-      home: AppShell(
-        catalog: widget.catalog,
-        orders: widget.orders,
+      home: AuthRestoreGate(
         auth: widget.auth,
-        cart: cart,
+        child: AppShell(
+          catalog: widget.catalog,
+          orders: widget.orders,
+          auth: widget.auth,
+          cart: cart,
+        ),
       ),
     );
   }
@@ -531,12 +534,37 @@ class _MilanaAppState extends State<MilanaApp> {
   Route<dynamic> _buildFallbackShellRoute(RouteSettings settings) {
     return MaterialPageRoute<void>(
       settings: settings,
-      builder: (_) => AppShell(
-        catalog: widget.catalog,
-        orders: widget.orders,
+      builder: (_) => AuthRestoreGate(
         auth: widget.auth,
-        cart: cart,
+        child: AppShell(
+          catalog: widget.catalog,
+          orders: widget.orders,
+          auth: widget.auth,
+          cart: cart,
+        ),
       ),
+    );
+  }
+}
+
+class AuthRestoreGate extends StatelessWidget {
+  const AuthRestoreGate({super.key, required this.auth, required this.child});
+
+  final AuthService auth;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: auth,
+      child: child,
+      builder: (context, child) {
+        if (auth.authReady) return child!;
+        return const Scaffold(
+          backgroundColor: milanaIvory,
+          body: Center(child: CircularProgressIndicator(color: milanaBurgundy)),
+        );
+      },
     );
   }
 }
@@ -2612,243 +2640,280 @@ class _CatalogScreenState extends State<CatalogScreen> {
             setState(() => productsFuture = next);
             await next;
           },
-          child: ListView(
+          child: CustomScrollView(
             controller: scrollController,
-            padding: EdgeInsets.fromLTRB(contentInset, 8, contentInset, 28),
-            children: [
-              PremiumCatalogHeader(
-                total: allProducts.length,
-                visible: products.length,
-              ),
-              if (loadInfo.fromCache) ...[
-                const SizedBox(height: 12),
-                CatalogCacheNotice(info: loadInfo, onRefresh: _reloadCatalog),
-              ],
-              const SizedBox(height: 16),
-              CatalogCategoryRail(
-                products: allProducts,
-                activeGender: gender,
-                activeCategory: category,
-                onSelect: (selection) => setState(() {
-                  gender = selection.gender;
-                  category = selection.category;
-                  savedOnly = false;
-                  _resetCatalogWindow();
-                }),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: searchController,
-                focusNode: searchFocusNode,
-                decoration: InputDecoration(
-                  hintText: context.localize('catalog.search_placeholder'),
-                  prefixIcon: Icon(Icons.search, size: 20),
-                  filled: false,
-                  enabledBorder: UnderlineInputBorder(),
-                  focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: milanaInk, width: 1.5),
-                  ),
-                ),
-                onChanged: _onSearchChanged,
-              ),
-              if (smartSearchLoading)
-                const LinearProgressIndicator(minHeight: 2),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () =>
-                      setState(() => filtersExpanded = !filtersExpanded),
-                  icon: const Icon(Icons.filter_list, size: 18),
-                  label: Text(
-                    filtersExpanded
-                        ? context.localize('catalog.filters.close')
-                        : _activeFilterCount == 0
-                        ? context.localize('catalog.filters.open')
-                        : context.localize(
-                            'catalog.filters.active',
-                            args: {'count': '$_activeFilterCount'},
-                          ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: milanaInk,
-                    side: BorderSide(color: milanaInk.withValues(alpha: .3)),
-                    shape: const RoundedRectangleBorder(),
-                    textStyle: const TextStyle(
-                      fontSize: 11,
-                      letterSpacing: 1.6,
-                      fontWeight: FontWeight.w600,
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            slivers: [
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(contentInset, 8, contentInset, 0),
+                sliver: SliverList.list(
+                  children: [
+                    PremiumCatalogHeader(
+                      total: allProducts.length,
+                      visible: products.length,
                     ),
-                  ),
-                ),
-              ),
-              if (filtersExpanded) ...[
-                const SizedBox(height: 12),
-                _Filters(
-                  gender: gender,
-                  category: category,
-                  onGender: (value) => setState(() {
-                    gender = value;
-                    _resetCatalogWindow();
-                  }),
-                  onCategory: (value) => setState(() {
-                    category = value;
-                    _resetCatalogWindow();
-                  }),
-                ),
-                const SizedBox(height: 10),
-                DiscoveryFilterPanel(
-                  size: size,
-                  sizes: sizes,
-                  priceBand: priceBand,
-                  availability: availability,
-                  curation: curation,
-                  onSize: (value) => setState(() {
-                    size = value;
-                    _resetCatalogWindow();
-                  }),
-                  onPriceBand: (value) => setState(() {
-                    priceBand = value;
-                    _resetCatalogWindow();
-                  }),
-                  onAvailability: (value) => setState(() {
-                    availability = value;
-                    _resetCatalogWindow();
-                  }),
-                  onCuration: (value) => setState(() {
-                    curation = value;
-                    _resetCatalogWindow();
-                  }),
-                  onClear: _clearFilters,
-                  hasActiveFilters:
-                      query.isNotEmpty ||
-                      gender != 'all' ||
-                      category != 'all' ||
-                      size != 'all' ||
-                      priceBand != PriceBand.all ||
-                      availability != AvailabilityFilter.all ||
-                      curation != CurationFilter.all ||
-                      savedOnly,
-                ),
-              ],
-              const SizedBox(height: 10),
-              CatalogActionBar(
-                savedOnly: savedOnly,
-                savedCount: favorites.length,
-                sort: sort,
-                onSavedOnly: (value) => setState(() {
-                  savedOnly = value;
-                  _resetCatalogWindow();
-                }),
-                onSort: (value) => setState(() {
-                  sort = value;
-                  _resetCatalogWindow();
-                }),
-              ),
-              const SizedBox(height: 18),
-              if (showRecent) ...[
-                SectionHeader(
-                  title: context.localize('home.section.recent'),
-                  trailing: context.localize(
-                    'catalog.models_count',
-                    args: {'count': '${recentProducts.length}'},
-                  ),
-                ),
-                const SizedBox(height: 10),
-                RecentlyViewedRail(
-                  products: recentProducts,
-                  favorites: favorites,
-                  onOpen: (product) => _openProduct(product, allProducts),
-                  onAdd: _add,
-                  onFavorite: _toggleFavorite,
-                ),
-                const SizedBox(height: 24),
-                Divider(color: milanaInk.withValues(alpha: .12)),
-                const SizedBox(height: 18),
-              ],
-              SectionHeader(
-                title: context.localize('home.section.all'),
-                trailing: products.length == visibleProducts.length
-                    ? context.localize(
-                        'catalog.models_count',
-                        args: {'count': '${products.length}'},
-                      )
-                    : context.localize(
-                        'catalog.models_count_ratio',
-                        args: {
-                          'visible': '${visibleProducts.length}',
-                          'total': '${products.length}',
-                        },
+                    if (loadInfo.fromCache) ...[
+                      const SizedBox(height: 12),
+                      CatalogCacheNotice(
+                        info: loadInfo,
+                        onRefresh: _reloadCatalog,
                       ),
-              ),
-              const SizedBox(height: 10),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final columns = constraints.maxWidth > 1100
-                      ? 4
-                      : constraints.maxWidth > 720
-                      ? 3
-                      : 2;
-                  return GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: visibleProducts.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: columns,
-                      mainAxisSpacing: 22,
-                      crossAxisSpacing: 10,
-                      childAspectRatio: columns > 2 ? .68 : .60,
+                    ],
+                    const SizedBox(height: 16),
+                    CatalogCategoryRail(
+                      products: allProducts,
+                      activeGender: gender,
+                      activeCategory: category,
+                      onSelect: (selection) => setState(() {
+                        gender = selection.gender;
+                        category = selection.category;
+                        savedOnly = false;
+                        _resetCatalogWindow();
+                      }),
                     ),
-                    itemBuilder: (context, i) => ProductCard(
-                      product: visibleProducts[i],
-                      isFavorite: favorites.contains(visibleProducts[i].id),
-                      onOpen: () =>
-                          _openProduct(visibleProducts[i], allProducts),
-                      onAdd: isOutOfQop(visibleProducts[i])
-                          ? null
-                          : () => _add(visibleProducts[i]),
-                      onFavorite: () => _toggleFavorite(visibleProducts[i]),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: searchController,
+                      focusNode: searchFocusNode,
+                      decoration: InputDecoration(
+                        hintText: context.localize(
+                          'catalog.search_placeholder',
+                        ),
+                        prefixIcon: Icon(Icons.search, size: 20),
+                        filled: false,
+                        enabledBorder: UnderlineInputBorder(),
+                        focusedBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: milanaInk, width: 1.5),
+                        ),
+                      ),
+                      onChanged: _onSearchChanged,
                     ),
-                  );
-                },
-              ),
-              if (products.length > visibleProducts.length) ...[
-                const SizedBox(height: 16),
-                LoadMoreCatalogButton(
-                  visible: visibleProducts.length,
-                  total: products.length,
-                  onPressed: () => setState(() {
-                    visibleProductCount = nextCatalogVisibleCount(
-                      total: products.length,
-                      current: visibleProductCount,
-                    );
-                  }),
-                ),
-              ],
-              if (products.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 36),
-                  child: _EmptyState(
-                    icon: savedOnly
-                        ? Icons.favorite_border
-                        : Icons.search_off_outlined,
-                    title: savedOnly
-                        ? context.localize('catalog.empty.saved.title')
-                        : context.localize('catalog.empty.search.title'),
-                    message: savedOnly
-                        ? context.localize('catalog.empty.saved.message')
-                        : context.localize('catalog.empty.search.message'),
-                    action: query.isNotEmpty || _activeFilterCount > 0
-                        ? OutlinedButton.icon(
-                            onPressed: _clearFilters,
-                            icon: const Icon(Icons.restart_alt),
-                            label: Text(
-                              context.localize('catalog.clear_filters'),
+                    if (smartSearchLoading)
+                      const LinearProgressIndicator(minHeight: 2),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            setState(() => filtersExpanded = !filtersExpanded),
+                        icon: const Icon(Icons.filter_list, size: 18),
+                        label: Text(
+                          filtersExpanded
+                              ? context.localize('catalog.filters.close')
+                              : _activeFilterCount == 0
+                              ? context.localize('catalog.filters.open')
+                              : context.localize(
+                                  'catalog.filters.active',
+                                  args: {'count': '$_activeFilterCount'},
+                                ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: milanaInk,
+                          side: BorderSide(
+                            color: milanaInk.withValues(alpha: .3),
+                          ),
+                          shape: const RoundedRectangleBorder(),
+                          textStyle: const TextStyle(
+                            fontSize: 11,
+                            letterSpacing: 1.6,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (filtersExpanded) ...[
+                      const SizedBox(height: 12),
+                      _Filters(
+                        gender: gender,
+                        category: category,
+                        onGender: (value) => setState(() {
+                          gender = value;
+                          _resetCatalogWindow();
+                        }),
+                        onCategory: (value) => setState(() {
+                          category = value;
+                          _resetCatalogWindow();
+                        }),
+                      ),
+                      const SizedBox(height: 10),
+                      DiscoveryFilterPanel(
+                        size: size,
+                        sizes: sizes,
+                        priceBand: priceBand,
+                        availability: availability,
+                        curation: curation,
+                        onSize: (value) => setState(() {
+                          size = value;
+                          _resetCatalogWindow();
+                        }),
+                        onPriceBand: (value) => setState(() {
+                          priceBand = value;
+                          _resetCatalogWindow();
+                        }),
+                        onAvailability: (value) => setState(() {
+                          availability = value;
+                          _resetCatalogWindow();
+                        }),
+                        onCuration: (value) => setState(() {
+                          curation = value;
+                          _resetCatalogWindow();
+                        }),
+                        onClear: _clearFilters,
+                        hasActiveFilters:
+                            query.isNotEmpty ||
+                            gender != 'all' ||
+                            category != 'all' ||
+                            size != 'all' ||
+                            priceBand != PriceBand.all ||
+                            availability != AvailabilityFilter.all ||
+                            curation != CurationFilter.all ||
+                            savedOnly,
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    CatalogActionBar(
+                      savedOnly: savedOnly,
+                      savedCount: favorites.length,
+                      sort: sort,
+                      onSavedOnly: (value) => setState(() {
+                        savedOnly = value;
+                        _resetCatalogWindow();
+                      }),
+                      onSort: (value) => setState(() {
+                        sort = value;
+                        _resetCatalogWindow();
+                      }),
+                    ),
+                    const SizedBox(height: 18),
+                    if (showRecent) ...[
+                      SectionHeader(
+                        title: context.localize('home.section.recent'),
+                        trailing: context.localize(
+                          'catalog.models_count',
+                          args: {'count': '${recentProducts.length}'},
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      RecentlyViewedRail(
+                        products: recentProducts,
+                        favorites: favorites,
+                        onOpen: (product) => _openProduct(product, allProducts),
+                        onAdd: _add,
+                        onFavorite: _toggleFavorite,
+                      ),
+                      const SizedBox(height: 24),
+                      Divider(color: milanaInk.withValues(alpha: .12)),
+                      const SizedBox(height: 18),
+                    ],
+                    SectionHeader(
+                      title: context.localize('home.section.all'),
+                      trailing: products.length == visibleProducts.length
+                          ? context.localize(
+                              'catalog.models_count',
+                              args: {'count': '${products.length}'},
+                            )
+                          : context.localize(
+                              'catalog.models_count_ratio',
+                              args: {
+                                'visible': '${visibleProducts.length}',
+                                'total': '${products.length}',
+                              },
                             ),
-                          )
-                        : null,
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                ),
+              ),
+              SliverPadding(
+                padding: EdgeInsets.symmetric(horizontal: contentInset),
+                sliver: SliverLayoutBuilder(
+                  builder: (context, constraints) {
+                    final columns = constraints.crossAxisExtent > 1100
+                        ? 4
+                        : constraints.crossAxisExtent > 720
+                        ? 3
+                        : 2;
+                    return SliverGrid(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        mainAxisSpacing: 22,
+                        crossAxisSpacing: 10,
+                        childAspectRatio: columns > 2 ? .68 : .60,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final product = visibleProducts[index];
+                          return ProductCard(
+                            key: ValueKey(product.id),
+                            product: product,
+                            isFavorite: favorites.contains(product.id),
+                            onOpen: () => _openProduct(product, allProducts),
+                            onAdd: isOutOfQop(product)
+                                ? null
+                                : () => _add(product),
+                            onFavorite: () => _toggleFavorite(product),
+                          );
+                        },
+                        childCount: visibleProducts.length,
+                        addAutomaticKeepAlives: false,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              if (products.length > visibleProducts.length)
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    contentInset,
+                    16,
+                    contentInset,
+                    0,
+                  ),
+                  sliver: SliverToBoxAdapter(
+                    child: LoadMoreCatalogButton(
+                      visible: visibleProducts.length,
+                      total: products.length,
+                      onPressed: () => setState(() {
+                        visibleProductCount = nextCatalogVisibleCount(
+                          total: products.length,
+                          current: visibleProductCount,
+                        );
+                      }),
+                    ),
                   ),
                 ),
+              if (products.isEmpty)
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    contentInset,
+                    36,
+                    contentInset,
+                    0,
+                  ),
+                  sliver: SliverToBoxAdapter(
+                    child: _EmptyState(
+                      icon: savedOnly
+                          ? Icons.favorite_border
+                          : Icons.search_off_outlined,
+                      title: savedOnly
+                          ? context.localize('catalog.empty.saved.title')
+                          : context.localize('catalog.empty.search.title'),
+                      message: savedOnly
+                          ? context.localize('catalog.empty.saved.message')
+                          : context.localize('catalog.empty.search.message'),
+                      action: query.isNotEmpty || _activeFilterCount > 0
+                          ? OutlinedButton.icon(
+                              onPressed: _clearFilters,
+                              icon: const Icon(Icons.restart_alt),
+                              label: Text(
+                                context.localize('catalog.clear_filters'),
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+              const SliverToBoxAdapter(child: SizedBox(height: 28)),
             ],
           ),
         );
@@ -4132,35 +4197,43 @@ class ProductImage extends StatelessWidget {
         child: Center(child: Icon(Icons.image_not_supported_outlined)),
       );
     }
-    return Semantics(
-      image: true,
-      label: localizedText(
-        'product.image.label',
-        languageCode: context.currentLanguageCode,
-        args: {'product': productName(context, product)},
-      ),
-      child: CachedNetworkImage(
-        imageUrl: imageUrl,
-        width: double.infinity,
-        fit: fit,
-        alignment: alignment,
-        fadeInDuration: const Duration(milliseconds: 180),
-        fadeOutDuration: const Duration(milliseconds: 90),
-        memCacheWidth: 900,
-        maxWidthDiskCache: 1200,
-        placeholder: (context, url) => const ProductImagePlaceholder(),
-        errorWidget: (context, url, error) => const ProductImageFallback(),
-        imageBuilder: (context, provider) => SizedBox.expand(
-          child: Image(
-            image: provider,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+        final cacheWidth = catalogImageCacheDimension(
+          constraints.maxWidth,
+          pixelRatio,
+        );
+        return Semantics(
+          image: true,
+          label: localizedText(
+            'product.image.label',
+            languageCode: context.currentLanguageCode,
+            args: {'product': productName(context, product)},
+          ),
+          child: CachedNetworkImage(
+            imageUrl: imageUrl,
+            width: double.infinity,
+            height: double.infinity,
             fit: fit,
             alignment: alignment,
-            gaplessPlayback: true,
+            fadeInDuration: const Duration(milliseconds: 100),
+            fadeOutDuration: Duration.zero,
+            memCacheWidth: cacheWidth,
+            maxWidthDiskCache: 1200,
+            placeholder: (context, url) => const ProductImagePlaceholder(),
+            errorWidget: (context, url, error) => const ProductImageFallback(),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
+}
+
+int catalogImageCacheDimension(double logicalSize, double pixelRatio) {
+  if (!logicalSize.isFinite || logicalSize <= 0) return 720;
+  final safeRatio = pixelRatio.isFinite && pixelRatio > 0 ? pixelRatio : 1.0;
+  return (logicalSize * safeRatio).ceil().clamp(96, 1024);
 }
 
 class _ProductDetailImage extends StatefulWidget {

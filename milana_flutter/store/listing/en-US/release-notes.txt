@@ -1,1 +1,1 @@
-Fresh product descriptions and details, smarter server-backed search, improved recommendations and model variants, an updated partnership application, optional analytics consent, and server-controlled garment measurements.
+Improved catalog scrolling stability and faster, more memory-efficient product image loading.

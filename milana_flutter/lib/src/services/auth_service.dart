@@ -94,6 +94,7 @@ class AuthService extends ChangeNotifier {
   CommerceAccountState _commerceAccountState = CommerceAccountState.inactive;
   String? _websiteSessionToken;
   String _commerceAccountError = '';
+  bool _authReady = false;
   bool _emailVerified = false;
   bool _profileReady = false;
   int _websiteSessionGeneration = 0;
@@ -103,6 +104,7 @@ class AuthService extends ChangeNotifier {
 
   Customer? get customer => _customer;
   bool get signedIn => _customer != null;
+  bool get authReady => !firebaseEnabled || _authReady;
   bool get localDemoEnabled => !firebaseEnabled && _localAuthEnabled;
   bool get emailVerified => !firebaseEnabled || _emailVerified;
   bool get profileReady => !firebaseEnabled || _profileReady;
@@ -139,6 +141,7 @@ class AuthService extends ChangeNotifier {
   }
 
   void _watchFirebaseCustomer(fb.User? user) {
+    _authReady = true;
     final generation = ++_websiteSessionGeneration;
     _websiteProfileSyncRevision += 1;
     _profileSub?.cancel();

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 2,
   "release": {
-    "versionName": "1.0.1",
-    "buildNumber": 26,
+    "versionName": "1.0.2",
+    "buildNumber": 32,
     "interfaceLanguages": ["uz", "ru", "en"]
   },
   "identity": {

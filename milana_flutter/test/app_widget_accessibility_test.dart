@@ -18,6 +18,20 @@ import 'package:milana_flutter/src/services/catalog_repository.dart';
 import 'package:milana_flutter/src/services/order_repository.dart';
 
 void main() {
+  test('catalog image decode size follows layout and stays bounded', () {
+    expect(catalogImageCacheDimension(180, 3), 540);
+    expect(catalogImageCacheDimension(2000, 3), 1024);
+    expect(catalogImageCacheDimension(10, 1), 96);
+    expect(catalogImageCacheDimension(double.infinity, 3), 720);
+  });
+
+  test('local authentication is immediately restored', () {
+    final auth = AuthService(firebaseEnabled: false);
+    addTearDown(auth.dispose);
+
+    expect(auth.authReady, isTrue);
+  });
+
   group('ProductSheet purchase experience', () {
     testWidgets('keeps the CTA visible and confirms a successful add', (
       tester,
@@ -637,7 +651,18 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.drag(find.byType(ListView).first, const Offset(0, -700));
+    expect(find.byType(CustomScrollView), findsOneWidget);
+    final catalogScroll = tester.widget<CustomScrollView>(
+      find.byType(CustomScrollView),
+    );
+    expect(
+      catalogScroll.slivers.whereType<SliverPadding>().any(
+        (padding) => padding.child is SliverLayoutBuilder,
+      ),
+      isTrue,
+    );
+
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -700));
     await tester.pump();
     await tester.tap(find.text('Показать фильтры'));
     await tester.pump();
